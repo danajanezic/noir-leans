@@ -49,6 +49,22 @@ def test_arrest_correct_suspect_does_not_reduce_reputation(case_setup):
     assert player["reputation"] == 100
 
 
+def test_arrest_correct_suspect_increments_cases_solved(case_setup):
+    db, case_id, loc_id, npc_id = case_setup
+    mgr = CaseManager(conn=db, case_id=case_id)
+    mgr.arrest(npc_id=npc_id, evidence_summary="A flamingo feather and motive")
+    assert get_player(db)["cases_solved"] == 1
+
+
+def test_arrest_wrong_suspect_increments_wrong_arrests(case_setup):
+    db, case_id, loc_id, npc_id = case_setup
+    wrong_npc_id = create_npc(db, case_id=case_id, name="Reginald Smoot", role="suspect",
+                               system_prompt="You are Reginald.", current_location_id=loc_id)
+    mgr = CaseManager(conn=db, case_id=case_id)
+    mgr.arrest(npc_id=wrong_npc_id, evidence_summary="A hunch")
+    assert get_player(db)["wrong_arrests"] == 1
+
+
 def test_get_evidence_summary_for_da(case_setup):
     db, case_id, loc_id, npc_id = case_setup
     mgr = CaseManager(conn=db, case_id=case_id)
@@ -117,7 +133,7 @@ def test_da_history_persists_across_calls(case_setup):
     llm = MockLLMBackend(responses=[DA_ACCEPT_RESPONSE, DA_REJECT_RESPONSE])
     ts = TrialSystem(conn=db, case_id=case_id, llm=llm)
     ts.submit_to_da(evidence_summary="First evidence")
-    history = get_history(db, DA_CHARACTER_ID)
+    history = get_history(db, character_id=DA_CHARACTER_ID)
     assert len(history) >= 2
 
 

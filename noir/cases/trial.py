@@ -30,8 +30,8 @@ class TrialSystem:
         self.case_id = case_id
         self.llm = llm
 
-    def submit_to_da(self, evidence_summary: str) -> dict:
-        history = get_history(self.conn, DA_CHARACTER_ID)
+    def submit_to_da(self, *, evidence_summary: str) -> dict:
+        history = get_history(self.conn, character_id=DA_CHARACTER_ID)
         prompt = (
             f"The detective is submitting a case for prosecution.\n"
             f"Evidence presented:\n{evidence_summary}\n\n"

@@ -1,7 +1,6 @@
 import time
 from rich.console import Console
 from rich.panel import Panel
-from rich.text import Text
 from rich.rule import Rule
 from rich import box
 
@@ -43,15 +42,6 @@ def show_evidence_collected(description: str) -> None:
         title="[bold green]Evidence Collected[/bold green]",
         border_style="green",
     ))
-
-
-def show_evidence_list(evidence: list) -> None:
-    if not evidence:
-        console.print("[dim]No evidence collected yet.[/dim]")
-        return
-    console.print(Rule("[bold]Evidence File[/bold]", style="yellow"))
-    for i, e in enumerate(evidence, 1):
-        console.print(f"  [yellow]{i}.[/yellow] {e['description']}")
 
 
 def show_arrest_confirmation(npc_name: str) -> None:

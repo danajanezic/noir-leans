@@ -230,6 +230,8 @@ class Game:
             show_trial_status(case["title"], "closed", None)
             if verdict:
                 show_dialogue("Courthouse Clerk", verdict.get("summary", "The verdict is in."))
+        else:
+            console.print("[dim]Nothing here yet. Take a case to the DA first.[/dim]")
 
     def loop(self) -> None:
         create_schema(self.conn)

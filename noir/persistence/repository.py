@@ -17,6 +17,15 @@ def update_player_reputation(conn: sqlite3.Connection, *, delta: int) -> None:
     conn.commit()
 
 
+def update_player_stats(conn: sqlite3.Connection, *,
+                        cases_solved_delta: int = 0, wrong_arrests_delta: int = 0) -> None:
+    conn.execute(
+        "UPDATE player SET cases_solved = cases_solved + ?, wrong_arrests = wrong_arrests + ? WHERE id=1",
+        (cases_solved_delta, wrong_arrests_delta)
+    )
+    conn.commit()
+
+
 def save_partner(conn: sqlite3.Connection, *, name: str, sex: str,
                  personality_archetype: str, speech_style: str,
                  relationship_stance: str, system_prompt: str) -> None:
@@ -42,7 +51,7 @@ def append_history(conn: sqlite3.Connection, *, character_id: str, role: str,
     conn.commit()
 
 
-def get_history(conn: sqlite3.Connection, character_id: str,
+def get_history(conn: sqlite3.Connection, *, character_id: str,
                 case_id: int | None = None) -> list[dict]:
     if case_id is not None:
         rows = conn.execute(

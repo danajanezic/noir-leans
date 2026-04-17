@@ -15,7 +15,7 @@ class Agent:
         self.case_id = case_id
 
     def speak(self, player_input: str) -> str:
-        history = get_history(self.conn, self.character_id, case_id=self.case_id)
+        history = get_history(self.conn, character_id=self.character_id, case_id=self.case_id)
         response = self.llm.query(self.system_prompt, history, player_input)
         append_history(self.conn, character_id=self.character_id,
                        role="user", content=player_input, case_id=self.case_id)

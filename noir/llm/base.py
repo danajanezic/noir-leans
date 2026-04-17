@@ -1,5 +1,6 @@
 import json
 from abc import ABC, abstractmethod
+from typing import NoReturn
 from rich.console import Console
 from rich.panel import Panel
 
@@ -25,7 +26,7 @@ class LLMBackend(ABC):
             except (json.JSONDecodeError, ValueError):
                 self._fatal()
 
-    def _fatal(self) -> None:
+    def _fatal(self) -> NoReturn:
         console = Console()
         console.print(Panel(
             "[bold yellow]Your partner's voice crackles through the static...[/bold yellow]\n\n"

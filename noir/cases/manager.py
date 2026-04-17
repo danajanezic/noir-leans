@@ -2,7 +2,7 @@ import json
 import sqlite3
 from noir.persistence.repository import (
     add_evidence, get_evidence_for_case, create_arrest,
-    update_arrest_verdict, update_player_reputation, get_case, get_npc
+    update_arrest_verdict, update_player_reputation, update_player_stats, get_case, get_npc
 )
 
 
@@ -28,8 +28,11 @@ class CaseManager:
                                   evidence_summary=evidence_summary)
         update_arrest_verdict(self.conn, arrest_id=arrest_id, was_correct=is_correct)
 
-        if not is_correct:
+        if is_correct:
+            update_player_stats(self.conn, cases_solved_delta=1)
+        else:
             update_player_reputation(self.conn, delta=-15)
+            update_player_stats(self.conn, wrong_arrests_delta=1)
 
         return arrest_id
 
