@@ -1,0 +1,22 @@
+[
+  {
+    "name": "Agatha Christie",
+    "description": "Closed-room mystery with social intrigue. Everyone had motive, means, and opportunity. The solution is logical and satisfying.",
+    "seed_prompt": "Generate a mystery in the style of Agatha Christie. The crime takes place in a contained social setting — a dinner party, a country house, a cruise ship, a society event. Every suspect has a credible motive and a secret worth hiding. The killer is clever but ultimately undone by a single overlooked detail. The clues are all present but require lateral thinking to connect. Red herrings should exploit social assumptions and class dynamics. The victim is someone whose death is inconvenient to many. Avoid supernatural or procedural elements. The tone is drawing-room drama with a sharp wit underneath."
+  },
+  {
+    "name": "Dashiell Hammett",
+    "description": "Hard-boiled noir. Corrupt institutions, moral ambiguity, nobody's clean. The truth is bleak and systemic.",
+    "seed_prompt": "Generate a mystery in the style of Dashiell Hammett. The crime is rooted in greed, power, and institutional corruption. There are no truly innocent parties — everyone is compromised. The killer is likely someone with connections that make prosecution inconvenient. Clues are hidden in plain sight behind layers of denial and self-interest. Witnesses are reluctant and motivated by self-preservation. The setting should feel like a city that eats people — docks, back rooms, union halls, newspaper offices. The tone is cynical and matter-of-fact. The detective's idealism, if they have any, is tested."
+  },
+  {
+    "name": "Benoit Blanc",
+    "description": "The detective is the spectacle. Meta-aware, theatrical, with a Southern Gothic flair. The mystery is almost secondary to the performance of solving it.",
+    "seed_prompt": "Generate a mystery in the style of Rian Johnson's Benoit Blanc films. The crime occurs in a wealthy, eccentric family or social circle where everyone is theatrical and self-conscious. The killer is audacious and the method is almost absurdly overcomplicated. The detective's process is itself a performance — they announce their conclusions in stages, enjoy the drama, and occasionally seem to know more than they let on. Include a false solution that seems airtight before the real one emerges. The tone is playful, slightly self-aware, and occasionally breaks the fourth wall of detective fiction."
+  },
+  {
+    "name": "Chinatown",
+    "description": "The real crime is systemic. The truth is worse than the detective imagined. Power wins.",
+    "seed_prompt": "Generate a mystery in the style of Chinatown. The surface crime — a murder, a theft — is a symptom of something much larger and more corrupt underneath. Following the evidence leads to a conspiracy involving powerful institutions: city government, water rights, land development, organized crime, or inherited wealth. The killer is protected by their position and the systems they control. The detective's investigation causes collateral damage. Resolution brings only partial justice — or none at all. The tone is bleak, fatalistic, and morally complex. Include a revelation that reframes everything the player thought they understood."
+  }
+]
