@@ -1,10 +1,15 @@
 import json
+import time
 import pytest
+import json as json_module
+from itertools import cycle
 from noir.cases.manager import CaseManager
 from noir.persistence.repository import (
     create_player, create_case, create_location,
-    create_npc, get_player, get_evidence_for_case
+    create_npc, get_player, get_evidence_for_case, get_history, get_case
 )
+from noir.cases.trial import TrialSystem, DA_CHARACTER_ID, CLERK_CHARACTER_ID
+from noir.llm.mock import MockLLMBackend
 
 
 @pytest.fixture
@@ -54,3 +59,60 @@ def test_get_evidence_summary_for_da(case_setup):
     summary = mgr.get_evidence_summary()
     assert "A feather" in summary
     assert "A receipt" in summary
+
+
+DA_ACCEPT_RESPONSE = json_module.dumps({
+    "verdict": "accepted",
+    "reasoning": "The flamingo feather is damning. I've seen worse cases. Barely.",
+    "dialogue": "The People will take this case, detective. Don't embarrass us."
+})
+
+DA_REJECT_RESPONSE = json_module.dumps({
+    "verdict": "rejected",
+    "reasoning": "A hunch is not evidence. Neither is optimism.",
+    "dialogue": "Come back when you have something I can actually use in court."
+})
+
+
+def test_da_accepts_strong_evidence(case_setup):
+    db, case_id, loc_id, _ = case_setup
+    llm = MockLLMBackend(responses=[DA_ACCEPT_RESPONSE])
+    ts = TrialSystem(conn=db, case_id=case_id, llm=llm)
+    result = ts.submit_to_da(evidence_summary="A flamingo feather, a receipt, and a clear motive")
+    assert result["verdict"] == "accepted"
+
+
+def test_da_rejects_weak_evidence(case_setup):
+    db, case_id, _, _ = case_setup
+    llm = MockLLMBackend(responses=[DA_REJECT_RESPONSE])
+    ts = TrialSystem(conn=db, case_id=case_id, llm=llm)
+    result = ts.submit_to_da(evidence_summary="A hunch")
+    assert result["verdict"] == "rejected"
+
+
+def test_accepted_case_starts_trial(case_setup):
+    db, case_id, _, _ = case_setup
+    llm = MockLLMBackend(responses=[DA_ACCEPT_RESPONSE])
+    ts = TrialSystem(conn=db, case_id=case_id, llm=llm)
+    ts.submit_to_da(evidence_summary="Strong evidence")
+    case = get_case(db, case_id)
+    assert case["status"] == "in_trial"
+    assert case["trial_end_time"] is not None
+
+
+def test_courthouse_reports_trial_in_progress(case_setup):
+    db, case_id, _, _ = case_setup
+    llm = MockLLMBackend(responses=[DA_ACCEPT_RESPONSE])
+    ts = TrialSystem(conn=db, case_id=case_id, llm=llm)
+    ts.submit_to_da("Strong evidence")
+    status = ts.check_courthouse()
+    assert status["status"] == "in_trial"
+
+
+def test_da_history_persists_across_calls(case_setup):
+    db, case_id, _, _ = case_setup
+    llm = MockLLMBackend(responses=[DA_ACCEPT_RESPONSE, DA_REJECT_RESPONSE])
+    ts = TrialSystem(conn=db, case_id=case_id, llm=llm)
+    ts.submit_to_da("First evidence")
+    history = get_history(db, DA_CHARACTER_ID)
+    assert len(history) >= 2
