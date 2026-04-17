@@ -104,7 +104,6 @@ class Quiz:
         answers_text = "\n".join(
             f"Q{i+1}: {QUIZ_QUESTIONS[i]['question']}\nA: {answer}"
             for i, answer in enumerate(answers)
-            if i < len(QUIZ_QUESTIONS)
         )
         prompt = (
             f"A player has answered the following quiz questions:\n\n{answers_text}\n\n"

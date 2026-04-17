@@ -1,4 +1,3 @@
-import sqlite3
 from noir.llm.base import LLMBackend
 
 INCIDENT_SYSTEM_PROMPT = """You are generating the opening incident for an absurdist noir detective game.
@@ -12,8 +11,7 @@ Return ONLY valid JSON: {"incident": "string (the incident description)"}"""
 
 class ColdOpen:
 
-    def __init__(self, *, conn: sqlite3.Connection, llm: LLMBackend):
-        self.conn = conn
+    def __init__(self, *, llm: LLMBackend):
         self.llm = llm
 
     def generate_bar_incident(self) -> str:

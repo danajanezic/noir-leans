@@ -1,7 +1,7 @@
 import json
-from noir.onboarding.quiz import Quiz
+from noir.onboarding.quiz import Quiz, QUIZ_QUESTIONS
 from noir.onboarding.cold_open import ColdOpen
-from noir.persistence.repository import create_player, get_partner, get_history
+from noir.persistence.repository import create_player, get_partner
 from noir.llm.mock import MockLLMBackend
 
 PARTNER_TRAITS = json.dumps({
@@ -27,6 +27,10 @@ def test_quiz_saves_partner_to_db(db):
         "I'd try to reason with the fire",
         "instinct over evidence",
         "I'd rather work alone but won't admit it",
+        "already working a case",
+        "say nothing, they're probably wrong",
+        "keep working it",
+        "someone to talk to",
     ]
     quiz.run(answers=answers)
     partner = get_partner(db)
@@ -45,16 +49,14 @@ def test_quiz_prompt_includes_answers(db):
     assert "answer one" in last_call["user_input"]
 
 
-def test_cold_open_generates_bar_incident(db):
-    create_player(db)
+def test_cold_open_generates_bar_incident():
     llm = MockLLMBackend(responses=[BAR_INCIDENT])
-    cold_open = ColdOpen(conn=db, llm=llm)
+    cold_open = ColdOpen(llm=llm)
     incident = cold_open.generate_bar_incident()
-    assert "badger" in incident.lower() or len(incident) > 20
+    assert "badger" in incident.lower()
 
 
 def test_quiz_questions_are_defined():
-    from noir.onboarding.quiz import QUIZ_QUESTIONS
     assert len(QUIZ_QUESTIONS) >= 6
     for q in QUIZ_QUESTIONS:
         assert "question" in q
