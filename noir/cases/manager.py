@@ -12,7 +12,7 @@ class CaseManager:
         self.conn = conn
         self.case_id = case_id
 
-    def collect_evidence(self, description: str, location_id: int,
+    def collect_evidence(self, *, description: str, location_id: int,
                          source_npc_id: int | None) -> int:
         return add_evidence(self.conn, case_id=self.case_id, description=description,
                             source_npc_id=source_npc_id, location_id=location_id)

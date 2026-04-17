@@ -3,7 +3,7 @@ import random
 
 from noir.display import (
     show_location, show_dialogue, show_player_input_prompt, show_evidence_collected,
-    show_evidence_list, show_arrest_confirmation, show_reputation, show_trial_status,
+    show_arrest_confirmation, show_reputation, show_trial_status,
     show_help, console
 )
 from noir.parser import parse_command, Intent
@@ -32,9 +32,6 @@ FIXED_LOCATIONS = [
     ("The DA's Office", "A cathedral of filing cabinets. The DA rules over it like a disappointed god."),
     ("The Courthouse", "Justice is administered here, at a pace that suggests justice has nowhere else to be."),
 ]
-
-DA_LOCATION_NAME = "The DA's Office"
-COURTHOUSE_LOCATION_NAME = "The Courthouse"
 
 
 class Game:
@@ -248,7 +245,7 @@ class Game:
             self.run_onboarding()
         else:
             self.companion = Companion.load(conn=self.conn, llm=self.llm)
-            console.print(f"\n[bold yellow]Welcome back, detective.[/bold yellow]")
+            console.print("\n[bold yellow]Welcome back, detective.[/bold yellow]")
             show_dialogue(self.companion.name, self.companion.speak("Good. You're back. We have work to do."))
 
         active_cases = get_active_cases(self.conn)

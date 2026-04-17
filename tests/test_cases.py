@@ -24,7 +24,7 @@ def case_setup(db):
 def test_collect_evidence_saves_to_db(case_setup):
     db, case_id, loc_id, _ = case_setup
     mgr = CaseManager(conn=db, case_id=case_id)
-    mgr.collect_evidence("A flamingo feather", loc_id, None)
+    mgr.collect_evidence(description="A flamingo feather", location_id=loc_id, source_npc_id=None)
     evidence = get_evidence_for_case(db, case_id)
     assert len(evidence) == 1
     assert evidence[0]["description"] == "A flamingo feather"
@@ -52,8 +52,8 @@ def test_arrest_correct_suspect_does_not_reduce_reputation(case_setup):
 def test_get_evidence_summary_for_da(case_setup):
     db, case_id, loc_id, npc_id = case_setup
     mgr = CaseManager(conn=db, case_id=case_id)
-    mgr.collect_evidence("A feather", loc_id, None)
-    mgr.collect_evidence("A receipt", loc_id, npc_id)
+    mgr.collect_evidence(description="A feather", location_id=loc_id, source_npc_id=None)
+    mgr.collect_evidence(description="A receipt", location_id=loc_id, source_npc_id=npc_id)
     summary = mgr.get_evidence_summary()
     assert "A feather" in summary
     assert "A receipt" in summary
