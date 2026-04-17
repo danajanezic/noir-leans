@@ -70,7 +70,8 @@ CREATE TABLE IF NOT EXISTS evidence (
     source_npc_id INTEGER,
     location_id INTEGER NOT NULL,
     collected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (case_id) REFERENCES cases(id)
+    FOREIGN KEY (case_id) REFERENCES cases(id),
+    FOREIGN KEY (source_npc_id) REFERENCES npcs(id)
 );
 
 CREATE TABLE IF NOT EXISTS arrests (
@@ -97,6 +98,14 @@ CREATE TABLE IF NOT EXISTS mystery_archetypes (
     description TEXT NOT NULL,
     seed_prompt TEXT NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_cases_status ON cases(status);
+CREATE INDEX IF NOT EXISTS idx_conversation_history_character ON conversation_history(character_id);
+CREATE INDEX IF NOT EXISTS idx_conversation_history_case ON conversation_history(case_id);
+CREATE INDEX IF NOT EXISTS idx_npcs_case ON npcs(case_id);
+CREATE INDEX IF NOT EXISTS idx_evidence_case ON evidence(case_id);
+CREATE INDEX IF NOT EXISTS idx_arrests_case ON arrests(case_id);
+CREATE INDEX IF NOT EXISTS idx_locations_case ON locations(case_id);
 """
 
 
