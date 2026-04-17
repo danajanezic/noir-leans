@@ -1,12 +1,10 @@
 import json
-import time
 import pytest
-import json as json_module
-from itertools import cycle
 from noir.cases.manager import CaseManager
 from noir.persistence.repository import (
     create_player, create_case, create_location,
-    create_npc, get_player, get_evidence_for_case, get_history, get_case
+    create_npc, get_player, get_evidence_for_case, get_history, get_case,
+    update_case_status,
 )
 from noir.cases.trial import TrialSystem, DA_CHARACTER_ID, CLERK_CHARACTER_ID
 from noir.llm.mock import MockLLMBackend
@@ -61,16 +59,21 @@ def test_get_evidence_summary_for_da(case_setup):
     assert "A receipt" in summary
 
 
-DA_ACCEPT_RESPONSE = json_module.dumps({
+DA_ACCEPT_RESPONSE = json.dumps({
     "verdict": "accepted",
     "reasoning": "The flamingo feather is damning. I've seen worse cases. Barely.",
     "dialogue": "The People will take this case, detective. Don't embarrass us."
 })
 
-DA_REJECT_RESPONSE = json_module.dumps({
+DA_REJECT_RESPONSE = json.dumps({
     "verdict": "rejected",
     "reasoning": "A hunch is not evidence. Neither is optimism.",
     "dialogue": "Come back when you have something I can actually use in court."
+})
+
+CLERK_VERDICT_RESPONSE = json.dumps({
+    "outcome": "guilty",
+    "summary": "The jury deliberated for eleven minutes, including a water break."
 })
 
 
@@ -104,7 +107,7 @@ def test_courthouse_reports_trial_in_progress(case_setup):
     db, case_id, _, _ = case_setup
     llm = MockLLMBackend(responses=[DA_ACCEPT_RESPONSE])
     ts = TrialSystem(conn=db, case_id=case_id, llm=llm)
-    ts.submit_to_da("Strong evidence")
+    ts.submit_to_da(evidence_summary="Strong evidence")
     status = ts.check_courthouse()
     assert status["status"] == "in_trial"
 
@@ -113,6 +116,19 @@ def test_da_history_persists_across_calls(case_setup):
     db, case_id, _, _ = case_setup
     llm = MockLLMBackend(responses=[DA_ACCEPT_RESPONSE, DA_REJECT_RESPONSE])
     ts = TrialSystem(conn=db, case_id=case_id, llm=llm)
-    ts.submit_to_da("First evidence")
+    ts.submit_to_da(evidence_summary="First evidence")
     history = get_history(db, DA_CHARACTER_ID)
     assert len(history) >= 2
+
+
+def test_courthouse_elapsed_trial_generates_verdict(case_setup):
+    from datetime import datetime, timezone, timedelta
+    db, case_id, _, _ = case_setup
+    past_time = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    update_case_status(db, case_id=case_id, status="in_trial", trial_end_time=past_time)
+    llm = MockLLMBackend(responses=[CLERK_VERDICT_RESPONSE])
+    ts = TrialSystem(conn=db, case_id=case_id, llm=llm)
+    result = ts.check_courthouse()
+    assert result["status"] == "closed"
+    assert result["verdict"]["outcome"] == "guilty"
+    assert get_case(db, case_id)["status"] == "closed"

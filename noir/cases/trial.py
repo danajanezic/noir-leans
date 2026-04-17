@@ -47,8 +47,8 @@ class TrialSystem:
                        content=result.get("dialogue", ""), case_id=None)
 
         if result.get("verdict") == "accepted":
-            minutes = random.randint(5, 60)
-            end_time = (datetime.now(timezone.utc) + timedelta(minutes=minutes)).isoformat()
+            hours = random.randint(24, 72)
+            end_time = (datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat()
             update_case_status(self.conn, case_id=self.case_id, status="in_trial",
                                trial_end_time=end_time)
 
