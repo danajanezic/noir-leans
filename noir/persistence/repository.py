@@ -12,7 +12,7 @@ def get_player(conn: sqlite3.Connection) -> sqlite3.Row:
     return conn.execute("SELECT * FROM player WHERE id=1").fetchone()
 
 
-def update_player_reputation(conn: sqlite3.Connection, delta: int) -> None:
+def update_player_reputation(conn: sqlite3.Connection, *, delta: int) -> None:
     conn.execute("UPDATE player SET reputation = reputation + ? WHERE id=1", (delta,))
     conn.commit()
 
@@ -97,7 +97,7 @@ def get_active_cases(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute("SELECT * FROM cases WHERE status='active'").fetchall()
 
 
-def update_case_status(conn: sqlite3.Connection, case_id: int, status: str,
+def update_case_status(conn: sqlite3.Connection, *, case_id: int, status: str,
                        trial_end_time: str | None = None,
                        trial_outcome: str | None = None) -> None:
     conn.execute(
@@ -125,18 +125,18 @@ def get_npcs_for_case(conn: sqlite3.Connection, case_id: int) -> list[sqlite3.Ro
     return conn.execute("SELECT * FROM npcs WHERE case_id=?", (case_id,)).fetchall()
 
 
-def update_npc_location(conn: sqlite3.Connection, npc_id: int, location_id: int) -> None:
+def update_npc_location(conn: sqlite3.Connection, *, npc_id: int, location_id: int) -> None:
     conn.execute("UPDATE npcs SET current_location_id=? WHERE id=?", (location_id, npc_id))
     conn.commit()
 
 
-def set_character_location(conn: sqlite3.Connection, character_id: str, location_id: int) -> None:
+def set_character_location(conn: sqlite3.Connection, *, character_id: str, location_id: int) -> None:
+    now = datetime.now(timezone.utc).isoformat()
     conn.execute(
         """INSERT INTO character_locations (character_id, location_id, updated_at)
            VALUES (?, ?, ?)
            ON CONFLICT(character_id) DO UPDATE SET location_id=?, updated_at=?""",
-        (character_id, location_id, datetime.now(timezone.utc).isoformat(),
-         location_id, datetime.now(timezone.utc).isoformat())
+        (character_id, location_id, now, location_id, now)
     )
     conn.commit()
 
@@ -172,7 +172,7 @@ def create_arrest(conn: sqlite3.Connection, *, case_id: int, npc_id: int,
     return cur.lastrowid
 
 
-def update_arrest_verdict(conn: sqlite3.Connection, arrest_id: int, was_correct: bool) -> None:
+def update_arrest_verdict(conn: sqlite3.Connection, *, arrest_id: int, was_correct: bool) -> None:
     conn.execute("UPDATE arrests SET was_correct=? WHERE id=?", (1 if was_correct else 0, arrest_id))
     conn.commit()
 

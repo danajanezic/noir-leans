@@ -46,7 +46,7 @@ def test_player_create_and_get(db):
 
 def test_player_reputation_update(db):
     create_player(db)
-    update_player_reputation(db, -10)
+    update_player_reputation(db, delta=-10)
     assert get_player(db)["reputation"] == 90
 
 
@@ -86,7 +86,7 @@ def test_case_create_and_get(db):
 
 def test_case_status_update(db):
     case_id = create_case(db, archetype="Chinatown", title="Test", case_data={})
-    update_case_status(db, case_id, "submitted")
+    update_case_status(db, case_id=case_id, status="submitted")
     assert get_case(db, case_id)["status"] == "submitted"
 
 
