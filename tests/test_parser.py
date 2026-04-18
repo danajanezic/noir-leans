@@ -97,6 +97,18 @@ def test_flirt_buy_drink():
         assert cmd.intent == Intent.FLIRT, f"Failed for: {phrase}"
 
 
+def test_flirt_no_target_captured():
+    cmd = parse_command("flirt with Vera")
+    assert cmd.intent == Intent.FLIRT
+    assert cmd.target == ""
+
+
+def test_flirt_no_false_positives():
+    for phrase in ["charm bracelet", "compliment sandwich", "wink"]:
+        cmd = parse_command(phrase)
+        assert cmd.intent != Intent.FLIRT, f"Should not be FLIRT: {phrase}"
+
+
 def test_unknown_intent():
     cmd = parse_command("do the macarena")
     assert cmd.intent == Intent.UNKNOWN
