@@ -13,6 +13,12 @@ def create_backend(config: dict) -> LLMBackend:
             dialogue_model=config.get("dialogue_model", "sonnet"),
             structured_model=config.get("structured_model", "haiku"),
         )
+    if backend == "ollama":
+        from noir.llm.ollama import OllamaBackend
+        return OllamaBackend(
+            model=config.get("model", "qwen2.5:14b"),
+            host=config.get("host", "http://localhost:11434"),
+        )
     raise ValueError(
         f"Unknown backend '{backend}'. "
         f"Edit ~/.noir_detective/config.json to set a valid backend."
