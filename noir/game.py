@@ -12,7 +12,7 @@ from noir.persistence.repository import (
     create_player, get_player, get_partner, create_location,
     get_location, get_active_cases, get_case, get_fixed_locations,
     create_case, create_npc, set_character_location, get_npcs_for_case,
-    get_npc_affection, get_npc_relationship_flags,
+    get_npc_affection, get_npc_relationship_flags, increment_npc_affection,
     set_npc_clue_volunteered, set_npc_secret_revealed,
     get_partner_affection, increment_partner_affection,
     get_partner_dark_past_state, set_partner_dark_past_state,
@@ -193,8 +193,13 @@ class Game:
             player_input = console.input("[bold white]You:[/bold white] ")
             if player_input.strip().lower() == "done":
                 break
-            response = npc.speak(player_input)
+            cmd = parse_command(player_input)
+            if cmd.intent == Intent.FLIRT:
+                self._handle_npc_flirt(npc_row["id"])
+            rel_ctx = self._npc_relationship_context(npc_row["id"])
+            response = npc.speak(rel_ctx + player_input)
             show_dialogue(npc_row["name"], response)
+            self._check_npc_romance_milestone(npc_row["id"], npc)
 
     def handle_talk_partner(self) -> None:
         if self.companion is None:
@@ -266,6 +271,37 @@ class Game:
         }
         note = stage_notes.get(stage, "")
         return f"[Relationship with detective: {stage}. {note}] "
+
+    def _handle_npc_flirt(self, npc_id: int) -> None:
+        affection = get_npc_affection(self.conn, npc_id)
+        stage = _affection_to_stage(affection)
+        delta = 4 if stage == "cold" else 8
+        increment_npc_affection(self.conn, npc_id, delta)
+
+    def _check_npc_romance_milestone(self, npc_id: int, npc) -> None:
+        affection = get_npc_affection(self.conn, npc_id)
+        stage = _affection_to_stage(affection)
+        flags = get_npc_relationship_flags(self.conn, npc_id)
+
+        if stage == "smitten" and not flags["clue_volunteered"]:
+            set_npc_clue_volunteered(self.conn, npc_id)
+            prompt = (
+                "[You are compelled to volunteer something useful — a piece of your alibi, "
+                "a clue you witnessed, something you did not intend to share. "
+                "Stay in character. Do not break the fiction. One sentence of genuine disclosure.]"
+            )
+            response = npc.speak(prompt)
+            show_dialogue(npc.name, response)
+
+        elif stage == "devoted" and not flags["secret_revealed"]:
+            set_npc_secret_revealed(self.conn, npc_id)
+            prompt = (
+                "[You have made a choice about this person. "
+                "Tell them your secret — the thing you have been hiding. "
+                "Stay in character. This is the moment you decide to trust them.]"
+            )
+            response = npc.speak(prompt)
+            show_dialogue(npc.name, response)
 
     def _companion_context(self, player_input: str) -> str:
         partner_affection = get_partner_affection(self.conn)
