@@ -40,7 +40,11 @@ VALID_CASE = {
             "alibi": "Claims she was at the flamingo sanctuary",
             "secret": "She owns the flamingos",
             "personality": "Aggressively cheerful",
-            "speech_style": "Speaks exclusively in the third person"
+            "speech_style": "Speaks exclusively in the third person",
+            "race": "White",
+            "political_connections": "None",
+            "backstory": "Raised flamingos since childhood, turned it into a criminal empire.",
+            "routine": "Opens the sanctuary at dawn, counts flamingos at dusk."
         },
         {
             "name": "Reginald Smoot",
@@ -48,7 +52,11 @@ VALID_CASE = {
             "alibi": "Was definitely not at the scene",
             "secret": "Owes Gerald money",
             "personality": "Aggressively normal",
-            "speech_style": "Uses the wrong word constantly"
+            "speech_style": "Uses the wrong word constantly",
+            "race": "White",
+            "political_connections": "None",
+            "backstory": "Failed accordion salesman turned debtor.",
+            "routine": "Drinks at the Rusty Anchor every evening."
         }
     ],
     "clues": [
