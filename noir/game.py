@@ -215,9 +215,9 @@ class Game:
             cmd = parse_command(player_input)
             if cmd.intent == Intent.FLIRT:
                 self._handle_partner_flirt()
+            self._check_partner_romance_milestone()
             response = self.companion.speak(self._companion_context(player_input))
             show_dialogue(self.companion.name, response)
-            self._check_partner_romance_milestone()
 
     def handle_arrest(self, target: str) -> None:
         if self.active_case_id is None or self.case_manager is None:
