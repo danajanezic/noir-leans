@@ -7,7 +7,7 @@ from rich.panel import Panel
 from noir.display import (
     show_location, show_dialogue, show_player_input_prompt, show_evidence_collected,
     show_arrest_confirmation, show_reputation, show_trial_status,
-    show_help, console
+    show_help, show_relationships, console
 )
 from noir.parser import parse_command, Intent
 from noir.llm.base import LLMBackend
@@ -307,6 +307,27 @@ class Game:
         else:
             console.print("[dim]Nothing here yet. Take a case to the DA first.[/dim]")
 
+    def handle_slash_romance(self) -> None:
+        partner_row = get_partner(self.conn)
+        partner_name = partner_row["name"] if partner_row else None
+        partner_stage = None
+        if partner_row:
+            affection = get_partner_affection(self.conn)
+            partner_stage = _affection_to_stage(affection, is_partner=True)
+
+        npc_rels = []
+        if self.active_case_id:
+            npcs = get_npcs_for_case(self.conn, self.active_case_id)
+            for npc in npcs:
+                affection = get_npc_affection(self.conn, npc["id"])
+                if affection > 0:
+                    npc_rels.append({
+                        "name": npc["name"],
+                        "role": npc["role"],
+                        "stage": _affection_to_stage(affection),
+                    })
+        show_relationships(partner_name, partner_stage, npc_rels)
+
     def _npc_relationship_context(self, npc_id: int) -> str:
         affection = get_npc_affection(self.conn, npc_id)
         stage = _affection_to_stage(affection)
@@ -564,5 +585,7 @@ class Game:
                     show_evidence_collected(cmd.target)
             elif cmd.intent == Intent.HELP:
                 show_help()
+            elif raw.strip().lower().startswith("/romance"):
+                self.handle_slash_romance()
             elif cmd.intent == Intent.UNKNOWN:
                 console.print(f"[dim]'{cmd.raw}' — not sure what to do with that.[/dim]")

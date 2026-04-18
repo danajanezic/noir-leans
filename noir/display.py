@@ -74,6 +74,21 @@ def show_trial_status(case_title: str, status: str, time_remaining: str | None) 
     console.print(Panel(body, title="[bold]Courthouse[/bold]", border_style="blue"))
 
 
+def show_relationships(partner_name: str | None, partner_stage: str | None,
+                       npc_relationships: list[dict]) -> None:
+    lines = []
+    if partner_name and partner_stage:
+        lines.append(f"[magenta]♥[/magenta] {partner_name} [dim](partner — {partner_stage})[/dim]")
+    for rel in npc_relationships:
+        stage = rel["stage"]
+        color = {"cold": "dim", "curious": "white", "warm": "yellow",
+                 "smitten": "magenta", "devoted": "red"}.get(stage, "white")
+        lines.append(f"[{color}]· {rel['name']} ({rel['role']}) — {stage}[/{color}]")
+    body = "\n".join(lines) if lines else "[dim]No significant relationships yet.[/dim]"
+    console.print(Panel(body, title="[bold magenta]Relationships[/bold magenta]",
+                        border_style="magenta"))
+
+
 def show_help() -> None:
     console.print(Panel(
         "[bold]Movement:[/bold]\n"
@@ -88,6 +103,8 @@ def show_help() -> None:
         "[bold]Case:[/bold]\n"
         "  go to the DA — submit your case\n"
         "  visit the courthouse — check trial status\n\n"
+        "[bold]Case notes:[/bold]\n"
+        "  /romance — relationship status\n\n"
         "[bold]Other:[/bold]\n"
         "  help — show this",
         title="[bold yellow]Detective's Handbook[/bold yellow]",
