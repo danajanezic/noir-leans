@@ -203,7 +203,7 @@ class Game:
             player_input = console.input("[bold white]You:[/bold white] ")
             if player_input.strip().lower() == "done":
                 break
-            response = self.companion.speak(player_input)
+            response = self.companion.speak(self._companion_context(player_input))
             show_dialogue(self.companion.name, response)
 
     def handle_arrest(self, target: str) -> None:
@@ -257,7 +257,7 @@ class Game:
         stage = _affection_to_stage(affection)
         stage_notes = {
             "cold": "You are wary or indifferent to this person's attention.",
-            "curious": "You have noticed this person's interest. You are intrigued but guarded.",
+            "curious": "You find yourself intrigued by this person, though you keep your guard up.",
             "warm": "You feel warmly toward this person. You are more open than usual, and you hint that there is more to know about you.",
             "smitten": "You are visibly affected by this person. You are conflicted — this is not a good time for feelings. You find yourself volunteering more than you intended.",
             "devoted": "You have made a choice about this person. You will protect them. You will tell them the truth.",
