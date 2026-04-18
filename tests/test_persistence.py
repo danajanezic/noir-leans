@@ -11,6 +11,11 @@ from noir.persistence.repository import (
     add_evidence, get_evidence_for_case,
     create_arrest,
     save_archetype, get_archetype, list_archetypes,
+    get_npc_affection, set_npc_affection, increment_npc_affection,
+    get_npc_relationship_flags, set_npc_clue_volunteered, set_npc_secret_revealed,
+    get_partner_affection, increment_partner_affection,
+    get_partner_dark_past_state, set_partner_dark_past_state, set_partner_dark_past,
+    get_partner_dark_past,
 )
 
 
@@ -173,3 +178,47 @@ def test_cases_has_case_type_column():
     assert "case_type" in cols
     assert cols["case_type"]["dflt_value"] == "'standard'"
     conn.close()
+
+
+def test_npc_affection_defaults_to_zero(db):
+    case_id = create_case(db, archetype="Test", title="T", case_data={"x": 1})
+    loc_id = create_location(db, name="Loc", description="A loc", is_fixed=False, case_id=case_id)
+    npc_id = create_npc(db, case_id=case_id, name="Rex", role="suspect",
+                        system_prompt="you are Rex", current_location_id=loc_id)
+    assert get_npc_affection(db, npc_id) == 0
+
+
+def test_increment_npc_affection(db):
+    case_id = create_case(db, archetype="Test", title="T", case_data={"x": 1})
+    loc_id = create_location(db, name="Loc", description="A loc", is_fixed=False, case_id=case_id)
+    npc_id = create_npc(db, case_id=case_id, name="Rex", role="suspect",
+                        system_prompt="you are Rex", current_location_id=loc_id)
+    increment_npc_affection(db, npc_id, delta=8)
+    assert get_npc_affection(db, npc_id) == 8
+    increment_npc_affection(db, npc_id, delta=8)
+    assert get_npc_affection(db, npc_id) == 16
+
+
+def test_npc_affection_capped_at_100(db):
+    case_id = create_case(db, archetype="Test", title="T", case_data={"x": 1})
+    loc_id = create_location(db, name="Loc", description="A loc", is_fixed=False, case_id=case_id)
+    npc_id = create_npc(db, case_id=case_id, name="Rex", role="suspect",
+                        system_prompt="you are Rex", current_location_id=loc_id)
+    increment_npc_affection(db, npc_id, delta=200)
+    assert get_npc_affection(db, npc_id) == 100
+
+
+def test_partner_affection(db):
+    save_partner(db, name="Vera", sex="female", personality_archetype="cynic",
+                 speech_style="terse", relationship_stance="exasperated", system_prompt="you are Vera")
+    assert get_partner_affection(db) == 0
+    increment_partner_affection(db, delta=15)
+    assert get_partner_affection(db) == 15
+
+
+def test_partner_dark_past_state(db):
+    save_partner(db, name="Vera", sex="female", personality_archetype="cynic",
+                 speech_style="terse", relationship_stance="exasperated", system_prompt="you are Vera")
+    assert get_partner_dark_past_state(db) == "none"
+    set_partner_dark_past_state(db, "flagged")
+    assert get_partner_dark_past_state(db) == "flagged"
