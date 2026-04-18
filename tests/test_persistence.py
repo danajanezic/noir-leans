@@ -137,12 +137,18 @@ def test_archetype_save_and_list(db):
     assert get_archetype(db, "Agatha Christie")["description"] == "Closed-room social intrigue"
 
 
-def test_npc_relationships_table_exists():
+def test_npc_relationships_has_correct_columns():
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     create_schema(conn)
-    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
-    assert "npc_relationships" in tables
+    cols = {row[1]: row for row in conn.execute("PRAGMA table_info(npc_relationships)").fetchall()}
+    assert "npc_id" in cols
+    assert "affection" in cols
+    assert "clue_volunteered" in cols
+    assert "secret_revealed" in cols
+    assert cols["affection"]["dflt_value"] == "0"
+    assert cols["clue_volunteered"]["dflt_value"] == "0"
+    assert cols["secret_revealed"]["dflt_value"] == "0"
     conn.close()
 
 
@@ -150,10 +156,12 @@ def test_partner_has_romance_columns():
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     create_schema(conn)
-    cols = {row[1] for row in conn.execute("PRAGMA table_info(partner)").fetchall()}
+    cols = {row[1]: row for row in conn.execute("PRAGMA table_info(partner)").fetchall()}
     assert "affection" in cols
     assert "dark_past_state" in cols
     assert "dark_past" in cols
+    assert cols["affection"]["dflt_value"] == "0"
+    assert cols["dark_past_state"]["dflt_value"] == "'none'"
     conn.close()
 
 
@@ -161,6 +169,7 @@ def test_cases_has_case_type_column():
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     create_schema(conn)
-    cols = {row[1] for row in conn.execute("PRAGMA table_info(cases)").fetchall()}
+    cols = {row[1]: row for row in conn.execute("PRAGMA table_info(cases)").fetchall()}
     assert "case_type" in cols
+    assert cols["case_type"]["dflt_value"] == "'standard'"
     conn.close()
