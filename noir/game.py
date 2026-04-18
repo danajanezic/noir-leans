@@ -40,6 +40,8 @@ FIXED_LOCATIONS = [
 
 
 def _affection_to_stage(affection: int, is_partner: bool = False) -> str:
+    if affection is None:
+        affection = 0
     if is_partner:
         if affection < 20: return "professional"
         if affection < 40: return "tension"
