@@ -135,7 +135,6 @@ class Game:
         )
 
     def _seed_case_locations_and_npcs(self, case_id: int, case_data: dict, fixed: dict) -> None:
-        import random as _random
         loc_map = {}
         for loc in case_data.get("locations", []):
             loc_id = create_location(self.conn, name=loc["name"],
@@ -147,7 +146,7 @@ class Game:
         npc_locs = {k: v for k, v in loc_map.items() if k.lower() != found_at} or loc_map
 
         for suspect in case_data.get("suspects", []):
-            loc_name = _random.choice(list(npc_locs.keys())) if npc_locs else None
+            loc_name = random.choice(list(npc_locs.keys())) if npc_locs else None
             loc_id = npc_locs.get(loc_name) or next(iter(fixed.values()))
             relationships = suspect.get("relationships", [])
             rel_text = " ".join(
@@ -393,6 +392,13 @@ class Game:
             "UPDATE cases SET case_type='partner_dark_past' WHERE id=?", (case_id,)
         )
         self.conn.commit()
+
+        # Close the previous active case if one exists
+        if self.active_case_id is not None:
+            self.conn.execute(
+                "UPDATE cases SET status='closed' WHERE id=?", (self.active_case_id,)
+            )
+            self.conn.commit()
 
         self.active_case_id = case_id
         self._seed_case_locations_and_npcs(case_id, case_data, fixed)

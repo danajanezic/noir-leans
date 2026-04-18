@@ -190,6 +190,18 @@ class MysteryGenerator:
             if not _validate_case(case):
                 self.llm._fatal()
 
+        if case.get("killer_name", "").lower() == partner_name.lower():
+            # Partner cannot be the killer — the arc requires moral ambiguity
+            # Re-prompt with correction
+            correction = (
+                f"The generated case incorrectly sets {partner_name} as the killer. "
+                f"{partner_name} must appear as a suspect or witness but must NOT be killer_name. "
+                "Regenerate with a different killer who is actually guilty."
+            )
+            case = self.llm.query_structured(DARK_PAST_CASE_SYSTEM_PROMPT, [], correction)
+            if not _validate_case(case) or case.get("killer_name", "").lower() == partner_name.lower():
+                self.llm._fatal()
+
         return case, archetype_name
 
     def pick_random_theme(self) -> str:
