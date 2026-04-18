@@ -180,7 +180,13 @@ class MysteryGenerator:
 
         case = self.llm.query_structured(DARK_PAST_CASE_SYSTEM_PROMPT, [], prompt)
         if not _validate_case(case):
-            case = self.llm.query_structured(DARK_PAST_CASE_SYSTEM_PROMPT, [], prompt)
+            error_msg = (
+                f"The generated case is missing required fields or has invalid structure.\n"
+                f"Required top-level fields: {REQUIRED_FIELDS}\n"
+                f"Generated case keys: {set(case.keys())}\n"
+                "Please regenerate with the complete schema."
+            )
+            case = self.llm.query_structured(DARK_PAST_CASE_SYSTEM_PROMPT, [], error_msg)
             if not _validate_case(case):
                 self.llm._fatal()
 
