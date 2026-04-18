@@ -226,6 +226,9 @@ class Game:
             player_input = console.input("[bold white]You:[/bold white] ")
             if player_input.strip().lower() == "done":
                 break
+            if player_input.strip().lower().startswith("/romance"):
+                self.handle_slash_romance()
+                continue
             cmd = parse_command(player_input)
             if cmd.intent == Intent.FLIRT:
                 self._handle_npc_flirt(npc_row["id"])
@@ -241,6 +244,9 @@ class Game:
         console.print(f"\n[bold]Talking to your partner...[/bold] (type 'done' to stop)\n")
         while True:
             player_input = console.input("[bold white]You:[/bold white] ")
+            if player_input.strip().lower().startswith("/romance"):
+                self.handle_slash_romance()
+                continue
             if player_input.strip().startswith("/"):
                 continue
             if player_input.strip().lower() == "done":

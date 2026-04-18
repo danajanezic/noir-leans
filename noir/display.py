@@ -1,5 +1,6 @@
 import time
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.rule import Rule
 from rich import box
@@ -78,12 +79,12 @@ def show_relationships(partner_name: str | None, partner_stage: str | None,
                        npc_relationships: list[dict]) -> None:
     lines = []
     if partner_name and partner_stage:
-        lines.append(f"[magenta]♥ {partner_name} (partner — {partner_stage})[/magenta]")
+        lines.append(f"[magenta]♥ {escape(partner_name)} (partner — {escape(partner_stage)})[/magenta]")
     for rel in npc_relationships:
         stage = rel["stage"]
         color = {"cold": "dim", "curious": "white", "warm": "yellow",
                  "smitten": "magenta", "devoted": "red"}.get(stage, "white")
-        lines.append(f"[{color}]· {rel['name']} ({rel['role']}) — {stage}[/{color}]")
+        lines.append(f"[{color}]· {escape(rel['name'])} ({escape(rel['role'])}) — {stage}[/{color}]")
     body = "\n".join(lines) if lines else "[dim]No significant relationships yet.[/dim]"
     console.print(Panel(body, title="[bold magenta]Relationships[/bold magenta]",
                         border_style="magenta"))
