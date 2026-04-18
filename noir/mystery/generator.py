@@ -121,3 +121,15 @@ class MysteryGenerator:
         if not archetypes:
             return "Agatha Christie"
         return random.choice(archetypes)["name"]
+
+    def pick_random_theme(self) -> str:
+        themes = [
+            "the lengths people will go to for love",
+            "loyalty that became a trap",
+            "a debt that could never be repaid",
+            "the moment an ordinary person crossed a line",
+            "what fear makes people capable of",
+            "the difference between justice and revenge",
+            "survival at someone else's expense",
+        ]
+        return random.choice(themes)

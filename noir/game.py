@@ -39,6 +39,23 @@ FIXED_LOCATIONS = [
 ]
 
 
+_DARK_PAST_TRIGGERS = {
+    "what did you want to tell me",
+    "you said you had something",
+    "what's on your mind",
+    "what's bothering you",
+    "you can tell me",
+    "tell me",
+    "what is it",
+    "i'm listening",
+}
+
+
+def _is_dark_past_invitation(text: str) -> bool:
+    t = text.strip().lower().rstrip("?.,!")
+    return any(trigger in t for trigger in _DARK_PAST_TRIGGERS)
+
+
 def _affection_to_stage(affection: int, is_partner: bool = False) -> str:
     if affection is None:
         affection = 0
@@ -215,6 +232,10 @@ class Game:
             cmd = parse_command(player_input)
             if cmd.intent == Intent.FLIRT:
                 self._handle_partner_flirt()
+            dark_past_state = get_partner_dark_past_state(self.conn)
+            if dark_past_state == "flagged" and _is_dark_past_invitation(player_input):
+                self._trigger_dark_past_revelation()
+                break
             self._check_partner_romance_milestone()
             response = self.companion.speak(self._companion_context(player_input))
             show_dialogue(self.companion.name, response)
@@ -319,6 +340,25 @@ class Game:
 
         if stage == "devoted" and dark_past_state == "none":
             set_partner_dark_past_state(self.conn, "flagged")
+
+    def _trigger_dark_past_revelation(self) -> None:
+        gen = MysteryGenerator(llm=self.llm, conn=self.conn)
+        theme = gen.pick_random_theme() or "the lengths people will go to for love"
+
+        result = self.companion.generate_dark_past(theme)
+        backstory = result.get("backstory", "")
+        crime_summary = result.get("crime_summary", "")
+
+        set_partner_dark_past(self.conn, backstory)
+        set_partner_dark_past_state(self.conn, "revealed")
+
+        show_dialogue(self.companion.name, backstory)
+
+        console.print("\n[dim]The case tied to this will come when you are ready...[/dim]\n")
+        self._start_dark_past_case(crime_summary, theme)
+
+    def _start_dark_past_case(self, crime_summary: str, theme: str) -> None:
+        pass  # implemented in Task 8
 
     def _companion_context(self, player_input: str) -> str:
         partner_affection = get_partner_affection(self.conn)
