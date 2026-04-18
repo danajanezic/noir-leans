@@ -134,6 +134,43 @@ class Game:
             f"You'll remember that eventually. Probably.\"[/italic]\n"
         )
 
+    def _seed_case_locations_and_npcs(self, case_id: int, case_data: dict, fixed: dict) -> None:
+        import random as _random
+        loc_map = {}
+        for loc in case_data.get("locations", []):
+            loc_id = create_location(self.conn, name=loc["name"],
+                                     description=loc["description"],
+                                     is_fixed=False, case_id=case_id)
+            loc_map[loc["name"]] = loc_id
+
+        found_at = case_data.get("victim", {}).get("found_at", "").lower()
+        npc_locs = {k: v for k, v in loc_map.items() if k.lower() != found_at} or loc_map
+
+        for suspect in case_data.get("suspects", []):
+            loc_name = _random.choice(list(npc_locs.keys())) if npc_locs else None
+            loc_id = npc_locs.get(loc_name) or next(iter(fixed.values()))
+            relationships = suspect.get("relationships", [])
+            rel_text = " ".join(
+                f"Your relationship to {r['name']}: {r['relationship']}."
+                for r in relationships if r.get("name") and r.get("relationship")
+            )
+            npc_system_prompt = (
+                f"You are {suspect['name']}, a {suspect['role']} in a murder investigation. "
+                f"Personality: {suspect['personality']}. Speech style: {suspect['speech_style']}. "
+                f"Your alibi (which may or may not be true): {suspect['alibi']}. "
+                f"Your secret: {suspect['secret']}. "
+                + (f"{rel_text} " if rel_text else "")
+                + "You are in Noirleans, 1935 — Depression-era, corrupt to the bone, jazz leaking out of every cracked window. Stay in character. "
+                "Be evasive about your secret but not impossibly so."
+            )
+            npc_id = create_npc(self.conn, case_id=case_id, name=suspect["name"],
+                                role=suspect["role"], system_prompt=npc_system_prompt,
+                                current_location_id=loc_id)
+            set_character_location(self.conn, character_id=f"npc_{npc_id}", location_id=loc_id)
+
+        self.world = World(conn=self.conn, active_case_id=case_id)
+        self.case_manager = CaseManager(conn=self.conn, case_id=case_id)
+
     def start_new_case(self) -> None:
         gen = MysteryGenerator(llm=self.llm, conn=self.conn)
         archetype = gen.pick_random_archetype()
@@ -145,30 +182,7 @@ class Game:
                               title=case_data["title"], case_data=case_data)
         self.active_case_id = case_id
 
-        loc_map: dict[str, int] = {}
-        for loc in case_data.get("locations", []):
-            loc_id = create_location(self.conn, name=loc["name"], description=loc["description"],
-                                     is_fixed=False, case_id=case_id)
-            loc_map[loc["name"]] = loc_id
-
-        for suspect in case_data.get("suspects", []):
-            loc_name = random.choice(list(loc_map.keys())) if loc_map else None
-            loc_id = loc_map.get(loc_name) or next(iter(fixed.values()))
-            npc_system_prompt = (
-                f"You are {suspect['name']}, a {suspect['role']} in a murder investigation. "
-                f"Personality: {suspect['personality']}. Speech style: {suspect['speech_style']}. "
-                f"Your alibi (which may or may not be true): {suspect['alibi']}. "
-                f"Your secret: {suspect['secret']}. "
-                f"You are in an absurdist noir world. Stay in character. "
-                f"Be evasive about your secret but not impossibly so."
-            )
-            npc_id = create_npc(self.conn, case_id=case_id, name=suspect["name"],
-                                role=suspect["role"], system_prompt=npc_system_prompt,
-                                current_location_id=loc_id)
-            set_character_location(self.conn, character_id=f"npc_{npc_id}", location_id=loc_id)
-
-        self.world = World(conn=self.conn, active_case_id=case_id)
-        self.case_manager = CaseManager(conn=self.conn, case_id=case_id)
+        self._seed_case_locations_and_npcs(case_id, case_data, fixed)
 
         console.print(f"\n[bold red]NEW CASE: {case_data['title']}[/bold red]")
         console.print(
@@ -360,7 +374,34 @@ class Game:
         set_partner_dark_past_state(self.conn, "revealed")
 
     def _start_dark_past_case(self, crime_summary: str, theme: str) -> None:
-        pass  # implemented in Task 8
+        from noir.mystery.generator import MysteryGenerator
+        gen = MysteryGenerator(llm=self.llm, conn=self.conn)
+        partner_row = get_partner(self.conn)
+        partner_name = partner_row["name"] if partner_row else "your partner"
+
+        case_data, archetype = gen.generate_from_dark_past(
+            crime_summary=crime_summary,
+            theme=theme,
+            partner_name=partner_name,
+        )
+
+        fixed = {loc["name"]: loc["id"] for loc in get_fixed_locations(self.conn)}
+        case_id = create_case(self.conn, archetype=archetype,
+                              title=case_data["title"], case_data=case_data)
+
+        self.conn.execute(
+            "UPDATE cases SET case_type='partner_dark_past' WHERE id=?", (case_id,)
+        )
+        self.conn.commit()
+
+        self.active_case_id = case_id
+        self._seed_case_locations_and_npcs(case_id, case_data, fixed)
+
+        console.print(f"\n[bold red]NEW CASE: {case_data['title']}[/bold red]")
+        console.print(
+            f"[italic]Victim: {case_data['victim']['name']} — "
+            f"{case_data['victim']['cause_of_death']}[/italic]\n"
+        )
 
     def _companion_context(self, player_input: str) -> str:
         partner_affection = get_partner_affection(self.conn)
