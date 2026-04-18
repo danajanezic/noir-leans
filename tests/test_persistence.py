@@ -222,3 +222,45 @@ def test_partner_dark_past_state(db):
     assert get_partner_dark_past_state(db) == "none"
     set_partner_dark_past_state(db, "flagged")
     assert get_partner_dark_past_state(db) == "flagged"
+
+
+def test_npc_affection_floor(db):
+    case_id = create_case(db, archetype="Test", title="T", case_data={"x": 1})
+    loc_id = create_location(db, name="Loc", description="A loc", is_fixed=False, case_id=case_id)
+    npc_id = create_npc(db, case_id=case_id, name="Rex", role="suspect",
+                        system_prompt="you are Rex", current_location_id=loc_id)
+    increment_npc_affection(db, npc_id, delta=-50)
+    assert get_npc_affection(db, npc_id) == 0
+
+
+def test_set_npc_affection_cap(db):
+    case_id = create_case(db, archetype="Test", title="T", case_data={"x": 1})
+    loc_id = create_location(db, name="Loc", description="A loc", is_fixed=False, case_id=case_id)
+    npc_id = create_npc(db, case_id=case_id, name="Rex", role="suspect",
+                        system_prompt="you are Rex", current_location_id=loc_id)
+    set_npc_affection(db, npc_id, 150)
+    assert get_npc_affection(db, npc_id) == 100
+
+
+def test_npc_relationship_flags(db):
+    case_id = create_case(db, archetype="Test", title="T", case_data={"x": 1})
+    loc_id = create_location(db, name="Loc", description="A loc", is_fixed=False, case_id=case_id)
+    npc_id = create_npc(db, case_id=case_id, name="Rex", role="suspect",
+                        system_prompt="you are Rex", current_location_id=loc_id)
+    flags = get_npc_relationship_flags(db, npc_id)
+    assert flags == {"clue_volunteered": 0, "secret_revealed": 0}
+    set_npc_clue_volunteered(db, npc_id)
+    flags = get_npc_relationship_flags(db, npc_id)
+    assert flags["clue_volunteered"] == 1
+    assert flags["secret_revealed"] == 0
+    set_npc_secret_revealed(db, npc_id)
+    flags = get_npc_relationship_flags(db, npc_id)
+    assert flags["secret_revealed"] == 1
+
+
+def test_partner_dark_past_content(db):
+    save_partner(db, name="Vera", sex="female", personality_archetype="cynic",
+                 speech_style="terse", relationship_stance="exasperated", system_prompt="you are Vera")
+    assert get_partner_dark_past(db) is None
+    set_partner_dark_past(db, "I did a terrible thing in 1928.")
+    assert get_partner_dark_past(db) == "I did a terrible thing in 1928."

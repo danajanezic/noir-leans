@@ -118,7 +118,6 @@ CREATE INDEX IF NOT EXISTS idx_npcs_case ON npcs(case_id);
 CREATE INDEX IF NOT EXISTS idx_evidence_case ON evidence(case_id);
 CREATE INDEX IF NOT EXISTS idx_arrests_case ON arrests(case_id);
 CREATE INDEX IF NOT EXISTS idx_locations_case ON locations(case_id);
-CREATE INDEX IF NOT EXISTS idx_npc_relationships_npc ON npc_relationships(npc_id);
 """
 
 

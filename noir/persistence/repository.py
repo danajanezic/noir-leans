@@ -274,11 +274,13 @@ def get_partner_affection(conn: sqlite3.Connection) -> int:
 
 
 def increment_partner_affection(conn: sqlite3.Connection, delta: int) -> int:
-    current = get_partner_affection(conn)
-    new_val = max(0, min(100, current + delta))
-    conn.execute("UPDATE partner SET affection=? WHERE id=1", (new_val,))
+    conn.execute(
+        "UPDATE partner SET affection = MIN(100, MAX(0, affection + ?)) WHERE id=1",
+        (delta,)
+    )
     conn.commit()
-    return new_val
+    row = conn.execute("SELECT affection FROM partner WHERE id=1").fetchone()
+    return row["affection"] if row else 0
 
 
 def get_partner_dark_past_state(conn: sqlite3.Connection) -> str:
