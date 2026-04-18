@@ -14,6 +14,7 @@ class Intent(Enum):
     EXAMINE = auto()
     LOOK = auto()
     HELP = auto()
+    FLIRT = auto()
     UNKNOWN = auto()
 
 
@@ -30,6 +31,10 @@ _COLLECT_WORDS = r"(?:pick up|take|grab|collect|pocket)"
 _EXAMINE_WORDS = r"(?:examine|look at|inspect|check|study|scrutinize)"
 _LOOK_WORDS = r"(?:look around|where am i|what do i see|look|survey)"
 _ARREST_WORDS = r"(?:arrest|collar|nab|apprehend|bust)"
+_FLIRT_WORDS = r"(?:flirt with|wink at|charm|compliment)"
+_DRINK_WORDS = r"(?:buy (?:her|him|them|you) a drink|let me buy you a drink)"
+_COMPLIMENT_WORDS = r"(?:you're|you are|you look) (?:beautiful|lovely|incredible|stunning|fascinating|gorgeous|remarkable)"
+_ROMANTIC_Q_WORDS = r"(?:are you (?:married|seeing anyone)|do you have someone)"
 
 _PARTNER_WORDS = r"(?:my partner|partner|the partner)"
 
@@ -45,6 +50,10 @@ _RULES: list[tuple[str, Intent, int]] = [
     (rf"^{_COLLECT_WORDS}\s+(.+)$", Intent.COLLECT, 1),
     (rf"^{_EXAMINE_WORDS}\s+(.+)$", Intent.EXAMINE, 1),
     (rf"^{_GO_WORDS}\s+(.+)$", Intent.GO, 1),
+    (rf"^{_FLIRT_WORDS}\b", Intent.FLIRT, 0),
+    (rf"^{_DRINK_WORDS}$", Intent.FLIRT, 0),
+    (rf"^{_COMPLIMENT_WORDS}$", Intent.FLIRT, 0),
+    (rf"^{_ROMANTIC_Q_WORDS}$", Intent.FLIRT, 0),
     (rf"^{_LOOK_WORDS}$", Intent.LOOK, 0),
     (r"^help\b", Intent.HELP, 0),
 ]

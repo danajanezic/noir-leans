@@ -73,6 +73,30 @@ def test_help_intent():
     assert cmd.intent == Intent.HELP
 
 
+def test_flirt_explicit():
+    for phrase in ["flirt with Vera", "wink at the bartender", "charm the witness"]:
+        cmd = parse_command(phrase)
+        assert cmd.intent == Intent.FLIRT, f"Failed for: {phrase}"
+
+
+def test_flirt_compliment():
+    for phrase in ["you're beautiful", "you look lovely", "you're fascinating", "you're incredible"]:
+        cmd = parse_command(phrase)
+        assert cmd.intent == Intent.FLIRT, f"Failed for: {phrase}"
+
+
+def test_flirt_romantic_question():
+    for phrase in ["are you married", "do you have someone", "are you seeing anyone"]:
+        cmd = parse_command(phrase)
+        assert cmd.intent == Intent.FLIRT, f"Failed for: {phrase}"
+
+
+def test_flirt_buy_drink():
+    for phrase in ["buy her a drink", "buy him a drink", "buy them a drink", "let me buy you a drink"]:
+        cmd = parse_command(phrase)
+        assert cmd.intent == Intent.FLIRT, f"Failed for: {phrase}"
+
+
 def test_unknown_intent():
     cmd = parse_command("do the macarena")
     assert cmd.intent == Intent.UNKNOWN
