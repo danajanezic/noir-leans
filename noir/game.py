@@ -208,10 +208,16 @@ class Game:
         console.print(f"\n[bold]Talking to your partner...[/bold] (type 'done' to stop)\n")
         while True:
             player_input = console.input("[bold white]You:[/bold white] ")
+            if player_input.strip().startswith("/"):
+                continue
             if player_input.strip().lower() == "done":
                 break
+            cmd = parse_command(player_input)
+            if cmd.intent == Intent.FLIRT:
+                self._handle_partner_flirt()
             response = self.companion.speak(self._companion_context(player_input))
             show_dialogue(self.companion.name, response)
+            self._check_partner_romance_milestone()
 
     def handle_arrest(self, target: str) -> None:
         if self.active_case_id is None or self.case_manager is None:
@@ -299,6 +305,20 @@ class Game:
             )
             response = npc.speak(prompt, record=False)
             show_dialogue(npc.name, response)
+
+    def _handle_partner_flirt(self) -> None:
+        affection = get_partner_affection(self.conn)
+        stage = _affection_to_stage(affection, is_partner=True)
+        delta = 4 if stage == "professional" else 8
+        increment_partner_affection(self.conn, delta)
+
+    def _check_partner_romance_milestone(self) -> None:
+        affection = get_partner_affection(self.conn)
+        stage = _affection_to_stage(affection, is_partner=True)
+        dark_past_state = get_partner_dark_past_state(self.conn)
+
+        if stage == "devoted" and dark_past_state == "none":
+            set_partner_dark_past_state(self.conn, "flagged")
 
     def _companion_context(self, player_input: str) -> str:
         partner_affection = get_partner_affection(self.conn)
