@@ -301,3 +301,9 @@ def set_partner_dark_past(conn: sqlite3.Connection, dark_past: str) -> None:
 def get_partner_dark_past(conn: sqlite3.Connection) -> str | None:
     row = conn.execute("SELECT dark_past FROM partner WHERE id=1").fetchone()
     return row["dark_past"] if row else None
+
+
+def remove_partner(conn: sqlite3.Connection) -> None:
+    conn.execute("UPDATE partner SET dark_past_state='lost' WHERE id=1")
+    conn.execute("DELETE FROM conversation_history WHERE character_id='partner'")
+    conn.commit()

@@ -1,5 +1,8 @@
+import json
 import sqlite3
 import random
+
+from rich.panel import Panel
 
 from noir.display import (
     show_location, show_dialogue, show_player_input_prompt, show_evidence_collected,
@@ -17,6 +20,7 @@ from noir.persistence.repository import (
     get_partner_affection, increment_partner_affection,
     get_partner_dark_past_state, set_partner_dark_past_state,
     set_partner_dark_past, get_partner_dark_past,
+    remove_partner,
 )
 from noir.persistence.db import create_schema
 from noir.characters.companion import Companion
@@ -266,6 +270,11 @@ class Game:
         show_arrest_confirmation(npc_row["name"])
         player = get_player(self.conn)
         show_reputation(player["reputation"])
+        case = get_case(self.conn, self.active_case_id)
+        case_data = json.loads(case["case_data"])
+        killer_name = case_data.get("killer_name", "")
+        was_correct = npc_row["name"] == killer_name
+        self._check_dark_past_resolution(npc_row["name"], was_correct)
 
     def handle_da(self) -> None:
         if self.active_case_id is None or self.case_manager is None:
@@ -408,6 +417,49 @@ class Game:
             f"[italic]Victim: {case_data['victim']['name']} — "
             f"{case_data['victim']['cause_of_death']}[/italic]\n"
         )
+
+    def _handle_partner_loss(self, reason: str) -> None:
+        console.print(Panel(
+            f"[bold red]{self.companion.name} is gone.[/bold red]\n"
+            f"[dim]{reason}[/dim]\n\n"
+            "[italic]Some losses you don't come back from the same way.[/italic]",
+            border_style="red",
+            title="[red]PARTNER LOST[/red]",
+        ))
+        remove_partner(self.conn)
+        self.companion = None
+        console.print("\n[dim]You'll need a new partner. The city doesn't wait.[/dim]\n")
+        self.run_onboarding()
+
+    def _is_dark_past_case(self) -> bool:
+        if self.active_case_id is None:
+            return False
+        row = self.conn.execute(
+            "SELECT case_type FROM cases WHERE id=?", (self.active_case_id,)
+        ).fetchone()
+        return bool(row and row["case_type"] == "partner_dark_past")
+
+    def _check_dark_past_resolution(self, arrested_npc_name: str, was_correct: bool) -> None:
+        if not self._is_dark_past_case():
+            return
+        partner_row = get_partner(self.conn)
+        if partner_row is None:
+            return
+        partner_name = partner_row["name"]
+        if arrested_npc_name.lower() == partner_name.lower():
+            self._handle_partner_loss(
+                f"You turned {partner_name} over to the law. They're gone now."
+            )
+        elif was_correct:
+            set_partner_dark_past_state(self.conn, "resolved")
+            self.conn.execute("UPDATE partner SET affection=MAX(affection, 80) WHERE id=1")
+            self.conn.commit()
+            console.print(Panel(
+                f"[green]{partner_name} is safe.[/green]\n"
+                "[italic]They look at you differently now. So do you.[/italic]",
+                border_style="green",
+                title="[green]CASE CLOSED[/green]",
+            ))
 
     def _companion_context(self, player_input: str) -> str:
         partner_affection = get_partner_affection(self.conn)
