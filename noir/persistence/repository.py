@@ -225,10 +225,17 @@ def set_npc_affection(conn: sqlite3.Connection, npc_id: int, affection: int) -> 
 
 
 def increment_npc_affection(conn: sqlite3.Connection, npc_id: int, delta: int) -> int:
-    current = get_npc_affection(conn, npc_id)
-    new_val = max(0, min(100, current + delta))
-    set_npc_affection(conn, npc_id, new_val)
-    return new_val
+    conn.execute(
+        """INSERT INTO npc_relationships (npc_id, affection)
+           VALUES (?, MIN(100, MAX(0, ?)))
+           ON CONFLICT(npc_id) DO UPDATE SET affection = MIN(100, MAX(0, affection + ?))""",
+        (npc_id, delta, delta)
+    )
+    conn.commit()
+    row = conn.execute(
+        "SELECT affection FROM npc_relationships WHERE npc_id=?", (npc_id,)
+    ).fetchone()
+    return row["affection"]
 
 
 def get_npc_relationship_flags(conn: sqlite3.Connection, npc_id: int) -> dict:
