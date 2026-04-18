@@ -24,7 +24,7 @@ def test_create_schema_creates_all_tables():
     expected = {
         "player", "partner", "conversation_history", "cases",
         "locations", "npcs", "evidence", "arrests",
-        "character_locations", "mystery_archetypes",
+        "character_locations", "mystery_archetypes", "npc_relationships",
     }
     assert expected.issubset(tables)
     conn.close()
@@ -135,3 +135,32 @@ def test_archetype_save_and_list(db):
     archetypes = list_archetypes(db)
     assert len(archetypes) == 1
     assert get_archetype(db, "Agatha Christie")["description"] == "Closed-room social intrigue"
+
+
+def test_npc_relationships_table_exists():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    create_schema(conn)
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+    assert "npc_relationships" in tables
+    conn.close()
+
+
+def test_partner_has_romance_columns():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    create_schema(conn)
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(partner)").fetchall()}
+    assert "affection" in cols
+    assert "dark_past_state" in cols
+    assert "dark_past" in cols
+    conn.close()
+
+
+def test_cases_has_case_type_column():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    create_schema(conn)
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(cases)").fetchall()}
+    assert "case_type" in cols
+    conn.close()

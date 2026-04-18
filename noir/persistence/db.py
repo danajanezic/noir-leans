@@ -20,6 +20,9 @@ CREATE TABLE IF NOT EXISTS partner (
     speech_style TEXT NOT NULL,
     relationship_stance TEXT NOT NULL,
     system_prompt TEXT NOT NULL,
+    affection INTEGER DEFAULT 0,
+    dark_past_state TEXT DEFAULT 'none',
+    dark_past TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -38,6 +41,7 @@ CREATE TABLE IF NOT EXISTS cases (
     title TEXT NOT NULL,
     case_data TEXT NOT NULL,
     status TEXT DEFAULT 'active',
+    case_type TEXT DEFAULT 'standard',
     trial_end_time TEXT,
     trial_outcome TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -99,6 +103,14 @@ CREATE TABLE IF NOT EXISTS mystery_archetypes (
     seed_prompt TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS npc_relationships (
+    npc_id INTEGER PRIMARY KEY,
+    affection INTEGER DEFAULT 0,
+    clue_volunteered INTEGER DEFAULT 0,
+    secret_revealed INTEGER DEFAULT 0,
+    FOREIGN KEY (npc_id) REFERENCES npcs(id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_cases_status ON cases(status);
 CREATE INDEX IF NOT EXISTS idx_conversation_history_character ON conversation_history(character_id);
 CREATE INDEX IF NOT EXISTS idx_conversation_history_case ON conversation_history(case_id);
@@ -106,6 +118,7 @@ CREATE INDEX IF NOT EXISTS idx_npcs_case ON npcs(case_id);
 CREATE INDEX IF NOT EXISTS idx_evidence_case ON evidence(case_id);
 CREATE INDEX IF NOT EXISTS idx_arrests_case ON arrests(case_id);
 CREATE INDEX IF NOT EXISTS idx_locations_case ON locations(case_id);
+CREATE INDEX IF NOT EXISTS idx_npc_relationships_npc ON npc_relationships(npc_id);
 """
 
 
