@@ -12,6 +12,11 @@ from noir.persistence.repository import (
     create_player, get_player, get_partner, create_location,
     get_location, get_active_cases, get_case, get_fixed_locations,
     create_case, create_npc, set_character_location, get_npcs_for_case,
+    get_npc_affection, get_npc_relationship_flags,
+    set_npc_clue_volunteered, set_npc_secret_revealed,
+    get_partner_affection, increment_partner_affection,
+    get_partner_dark_past_state, set_partner_dark_past_state,
+    set_partner_dark_past, get_partner_dark_past,
 )
 from noir.persistence.db import create_schema
 from noir.characters.companion import Companion
@@ -32,6 +37,20 @@ FIXED_LOCATIONS = [
     ("The DA's Office", "A cathedral of filing cabinets. The DA rules over it like a disappointed god."),
     ("The Courthouse", "Justice is administered here, at a pace that suggests justice has nowhere else to be."),
 ]
+
+
+def _affection_to_stage(affection: int, is_partner: bool = False) -> str:
+    if is_partner:
+        if affection < 20: return "professional"
+        if affection < 40: return "tension"
+        if affection < 60: return "complicated"
+        if affection < 80: return "devoted"
+        return "committed"
+    if affection < 20: return "cold"
+    if affection < 40: return "curious"
+    if affection < 60: return "warm"
+    if affection < 80: return "smitten"
+    return "devoted"
 
 
 class Game:
@@ -232,6 +251,40 @@ class Game:
                 show_dialogue("Courthouse Clerk", verdict.get("summary", "The verdict is in."))
         else:
             console.print("[dim]Nothing here yet. Take a case to the DA first.[/dim]")
+
+    def _npc_relationship_context(self, npc_id: int) -> str:
+        affection = get_npc_affection(self.conn, npc_id)
+        stage = _affection_to_stage(affection)
+        stage_notes = {
+            "cold": "You are wary or indifferent to this person's attention.",
+            "curious": "You have noticed this person's interest. You are intrigued but guarded.",
+            "warm": "You feel warmly toward this person. You are more open than usual, and you hint that there is more to know about you.",
+            "smitten": "You are visibly affected by this person. You are conflicted — this is not a good time for feelings. You find yourself volunteering more than you intended.",
+            "devoted": "You have made a choice about this person. You will protect them. You will tell them the truth.",
+        }
+        note = stage_notes.get(stage, "")
+        return f"[Relationship with detective: {stage}. {note}] "
+
+    def _companion_context(self, player_input: str) -> str:
+        partner_affection = get_partner_affection(self.conn)
+        partner_stage = _affection_to_stage(partner_affection, is_partner=True)
+        dark_past_state = get_partner_dark_past_state(self.conn)
+        partner_stage_notes = {
+            "professional": "Keep it professional. You are partners. That is all.",
+            "tension": "Something is unspoken between you. You are aware of it even if you do not name it.",
+            "complicated": "You are conflicted. You are more emotionally present than you would like to be.",
+            "devoted": "You have chosen this person. You are protective. You are carrying something heavy and have not told them yet.",
+            "committed": "You have told them everything. They chose you anyway. That changes things.",
+        }
+        partner_note = partner_stage_notes.get(partner_stage, "")
+        romance_ctx = f"[Your relationship with the detective: {partner_stage}. {partner_note}]"
+        if dark_past_state == "flagged":
+            romance_ctx += (
+                " [You have decided to tell the detective something important about your past. "
+                "It is weighing on you heavily. You have not found the right moment yet. "
+                "It colors everything you say.]"
+            )
+        return romance_ctx + " " + player_input
 
     def loop(self) -> None:
         create_schema(self.conn)
