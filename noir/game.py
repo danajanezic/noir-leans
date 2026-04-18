@@ -45,7 +45,6 @@ _DARK_PAST_TRIGGERS = {
     "what's on your mind",
     "what's bothering you",
     "you can tell me",
-    "tell me",
     "what is it",
     "i'm listening",
 }
@@ -349,13 +348,16 @@ class Game:
         backstory = result.get("backstory", "")
         crime_summary = result.get("crime_summary", "")
 
-        set_partner_dark_past(self.conn, backstory)
-        set_partner_dark_past_state(self.conn, "revealed")
+        if not backstory:
+            console.print("\n[dim]Something went wrong. Try again later.[/dim]\n")
+            return
 
+        set_partner_dark_past(self.conn, backstory)
         show_dialogue(self.companion.name, backstory)
 
         console.print("\n[dim]The case tied to this will come when you are ready...[/dim]\n")
         self._start_dark_past_case(crime_summary, theme)
+        set_partner_dark_past_state(self.conn, "revealed")
 
     def _start_dark_past_case(self, crime_summary: str, theme: str) -> None:
         pass  # implemented in Task 8
