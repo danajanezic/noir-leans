@@ -287,7 +287,7 @@ class Game:
                 "a clue you witnessed, something you did not intend to share. "
                 "Stay in character. Do not break the fiction. One sentence of genuine disclosure.]"
             )
-            response = npc.speak(prompt)
+            response = npc.speak(prompt, record=False)
             show_dialogue(npc.name, response)
 
         elif stage == "devoted" and not flags["secret_revealed"]:
@@ -297,7 +297,7 @@ class Game:
                 "Tell them your secret — the thing you have been hiding. "
                 "Stay in character. This is the moment you decide to trust them.]"
             )
-            response = npc.speak(prompt)
+            response = npc.speak(prompt, record=False)
             show_dialogue(npc.name, response)
 
     def _companion_context(self, player_input: str) -> str:

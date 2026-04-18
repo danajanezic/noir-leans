@@ -14,11 +14,12 @@ class Agent:
         self.conn = conn
         self.case_id = case_id
 
-    def speak(self, player_input: str) -> str:
+    def speak(self, player_input: str, record: bool = True) -> str:
         history = get_history(self.conn, character_id=self.character_id, case_id=self.case_id)
         response = self.llm.query(self.system_prompt, history, player_input)
-        append_history(self.conn, character_id=self.character_id,
-                       role="user", content=player_input, case_id=self.case_id)
-        append_history(self.conn, character_id=self.character_id,
-                       role="assistant", content=response, case_id=self.case_id)
+        if record:
+            append_history(self.conn, character_id=self.character_id,
+                           role="user", content=player_input, case_id=self.case_id)
+            append_history(self.conn, character_id=self.character_id,
+                           role="assistant", content=response, case_id=self.case_id)
         return response
