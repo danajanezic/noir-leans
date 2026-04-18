@@ -273,7 +273,7 @@ class Game:
         case = get_case(self.conn, self.active_case_id)
         case_data = json.loads(case["case_data"])
         killer_name = case_data.get("killer_name", "")
-        was_correct = npc_row["name"] == killer_name
+        was_correct = npc_row["name"].strip().lower() == killer_name.strip().lower()
         self._check_dark_past_resolution(npc_row["name"], was_correct)
 
     def handle_da(self) -> None:
@@ -419,6 +419,8 @@ class Game:
         )
 
     def _handle_partner_loss(self, reason: str) -> None:
+        if self.companion is None:
+            return
         console.print(Panel(
             f"[bold red]{self.companion.name} is gone.[/bold red]\n"
             f"[dim]{reason}[/dim]\n\n"
@@ -428,6 +430,7 @@ class Game:
         ))
         remove_partner(self.conn)
         self.companion = None
+        self.active_case_id = None  # clear stale case reference
         console.print("\n[dim]You'll need a new partner. The city doesn't wait.[/dim]\n")
         self.run_onboarding()
 
