@@ -11,6 +11,11 @@ from noir.persistence.repository import (
     add_evidence, get_evidence_for_case,
     create_arrest,
     save_archetype, get_archetype, list_archetypes,
+    get_npc_affection, set_npc_affection, increment_npc_affection,
+    get_npc_relationship_flags, set_npc_clue_volunteered, set_npc_secret_revealed,
+    get_partner_affection, increment_partner_affection,
+    get_partner_dark_past_state, set_partner_dark_past_state, set_partner_dark_past,
+    get_partner_dark_past,
 )
 
 
@@ -24,7 +29,7 @@ def test_create_schema_creates_all_tables():
     expected = {
         "player", "partner", "conversation_history", "cases",
         "locations", "npcs", "evidence", "arrests",
-        "character_locations", "mystery_archetypes",
+        "character_locations", "mystery_archetypes", "npc_relationships",
     }
     assert expected.issubset(tables)
     conn.close()
@@ -135,3 +140,127 @@ def test_archetype_save_and_list(db):
     archetypes = list_archetypes(db)
     assert len(archetypes) == 1
     assert get_archetype(db, "Agatha Christie")["description"] == "Closed-room social intrigue"
+
+
+def test_npc_relationships_has_correct_columns():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    create_schema(conn)
+    cols = {row[1]: row for row in conn.execute("PRAGMA table_info(npc_relationships)").fetchall()}
+    assert "npc_id" in cols
+    assert "affection" in cols
+    assert "clue_volunteered" in cols
+    assert "secret_revealed" in cols
+    assert cols["affection"]["dflt_value"] == "0"
+    assert cols["clue_volunteered"]["dflt_value"] == "0"
+    assert cols["secret_revealed"]["dflt_value"] == "0"
+    conn.close()
+
+
+def test_partner_has_romance_columns():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    create_schema(conn)
+    cols = {row[1]: row for row in conn.execute("PRAGMA table_info(partner)").fetchall()}
+    assert "affection" in cols
+    assert "dark_past_state" in cols
+    assert "dark_past" in cols
+    assert cols["affection"]["dflt_value"] == "0"
+    assert cols["dark_past_state"]["dflt_value"] == "'none'"
+    conn.close()
+
+
+def test_cases_has_case_type_column():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    create_schema(conn)
+    cols = {row[1]: row for row in conn.execute("PRAGMA table_info(cases)").fetchall()}
+    assert "case_type" in cols
+    assert cols["case_type"]["dflt_value"] == "'standard'"
+    conn.close()
+
+
+def test_npc_affection_defaults_to_zero(db):
+    case_id = create_case(db, archetype="Test", title="T", case_data={"x": 1})
+    loc_id = create_location(db, name="Loc", description="A loc", is_fixed=False, case_id=case_id)
+    npc_id = create_npc(db, case_id=case_id, name="Rex", role="suspect",
+                        system_prompt="you are Rex", current_location_id=loc_id)
+    assert get_npc_affection(db, npc_id) == 0
+
+
+def test_increment_npc_affection(db):
+    case_id = create_case(db, archetype="Test", title="T", case_data={"x": 1})
+    loc_id = create_location(db, name="Loc", description="A loc", is_fixed=False, case_id=case_id)
+    npc_id = create_npc(db, case_id=case_id, name="Rex", role="suspect",
+                        system_prompt="you are Rex", current_location_id=loc_id)
+    increment_npc_affection(db, npc_id, delta=8)
+    assert get_npc_affection(db, npc_id) == 8
+    increment_npc_affection(db, npc_id, delta=8)
+    assert get_npc_affection(db, npc_id) == 16
+
+
+def test_npc_affection_capped_at_100(db):
+    case_id = create_case(db, archetype="Test", title="T", case_data={"x": 1})
+    loc_id = create_location(db, name="Loc", description="A loc", is_fixed=False, case_id=case_id)
+    npc_id = create_npc(db, case_id=case_id, name="Rex", role="suspect",
+                        system_prompt="you are Rex", current_location_id=loc_id)
+    increment_npc_affection(db, npc_id, delta=200)
+    assert get_npc_affection(db, npc_id) == 100
+
+
+def test_partner_affection(db):
+    save_partner(db, name="Vera", sex="female", personality_archetype="cynic",
+                 speech_style="terse", relationship_stance="exasperated", system_prompt="you are Vera")
+    assert get_partner_affection(db) == 0
+    increment_partner_affection(db, delta=15)
+    assert get_partner_affection(db) == 15
+
+
+def test_partner_dark_past_state(db):
+    save_partner(db, name="Vera", sex="female", personality_archetype="cynic",
+                 speech_style="terse", relationship_stance="exasperated", system_prompt="you are Vera")
+    assert get_partner_dark_past_state(db) == "none"
+    set_partner_dark_past_state(db, "flagged")
+    assert get_partner_dark_past_state(db) == "flagged"
+
+
+def test_npc_affection_floor(db):
+    case_id = create_case(db, archetype="Test", title="T", case_data={"x": 1})
+    loc_id = create_location(db, name="Loc", description="A loc", is_fixed=False, case_id=case_id)
+    npc_id = create_npc(db, case_id=case_id, name="Rex", role="suspect",
+                        system_prompt="you are Rex", current_location_id=loc_id)
+    increment_npc_affection(db, npc_id, delta=-50)
+    assert get_npc_affection(db, npc_id) == 0
+
+
+def test_set_npc_affection_cap(db):
+    case_id = create_case(db, archetype="Test", title="T", case_data={"x": 1})
+    loc_id = create_location(db, name="Loc", description="A loc", is_fixed=False, case_id=case_id)
+    npc_id = create_npc(db, case_id=case_id, name="Rex", role="suspect",
+                        system_prompt="you are Rex", current_location_id=loc_id)
+    set_npc_affection(db, npc_id, 150)
+    assert get_npc_affection(db, npc_id) == 100
+
+
+def test_npc_relationship_flags(db):
+    case_id = create_case(db, archetype="Test", title="T", case_data={"x": 1})
+    loc_id = create_location(db, name="Loc", description="A loc", is_fixed=False, case_id=case_id)
+    npc_id = create_npc(db, case_id=case_id, name="Rex", role="suspect",
+                        system_prompt="you are Rex", current_location_id=loc_id)
+    flags = get_npc_relationship_flags(db, npc_id)
+    assert flags == {"clue_volunteered": 0, "secret_revealed": 0}
+    set_npc_clue_volunteered(db, npc_id)
+    flags = get_npc_relationship_flags(db, npc_id)
+    assert flags["clue_volunteered"] == 1
+    assert flags["secret_revealed"] == 0
+    set_npc_secret_revealed(db, npc_id)
+    flags = get_npc_relationship_flags(db, npc_id)
+    assert flags["secret_revealed"] == 1
+
+
+def test_partner_dark_past_content(db):
+    save_partner(db, name="Vera", sex="female", personality_archetype="cynic",
+                 speech_style="terse", relationship_stance="exasperated", system_prompt="you are Vera")
+    assert get_partner_dark_past(db) is None
+    set_partner_dark_past(db, "I did a terrible thing in 1928.")
+    assert get_partner_dark_past(db) == "I did a terrible thing in 1928."

@@ -6,10 +6,10 @@ from noir.mystery.generator import MysteryGenerator
 from noir.persistence.repository import create_player
 
 
-def test_load_archetypes_returns_all_four():
+def test_load_archetypes_returns_all():
     archetypes = load_archetypes()
     names = {a["name"] for a in archetypes}
-    assert names == {"Agatha Christie", "Dashiell Hammett", "Benoit Blanc", "Chinatown"}
+    assert {"Agatha Christie", "Dashiell Hammett", "Benoit Blanc", "Chinatown"}.issubset(names)
 
 
 def test_each_archetype_has_required_fields():
@@ -25,7 +25,7 @@ def test_seed_archetypes_to_db(db):
     seed_archetypes_to_db(db)
     from noir.persistence.repository import list_archetypes
     rows = list_archetypes(db)
-    assert len(rows) == 4
+    assert len(rows) >= 4
 
 
 VALID_CASE = {

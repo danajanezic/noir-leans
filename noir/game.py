@@ -1,13 +1,16 @@
+import json
 import sqlite3
 import random
 
 from noir.log import save_feedback
+from rich.panel import Panel
 from noir.display import (
     show_location, show_dialogue, show_player_input_prompt, show_evidence_collected,
     show_arrest_confirmation, show_reputation, show_trial_status,
     show_help, show_locations, show_leads, show_suspects, show_player_status,
     show_travel_animation, travel_status, show_splash, typewrite, show_narrator,
-    show_conversation_header, show_conversation_footer, show_evidence, console
+    show_conversation_header, show_conversation_footer, show_evidence,
+    show_relationships, console
 )
 from noir.parser import parse_command, Intent
 from noir.llm.base import LLMBackend
@@ -19,6 +22,12 @@ from noir.persistence.repository import (
     add_player_suspect, get_player_suspects,
     get_character_location,
     get_player_states, add_player_state, remove_player_state, clear_transient_states,
+    get_npc_affection, get_npc_relationship_flags, increment_npc_affection,
+    set_npc_clue_volunteered, set_npc_secret_revealed,
+    get_partner_affection, increment_partner_affection,
+    get_partner_dark_past_state, set_partner_dark_past_state,
+    set_partner_dark_past,
+    remove_partner,
 )
 from noir.persistence.db import create_schema
 from noir.characters.companion import Companion
@@ -77,6 +86,38 @@ def _is_exit(text: str) -> bool:
     return t in _EXIT_PHRASES or (t.startswith("/") and not any(
         t.startswith(cmd) for cmd in ("/locations", "/leads", "/evidence", "/suspects", "/add", "/status", "/help")
     ))
+
+
+_DARK_PAST_TRIGGERS = {
+    "what did you want to tell me",
+    "you said you had something",
+    "what's on your mind",
+    "what's bothering you",
+    "you can tell me",
+    "what is it",
+    "i'm listening",
+}
+
+
+def _is_dark_past_invitation(text: str) -> bool:
+    t = text.strip().lower().rstrip("?.,!")
+    return any(trigger in t for trigger in _DARK_PAST_TRIGGERS)
+
+
+def _affection_to_stage(affection: int, is_partner: bool = False) -> str:
+    if affection is None:
+        affection = 0
+    if is_partner:
+        if affection < 20: return "professional"
+        if affection < 40: return "tension"
+        if affection < 60: return "complicated"
+        if affection < 80: return "devoted"
+        return "committed"
+    if affection < 20: return "cold"
+    if affection < 40: return "curious"
+    if affection < 60: return "warm"
+    if affection < 80: return "smitten"
+    return "devoted"
 
 
 class Game:
@@ -147,6 +188,42 @@ class Game:
         console.print("\n[cyan]The figure comes into focus:[/cyan]\n")
         show_dialogue(self.companion.name, self.companion.narrate(intro_prompt))
 
+    def _seed_case_locations_and_npcs(self, case_id: int, case_data: dict, fixed: dict) -> None:
+        loc_map = {}
+        for loc in case_data.get("locations", []):
+            loc_id = create_location(self.conn, name=loc["name"],
+                                     description=loc["description"],
+                                     is_fixed=False, case_id=case_id)
+            loc_map[loc["name"]] = loc_id
+
+        found_at = case_data.get("victim", {}).get("found_at", "").lower()
+        npc_locs = {k: v for k, v in loc_map.items() if k.lower() != found_at} or loc_map
+
+        for suspect in case_data.get("suspects", []):
+            loc_name = random.choice(list(npc_locs.keys())) if npc_locs else None
+            loc_id = npc_locs.get(loc_name) or next(iter(fixed.values()))
+            relationships = suspect.get("relationships", [])
+            rel_text = " ".join(
+                f"Your relationship to {r['name']}: {r['relationship']}."
+                for r in relationships if r.get("name") and r.get("relationship")
+            )
+            npc_system_prompt = (
+                f"You are {suspect['name']}, a {suspect['role']} in a murder investigation. "
+                f"Personality: {suspect['personality']}. Speech style: {suspect['speech_style']}. "
+                f"Your alibi (which may or may not be true): {suspect['alibi']}. "
+                f"Your secret: {suspect['secret']}. "
+                + (f"{rel_text} " if rel_text else "")
+                + "You are in Noirleans, 1935 — Depression-era, corrupt to the bone, jazz leaking out of every cracked window. Stay in character. "
+                "Be evasive about your secret but not impossibly so."
+            )
+            npc_id = create_npc(self.conn, case_id=case_id, name=suspect["name"],
+                                role=suspect["role"], system_prompt=npc_system_prompt,
+                                current_location_id=loc_id)
+            set_character_location(self.conn, character_id=f"npc_{npc_id}", location_id=loc_id)
+
+        self.world = World(conn=self.conn, active_case_id=case_id)
+        self.case_manager = CaseManager(conn=self.conn, case_id=case_id)
+
     def start_new_case(self) -> None:
         gen = MysteryGenerator(llm=self.llm, conn=self.conn)
         archetype = gen.pick_random_archetype()
@@ -159,46 +236,7 @@ class Game:
                               title=case_data["title"], case_data=case_data)
         self.active_case_id = case_id
 
-        loc_map: dict[str, int] = {}
-        for loc in case_data.get("locations", []):
-            loc_id = create_location(self.conn, name=loc["name"], description=loc["description"],
-                                     is_fixed=False, case_id=case_id)
-            loc_map[loc["name"]] = loc_id
-
-        found_at = case_data.get("victim", {}).get("found_at", "").lower()
-        npc_locs = {k: v for k, v in loc_map.items() if k.lower() != found_at} or loc_map
-
-        for suspect in case_data.get("suspects", []):
-            loc_name = random.choice(list(npc_locs.keys())) if npc_locs else None
-            loc_id = npc_locs.get(loc_name) or next(iter(fixed.values()))
-            relationships = suspect.get("relationships", [])
-            rel_text = (
-                " ".join(
-                    f"Your relationship to {r['name']}: {r['relationship']}."
-                    for r in relationships if r.get("name") and r.get("relationship")
-                )
-            )
-            victim = case_data.get("victim", {})
-            npc_system_prompt = (
-                f"You are {suspect['name']}, a {suspect['role']} in a murder investigation. "
-                f"The victim is {victim.get('name', 'unknown')}, who was {victim.get('cause_of_death', 'killed')}. "
-                f"This is a known fact in your world — never contradict it. "
-                f"Personality: {suspect['personality']}. Speech style: {suspect['speech_style']}. "
-                f"Your alibi (which may or may not be true): {suspect['alibi']}. "
-                f"Your secret: {suspect['secret']}. "
-                + (f"{rel_text} " if rel_text else "")
-                + f"You are in Noirleans, 1935 — Depression-era, corrupt to the bone, jazz leaking out of every cracked window. Stay in character. "
-                f"Be evasive about your secret but not impossibly so."
-            )
-            npc_id = create_npc(self.conn, case_id=case_id, name=suspect["name"],
-                                role=suspect["role"], system_prompt=npc_system_prompt,
-                                current_location_id=loc_id)
-            set_character_location(self.conn, character_id=f"npc_{npc_id}", location_id=loc_id)
-
-        self._seed_fixed_npcs(case_id)
-
-        self.world = World(conn=self.conn, active_case_id=case_id)
-        self.case_manager = CaseManager(conn=self.conn, case_id=case_id)
+        self._seed_case_locations_and_npcs(case_id, case_data, fixed)
 
         console.print(f"\n[bold red]NEW CASE: {case_data['title']}[/bold red]")
         console.print(
@@ -332,14 +370,47 @@ class Game:
                 continue
             if _is_exit(player_input):
                 break
+            if player_input.strip().lower().startswith("/romance"):
+                self.handle_slash_romance()
+                continue
+            cmd = parse_command(player_input)
+            if cmd.intent == Intent.FLIRT:
+                self._handle_npc_flirt(npc_row["id"])
             state_ctx = self._player_state_context()
-            ctx = loc_ctx + (state_ctx or "") + (others_ctx or "")
-            response = npc.speak(ctx + player_input if ctx else player_input)
+            rel_ctx = self._npc_relationship_context(npc_row["id"])
+            ctx = loc_ctx + (state_ctx or "") + (others_ctx or "") + rel_ctx
+            response = npc.speak(ctx + player_input)
             show_dialogue(npc_row["name"], response)
+            self._check_npc_romance_milestone(npc_row["id"], npc)
         show_conversation_footer(npc_row["name"])
 
     def _companion_context(self, player_input: str) -> str:
         import json as _json
+        partner_affection = get_partner_affection(self.conn)
+        partner_stage = _affection_to_stage(partner_affection, is_partner=True)
+        dark_past_state = get_partner_dark_past_state(self.conn)
+        partner_stage_notes = {
+            "professional": "Keep it professional. You are partners. That is all.",
+            "tension": "Something is unspoken between you. You are aware of it even if you do not name it.",
+            "complicated": "You are conflicted. You are more emotionally present than you would like to be.",
+            "devoted": "You have chosen this person. You are protective. You are carrying something heavy and have not told them yet.",
+            "committed": "You have told them everything. They chose you anyway. That changes things.",
+        }
+        partner_note = partner_stage_notes.get(partner_stage, "")
+        romance_ctx = f"[Your relationship with the detective: {partner_stage}. {partner_note}]"
+        if dark_past_state == "flagged":
+            romance_ctx += (
+                " [You have decided to tell the detective something important about your past. "
+                "It is weighing on you heavily. You have not found the right moment yet. "
+                "It colors everything you say.]"
+            )
+        elif dark_past_state in ("revealed", "in_progress"):
+            romance_ctx += (
+                " [You have told the detective your secret. It is out. "
+                "Now they are investigating a case tied to it. "
+                "Every word you say carries that weight. You are watching them closely.]"
+            )
+
         context_parts = []
         if self.current_location_id:
             loc = get_location(self.conn, self.current_location_id)
@@ -380,9 +451,9 @@ class Game:
                 for s in states
             ]
             context_parts.append(f"Detective's condition: {', '.join(state_descs)}. React naturally to this.")
-        if context_parts:
-            return f"[{' | '.join(context_parts)}] {player_input}"
-        return player_input
+
+        ctx_block = f"[{' | '.join(context_parts)}] " if context_parts else ""
+        return romance_ctx + " " + ctx_block + player_input
 
     def _copresent_npc_context(self, exclude_npc_id: int) -> str:
         if not self.active_case_id or not self.current_location_id:
@@ -435,6 +506,9 @@ class Game:
             if player_input.strip().startswith("!"):
                 self._handle_feedback(player_input.strip())
                 continue
+            if player_input.strip().lower().startswith("/romance"):
+                self.handle_slash_romance()
+                continue
             if player_input.strip().startswith("/"):
                 if _is_exit(player_input):
                     break
@@ -442,10 +516,15 @@ class Game:
                 continue
             if _is_exit(player_input):
                 break
-            if first:
-                player_input = self._companion_context(player_input)
-                first = False
-            response = self.companion.speak(player_input)
+            cmd = parse_command(player_input)
+            if cmd.intent == Intent.FLIRT:
+                self._handle_partner_flirt()
+            self._check_partner_romance_milestone()
+            dark_past_state = get_partner_dark_past_state(self.conn)
+            if dark_past_state == "flagged" and _is_dark_past_invitation(player_input):
+                self._trigger_dark_past_revelation()
+                break
+            response = self.companion.speak(self._companion_context(player_input))
             show_dialogue(self.companion.name, response)
         show_conversation_footer(self.companion.name)
 
@@ -463,6 +542,11 @@ class Game:
         show_arrest_confirmation(npc_row["name"])
         player = get_player(self.conn)
         show_reputation(player["reputation"])
+        case = get_case(self.conn, self.active_case_id)
+        case_data = json.loads(case["case_data"])
+        killer_name = case_data.get("killer_name", "")
+        was_correct = npc_row["name"].strip().lower() == killer_name.strip().lower()
+        self._check_dark_past_resolution(npc_row["name"], was_correct)
 
     def handle_examine(self, target: str) -> None:
         if self.current_location_id is None or self.world is None:
@@ -660,6 +744,184 @@ class Game:
         else:
             console.print("[dim]Nothing here yet. Take a case to the DA first.[/dim]")
 
+    def handle_slash_romance(self) -> None:
+        partner_row = get_partner(self.conn)
+        partner_name = partner_row["name"] if partner_row else None
+        partner_stage = None
+        if partner_row:
+            affection = get_partner_affection(self.conn)
+            partner_stage = _affection_to_stage(affection, is_partner=True)
+
+        npc_rels = []
+        if self.active_case_id:
+            npcs = get_npcs_for_case(self.conn, self.active_case_id)
+            for npc in npcs:
+                affection = get_npc_affection(self.conn, npc["id"])
+                if affection > 0:
+                    npc_rels.append({
+                        "name": npc["name"],
+                        "role": npc["role"],
+                        "stage": _affection_to_stage(affection),
+                    })
+        show_relationships(partner_name, partner_stage, npc_rels)
+
+    def _npc_relationship_context(self, npc_id: int) -> str:
+        affection = get_npc_affection(self.conn, npc_id)
+        stage = _affection_to_stage(affection)
+        return (
+            f"[Relationship: {stage}. React accordingly — a cold NPC is dismissive or wary, "
+            "curious is intrigued but guarded, warm is genuinely friendly, "
+            "smitten is visibly affected and conflicted, "
+            "devoted has made a choice and will protect this person.] "
+        )
+
+    def _handle_npc_flirt(self, npc_id: int) -> None:
+        affection = get_npc_affection(self.conn, npc_id)
+        stage = _affection_to_stage(affection)
+        delta = 4 if stage == "cold" else 8
+        increment_npc_affection(self.conn, npc_id, delta)
+
+    def _check_npc_romance_milestone(self, npc_id: int, npc) -> None:
+        affection = get_npc_affection(self.conn, npc_id)
+        stage = _affection_to_stage(affection)
+        flags = get_npc_relationship_flags(self.conn, npc_id)
+
+        if stage == "smitten" and not flags["clue_volunteered"]:
+            set_npc_clue_volunteered(self.conn, npc_id)
+            prompt = (
+                "[You are compelled to volunteer something useful — a piece of your alibi, "
+                "a clue you witnessed, something you did not intend to share. "
+                "Stay in character. Do not break the fiction. One sentence of genuine disclosure.]"
+            )
+            response = npc.speak(prompt, record=False)
+            show_dialogue(npc.name, response)
+
+        elif stage == "devoted" and not flags["secret_revealed"]:
+            set_npc_secret_revealed(self.conn, npc_id)
+            prompt = (
+                "[You have made a choice about this person. "
+                "Tell them your secret — the thing you have been hiding. "
+                "Stay in character. This is the moment you decide to trust them.]"
+            )
+            response = npc.speak(prompt, record=False)
+            show_dialogue(npc.name, response)
+
+    def _handle_partner_flirt(self) -> None:
+        affection = get_partner_affection(self.conn)
+        stage = _affection_to_stage(affection, is_partner=True)
+        delta = 4 if stage == "professional" else 8
+        increment_partner_affection(self.conn, delta)
+
+    def _check_partner_romance_milestone(self) -> None:
+        affection = get_partner_affection(self.conn)
+        stage = _affection_to_stage(affection, is_partner=True)
+        dark_past_state = get_partner_dark_past_state(self.conn)
+
+        if stage == "devoted" and dark_past_state == "none":
+            set_partner_dark_past_state(self.conn, "flagged")
+
+    def _trigger_dark_past_revelation(self) -> None:
+        gen = MysteryGenerator(llm=self.llm, conn=self.conn)
+        theme = gen.pick_random_theme() or "the lengths people will go to for love"
+
+        result = self.companion.generate_dark_past(theme)
+        backstory = result.get("backstory", "")
+        crime_summary = result.get("crime_summary", "")
+
+        if not backstory:
+            console.print("\n[dim]Something went wrong. Try again later.[/dim]\n")
+            return
+
+        set_partner_dark_past(self.conn, backstory)
+        set_partner_dark_past_state(self.conn, "revealed")  # moved here
+        show_dialogue(self.companion.name, backstory)
+
+        console.print("\n[dim]The case tied to this will come when you are ready...[/dim]\n")
+        self._start_dark_past_case(crime_summary, theme)
+
+    def _start_dark_past_case(self, crime_summary: str, theme: str) -> None:
+        from noir.mystery.generator import MysteryGenerator
+        gen = MysteryGenerator(llm=self.llm, conn=self.conn)
+        partner_row = get_partner(self.conn)
+        partner_name = partner_row["name"] if partner_row else "your partner"
+
+        case_data, archetype = gen.generate_from_dark_past(
+            crime_summary=crime_summary,
+            theme=theme,
+            partner_name=partner_name,
+        )
+
+        fixed = {loc["name"]: loc["id"] for loc in get_fixed_locations(self.conn)}
+        case_id = create_case(self.conn, archetype=archetype,
+                              title=case_data["title"], case_data=case_data)
+
+        self.conn.execute(
+            "UPDATE cases SET case_type='partner_dark_past' WHERE id=?", (case_id,)
+        )
+        self.conn.commit()
+
+        # Close the previous active case if one exists
+        if self.active_case_id is not None:
+            self.conn.execute(
+                "UPDATE cases SET status='closed' WHERE id=?", (self.active_case_id,)
+            )
+            self.conn.commit()
+
+        self.active_case_id = case_id
+        self._seed_case_locations_and_npcs(case_id, case_data, fixed)
+
+        console.print(f"\n[bold red]NEW CASE: {case_data['title']}[/bold red]")
+        console.print(
+            f"[italic]Victim: {case_data['victim']['name']} — "
+            f"{case_data['victim']['cause_of_death']}[/italic]\n"
+        )
+
+    def _handle_partner_loss(self, reason: str) -> None:
+        if self.companion is None:
+            return
+        console.print(Panel(
+            f"[bold red]{self.companion.name} is gone.[/bold red]\n"
+            f"[dim]{reason}[/dim]\n\n"
+            "[italic]Some losses you don't come back from the same way.[/italic]",
+            border_style="red",
+            title="[red]PARTNER LOST[/red]",
+        ))
+        remove_partner(self.conn)
+        self.companion = None
+        self.active_case_id = None  # clear stale case reference
+        console.print("\n[dim]You'll need a new partner. The city doesn't wait.[/dim]\n")
+        self.run_onboarding()
+
+    def _is_dark_past_case(self) -> bool:
+        if self.active_case_id is None:
+            return False
+        row = self.conn.execute(
+            "SELECT case_type FROM cases WHERE id=?", (self.active_case_id,)
+        ).fetchone()
+        return bool(row and row["case_type"] == "partner_dark_past")
+
+    def _check_dark_past_resolution(self, arrested_npc_name: str, was_correct: bool) -> None:
+        if not self._is_dark_past_case():
+            return
+        partner_row = get_partner(self.conn)
+        if partner_row is None:
+            return
+        partner_name = partner_row["name"]
+        if arrested_npc_name.lower() == partner_name.lower():
+            self._handle_partner_loss(
+                f"You turned {partner_name} over to the law. They're gone now."
+            )
+        elif was_correct:
+            set_partner_dark_past_state(self.conn, "resolved")
+            self.conn.execute("UPDATE partner SET affection=MAX(affection, 80) WHERE id=1")
+            self.conn.commit()
+            console.print(Panel(
+                f"[green]{partner_name} is safe.[/green]\n"
+                "[italic]They look at you differently now. So do you.[/italic]",
+                border_style="green",
+                title="[green]CASE CLOSED[/green]",
+            ))
+
     def loop(self) -> None:
         show_splash()
         create_schema(self.conn)
@@ -798,6 +1060,8 @@ class Game:
                     show_evidence_collected(cmd.target)
             elif cmd.intent == Intent.HELP:
                 show_help()
+            elif raw.strip().lower().startswith("/romance"):
+                self.handle_slash_romance()
             elif cmd.intent == Intent.UNKNOWN:
                 if self.companion:
                     result = self.companion.interpret(self._companion_context(cmd.raw))

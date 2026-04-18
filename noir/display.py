@@ -244,6 +244,21 @@ def show_suspects(npcs: list, player_suspects: list) -> None:
     console.print(Panel(body, title="[bold red]Suspects[/bold red]", border_style="red"))
 
 
+def show_relationships(partner_name: str | None, partner_stage: str | None,
+                       npc_relationships: list[dict]) -> None:
+    lines = []
+    if partner_name and partner_stage:
+        lines.append(f"[magenta]♥ {escape(partner_name)} (partner — {escape(partner_stage)})[/magenta]")
+    for rel in npc_relationships:
+        stage = rel["stage"]
+        color = {"cold": "dim", "curious": "white", "warm": "yellow",
+                 "smitten": "magenta", "devoted": "red"}.get(stage, "white")
+        lines.append(f"[{color}]· {escape(rel['name'])} ({escape(rel['role'])}) — {stage}[/{color}]")
+    body = "\n".join(lines) if lines else "[dim]No significant relationships yet.[/dim]"
+    console.print(Panel(body, title="[bold magenta]Relationships[/bold magenta]",
+                        border_style="magenta"))
+
+
 def show_help() -> None:
     console.print(Panel(
         "[bold]Movement:[/bold]\n"
@@ -267,7 +282,8 @@ def show_help() -> None:
         "  /leads — active leads for current case\n"
         "  /evidence — collected evidence\n"
         "  /suspects — suspect list\n"
-        "  /add <name> as suspect — add someone to your list\n\n"
+        "  /add <name> as suspect — add someone to your list\n"
+        "  /romance — relationship status\n\n"
         "[bold]Other:[/bold]\n"
         "  help or /help — show this\n"
         "  done / bye / exit — end a conversation",

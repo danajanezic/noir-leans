@@ -249,3 +249,106 @@ def get_player_suspects(conn: sqlite3.Connection, case_id: int) -> list[sqlite3.
     return conn.execute(
         "SELECT * FROM player_suspects WHERE case_id=? ORDER BY added_at", (case_id,)
     ).fetchall()
+
+
+def get_npc_affection(conn: sqlite3.Connection, npc_id: int) -> int:
+    row = conn.execute(
+        "SELECT affection FROM npc_relationships WHERE npc_id=?", (npc_id,)
+    ).fetchone()
+    return row["affection"] if row else 0
+
+
+def set_npc_affection(conn: sqlite3.Connection, npc_id: int, affection: int) -> None:
+    affection = max(0, min(100, affection))
+    conn.execute(
+        """INSERT INTO npc_relationships (npc_id, affection)
+           VALUES (?, ?)
+           ON CONFLICT(npc_id) DO UPDATE SET affection=?""",
+        (npc_id, affection, affection)
+    )
+    conn.commit()
+
+
+def increment_npc_affection(conn: sqlite3.Connection, npc_id: int, delta: int) -> int:
+    conn.execute(
+        """INSERT INTO npc_relationships (npc_id, affection)
+           VALUES (?, MIN(100, MAX(0, ?)))
+           ON CONFLICT(npc_id) DO UPDATE SET affection = MIN(100, MAX(0, affection + ?))""",
+        (npc_id, delta, delta)
+    )
+    conn.commit()
+    row = conn.execute(
+        "SELECT affection FROM npc_relationships WHERE npc_id=?", (npc_id,)
+    ).fetchone()
+    return row["affection"]
+
+
+def get_npc_relationship_flags(conn: sqlite3.Connection, npc_id: int) -> dict:
+    row = conn.execute(
+        "SELECT clue_volunteered, secret_revealed FROM npc_relationships WHERE npc_id=?",
+        (npc_id,)
+    ).fetchone()
+    if row is None:
+        return {"clue_volunteered": 0, "secret_revealed": 0}
+    return {"clue_volunteered": row["clue_volunteered"], "secret_revealed": row["secret_revealed"]}
+
+
+def set_npc_clue_volunteered(conn: sqlite3.Connection, npc_id: int) -> None:
+    conn.execute(
+        """INSERT INTO npc_relationships (npc_id, clue_volunteered)
+           VALUES (?, 1)
+           ON CONFLICT(npc_id) DO UPDATE SET clue_volunteered=1""",
+        (npc_id,)
+    )
+    conn.commit()
+
+
+def set_npc_secret_revealed(conn: sqlite3.Connection, npc_id: int) -> None:
+    conn.execute(
+        """INSERT INTO npc_relationships (npc_id, secret_revealed)
+           VALUES (?, 1)
+           ON CONFLICT(npc_id) DO UPDATE SET secret_revealed=1""",
+        (npc_id,)
+    )
+    conn.commit()
+
+
+def get_partner_affection(conn: sqlite3.Connection) -> int:
+    row = conn.execute("SELECT affection FROM partner WHERE id=1").fetchone()
+    return row["affection"] if row else 0
+
+
+def increment_partner_affection(conn: sqlite3.Connection, delta: int) -> int:
+    conn.execute(
+        "UPDATE partner SET affection = MIN(100, MAX(0, affection + ?)) WHERE id=1",
+        (delta,)
+    )
+    conn.commit()
+    row = conn.execute("SELECT affection FROM partner WHERE id=1").fetchone()
+    return row["affection"] if row else 0
+
+
+def get_partner_dark_past_state(conn: sqlite3.Connection) -> str:
+    row = conn.execute("SELECT dark_past_state FROM partner WHERE id=1").fetchone()
+    return row["dark_past_state"] if row else "none"
+
+
+def set_partner_dark_past_state(conn: sqlite3.Connection, state: str) -> None:
+    conn.execute("UPDATE partner SET dark_past_state=? WHERE id=1", (state,))
+    conn.commit()
+
+
+def set_partner_dark_past(conn: sqlite3.Connection, dark_past: str) -> None:
+    conn.execute("UPDATE partner SET dark_past=? WHERE id=1", (dark_past,))
+    conn.commit()
+
+
+def get_partner_dark_past(conn: sqlite3.Connection) -> str | None:
+    row = conn.execute("SELECT dark_past FROM partner WHERE id=1").fetchone()
+    return row["dark_past"] if row else None
+
+
+def remove_partner(conn: sqlite3.Connection) -> None:
+    conn.execute("UPDATE partner SET dark_past_state='lost' WHERE id=1")
+    conn.execute("DELETE FROM conversation_history WHERE character_id='partner'")
+    conn.commit()

@@ -20,6 +20,9 @@ CREATE TABLE IF NOT EXISTS partner (
     speech_style TEXT NOT NULL,
     relationship_stance TEXT NOT NULL,
     system_prompt TEXT NOT NULL,
+    affection INTEGER DEFAULT 0,
+    dark_past_state TEXT DEFAULT 'none',
+    dark_past TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -38,6 +41,7 @@ CREATE TABLE IF NOT EXISTS cases (
     title TEXT NOT NULL,
     case_data TEXT NOT NULL,
     status TEXT DEFAULT 'active',
+    case_type TEXT DEFAULT 'standard',
     trial_end_time TEXT,
     trial_outcome TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -113,6 +117,14 @@ CREATE TABLE IF NOT EXISTS player_suspects (
     note TEXT,
     added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (case_id) REFERENCES cases(id)
+);
+
+CREATE TABLE IF NOT EXISTS npc_relationships (
+    npc_id INTEGER PRIMARY KEY,
+    affection INTEGER DEFAULT 0,
+    clue_volunteered INTEGER DEFAULT 0,
+    secret_revealed INTEGER DEFAULT 0,
+    FOREIGN KEY (npc_id) REFERENCES npcs(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_cases_status ON cases(status);
