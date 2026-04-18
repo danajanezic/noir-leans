@@ -19,7 +19,7 @@ from noir.persistence.repository import (
     set_npc_clue_volunteered, set_npc_secret_revealed,
     get_partner_affection, increment_partner_affection,
     get_partner_dark_past_state, set_partner_dark_past_state,
-    set_partner_dark_past, get_partner_dark_past,
+    set_partner_dark_past,
     remove_partner,
 )
 from noir.persistence.db import create_schema
@@ -254,11 +254,11 @@ class Game:
             cmd = parse_command(player_input)
             if cmd.intent == Intent.FLIRT:
                 self._handle_partner_flirt()
+            self._check_partner_romance_milestone()   # moved before dark past check
             dark_past_state = get_partner_dark_past_state(self.conn)
             if dark_past_state == "flagged" and _is_dark_past_invitation(player_input):
                 self._trigger_dark_past_revelation()
                 break
-            self._check_partner_romance_milestone()
             response = self.companion.speak(self._companion_context(player_input))
             show_dialogue(self.companion.name, response)
 
@@ -402,11 +402,11 @@ class Game:
             return
 
         set_partner_dark_past(self.conn, backstory)
+        set_partner_dark_past_state(self.conn, "revealed")  # moved here
         show_dialogue(self.companion.name, backstory)
 
         console.print("\n[dim]The case tied to this will come when you are ready...[/dim]\n")
         self._start_dark_past_case(crime_summary, theme)
-        set_partner_dark_past_state(self.conn, "revealed")
 
     def _start_dark_past_case(self, crime_summary: str, theme: str) -> None:
         from noir.mystery.generator import MysteryGenerator
@@ -509,6 +509,12 @@ class Game:
                 " [You have decided to tell the detective something important about your past. "
                 "It is weighing on you heavily. You have not found the right moment yet. "
                 "It colors everything you say.]"
+            )
+        elif dark_past_state in ("revealed", "in_progress"):
+            romance_ctx += (
+                " [You have told the detective your secret. It is out. "
+                "Now they are investigating a case tied to it. "
+                "Every word you say carries that weight. You are watching them closely.]"
             )
         return romance_ctx + " " + player_input
 
