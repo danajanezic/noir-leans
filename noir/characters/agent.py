@@ -22,3 +22,11 @@ class Agent:
         append_history(self.conn, character_id=self.character_id,
                        role="assistant", content=response, case_id=self.case_id)
         return response
+
+    def narrate(self, prompt: str) -> str:
+        """Like speak(), but the prompt is not stored in history — only the response."""
+        history = get_history(self.conn, character_id=self.character_id, case_id=self.case_id)
+        response = self.llm.query(self.system_prompt, history, prompt)
+        append_history(self.conn, character_id=self.character_id,
+                       role="assistant", content=response, case_id=self.case_id)
+        return response

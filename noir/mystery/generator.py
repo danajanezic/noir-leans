@@ -1,5 +1,7 @@
+import json
 import sqlite3
 import random
+from pathlib import Path
 from noir.llm.base import LLMBackend
 from noir.persistence.repository import (
     get_player, list_archetypes, get_archetype
@@ -10,9 +12,10 @@ REQUIRED_SUSPECT_FIELDS = {"name", "role", "alibi", "secret", "personality", "sp
 REQUIRED_CLUE_FIELDS = {"description", "is_red_herring", "location"}
 REQUIRED_LOCATION_FIELDS = {"name", "description"}
 
-GENERATOR_SYSTEM_PROMPT = """You are a mystery generator for an absurdist noir detective game.
+GENERATOR_SYSTEM_PROMPT = """You are a mystery generator for an absurdist noir detective game set in Noirleans, a city that exists somewhere between New Orleans and a fever dream. The year is 1935. The Great Depression has hollowed out the middle class and left the desperate and the corrupt to sort things out between themselves. Jazz plays from buildings with no electricity. Bread lines stretch past speakeasies. Everyone is either on the take or on the run.
 Generate richly detailed, darkly comic mysteries. Characters should be over-the-top and memorable.
 Causes of death should be absurd. Motives should be simultaneously petty and grandiose.
+The setting is period-accurate 1930s: no phones in pockets, no computers, cash economy, Prohibition recently ended, fedoras mandatory.
 Return ONLY valid JSON matching the requested schema. No prose, no markdown, just JSON."""
 
 
@@ -68,7 +71,7 @@ class MysteryGenerator:
         self.llm = llm
         self.conn = conn
 
-    def generate(self, archetype_name: str) -> dict:
+    def generate(self, archetype_name: str, theme: str | None = None) -> dict:
         player = get_player(self.conn)
         player_context = _build_player_context(player)
 
@@ -78,19 +81,22 @@ class MysteryGenerator:
         else:
             archetype_prompt = f"Generate a mystery in the style of {archetype_name}."
 
+        theme_text = f"\n\nAdditional theme to weave in: {theme}" if theme else ""
+
         prompt = (
-            f"{archetype_prompt}\n\n"
+            f"{archetype_prompt}{theme_text}\n\n"
             f"{player_context}\n\n"
             "Return a JSON object with this exact schema:\n"
             "{\n"
             '  "title": "string",\n'
-            '  "victim": {"name": "string", "cause_of_death": "string"},\n'
+            '  "victim": {"name": "string", "cause_of_death": "string", "found_at": "string (location name where body was discovered)"},\n'
             '  "killer_name": "string (must match one suspect name)",\n'
             '  "motive": "string",\n'
             '  "suspects": [\n'
             '    {"name": "string", "role": "suspect|witness|informant",\n'
             '     "alibi": "string", "secret": "string",\n'
-            '     "personality": "string", "speech_style": "string"}\n'
+            '     "personality": "string", "speech_style": "string",\n'
+            '     "relationships": [{"name": "string", "relationship": "string"}]}\n'
             '  ],\n'
             '  "clues": [\n'
             '    {"description": "string", "is_red_herring": boolean, "location": "string"}\n'
@@ -121,3 +127,11 @@ class MysteryGenerator:
         if not archetypes:
             return "Agatha Christie"
         return random.choice(archetypes)["name"]
+
+    def pick_random_theme(self) -> str | None:
+        themes_path = Path(__file__).parent / "themes.json"
+        try:
+            themes = json.loads(themes_path.read_text())
+            return random.choice(themes) if themes else None
+        except Exception:
+            return None

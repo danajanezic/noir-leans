@@ -168,7 +168,11 @@ def add_evidence(conn: sqlite3.Connection, *, case_id: int, description: str,
 
 
 def get_evidence_for_case(conn: sqlite3.Connection, case_id: int) -> list[sqlite3.Row]:
-    return conn.execute("SELECT * FROM evidence WHERE case_id=?", (case_id,)).fetchall()
+    return conn.execute(
+        "SELECT e.*, l.name AS location_name FROM evidence e "
+        "LEFT JOIN locations l ON l.id = e.location_id WHERE e.case_id=?",
+        (case_id,)
+    ).fetchall()
 
 
 def create_arrest(conn: sqlite3.Connection, *, case_id: int, npc_id: int,
@@ -204,3 +208,44 @@ def get_archetype(conn: sqlite3.Connection, name: str) -> sqlite3.Row | None:
 
 def list_archetypes(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute("SELECT * FROM mystery_archetypes").fetchall()
+
+
+def get_player_states(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute("SELECT * FROM player_states ORDER BY added_at").fetchall()
+
+
+def add_player_state(conn: sqlite3.Connection, *, state: str, intensity: int = 1) -> None:
+    conn.execute(
+        "INSERT INTO player_states (state, intensity) VALUES (?, ?) "
+        "ON CONFLICT(state) DO UPDATE SET intensity=?, added_at=CURRENT_TIMESTAMP",
+        (state, intensity, intensity)
+    )
+    conn.commit()
+
+
+def remove_player_state(conn: sqlite3.Connection, *, state: str) -> bool:
+    cur = conn.execute("DELETE FROM player_states WHERE state=?", (state,))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def clear_transient_states(conn: sqlite3.Connection) -> None:
+    """Clear states that shouldn't persist across sessions (drunk, sleepy)."""
+    conn.execute("DELETE FROM player_states WHERE state IN ('drunk', 'sleepy', 'tired')")
+    conn.commit()
+
+
+def add_player_suspect(conn: sqlite3.Connection, *, case_id: int, name: str,
+                       note: str | None = None) -> int:
+    cur = conn.execute(
+        "INSERT INTO player_suspects (case_id, name, note) VALUES (?, ?, ?)",
+        (case_id, name, note)
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def get_player_suspects(conn: sqlite3.Connection, case_id: int) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM player_suspects WHERE case_id=? ORDER BY added_at", (case_id,)
+    ).fetchall()

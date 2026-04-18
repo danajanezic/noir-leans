@@ -31,7 +31,7 @@ QUIZ_QUESTIONS = [
         ]
     },
     {
-        "question": "The city is corrupt from top to bottom. You think:",
+        "question": "Noirleans is corrupt from top to bottom. You think:",
         "options": [
             "A. Someone has to try.",
             "B. At least I know who to bribe.",
@@ -61,7 +61,7 @@ QUIZ_QUESTIONS = [
         "question": "A case goes cold. You:",
         "options": [
             "A. Keep working it. Every case deserves an answer.",
-            "B. Move on. The city has enough unsolved problems.",
+            "B. Move on. Noirleans has enough unsolved problems.",
             "C. Blame the system, because it's usually the system.",
             "D. Take a job that pays better for a while.",
         ]
@@ -77,7 +77,7 @@ QUIZ_QUESTIONS = [
     },
 ]
 
-QUIZ_SYSTEM_PROMPT = """You are a character generator for an absurdist noir detective game.
+QUIZ_SYSTEM_PROMPT = """You are a character generator for an absurdist noir detective game set in Noirleans, 1935 — a city drowning in Depression-era desperation, jazz, and corruption.
 Based on a player's quiz answers, you create their detective partner — a character who is
 over-the-top, deeply human, and funny in the vein of Hitchhiker's Guide to the Galaxy meets
 hard-boiled noir. The partner serves as the player's Ford Prefect: guide, confidant, and
@@ -100,9 +100,18 @@ class Quiz:
         self.conn = conn
         self.llm = llm
 
+    @staticmethod
+    def _resolve_option(q_idx: int, answer: str) -> str:
+        options = QUIZ_QUESTIONS[q_idx]["options"]
+        key = answer.strip().upper()
+        for opt in options:
+            if opt.startswith(key + ".") or opt.startswith(key + " "):
+                return opt
+        return answer
+
     def run(self, *, answers: list[str]) -> dict:
         answers_text = "\n".join(
-            f"Q{i+1}: {QUIZ_QUESTIONS[i]['question']}\nA: {answer}"
+            f"Q{i+1}: {QUIZ_QUESTIONS[i]['question']}\nAnswer: {self._resolve_option(i, answer)}"
             for i, answer in enumerate(answers)
         )
         prompt = (

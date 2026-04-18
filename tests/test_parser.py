@@ -77,3 +77,16 @@ def test_unknown_intent():
     cmd = parse_command("do the macarena")
     assert cmd.intent == Intent.UNKNOWN
     assert cmd.raw == "do the macarena"
+
+
+def test_lets_go_variants():
+    for phrase in [
+        "let's go to the crane residence",
+        "let's head to the diner",
+        "let's visit the precinct",
+        "let us go to the warehouse",
+        "let's start at the crime scene",
+        "let's make our way to the harbor",
+    ]:
+        cmd = parse_command(phrase)
+        assert cmd.intent == Intent.GO, f"Failed for: {phrase}"

@@ -24,7 +24,8 @@ class Command:
     raw: str = ""
 
 
-_GO_WORDS = r"(?:go to|head to|visit|walk to|travel to|go)"
+_LETS = r"(?:let(?:'s| us) )?"
+_GO_WORDS = rf"(?:{_LETS}(?:go to|head to|head over to|visit|walk to|travel to|start at|start with|make our way to)|go)"
 _TALK_WORDS = r"(?:talk to|speak (?:to|with)|ask|chat with|question|interrogate)"
 _COLLECT_WORDS = r"(?:pick up|take|grab|collect|pocket)"
 _EXAMINE_WORDS = r"(?:examine|look at|inspect|check|study|scrutinize)"
@@ -40,6 +41,7 @@ _RULES: list[tuple[str, Intent, int]] = [
     (rf"^{_GO_WORDS}\s+{_DA_WORDS}\b", Intent.GO_DA, 0),
     (rf"^{_GO_WORDS}\s+{_COURTHOUSE_WORDS}\b", Intent.GO_COURTHOUSE, 0),
     (rf"^{_TALK_WORDS}\s+{_PARTNER_WORDS}\b", Intent.TALK_PARTNER, 0),
+    (r"^ask\s+(\w+(?:\s+\w+)?)\s+about\b", Intent.TALK, 1),
     (rf"^{_TALK_WORDS}\s+(.+)$", Intent.TALK, 1),
     (rf"^{_ARREST_WORDS}\s+(.+)$", Intent.ARREST, 1),
     (rf"^{_COLLECT_WORDS}\s+(.+)$", Intent.COLLECT, 1),

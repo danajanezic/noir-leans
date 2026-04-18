@@ -10,6 +10,26 @@
     "seed_prompt": "Generate a mystery in the style of Dashiell Hammett. The crime is rooted in greed, power, and institutional corruption. There are no truly innocent parties — everyone is compromised. The killer is likely someone with connections that make prosecution inconvenient. Clues are hidden in plain sight behind layers of denial and self-interest. Witnesses are reluctant and motivated by self-preservation. The setting should feel like a city that eats people — docks, back rooms, union halls, newspaper offices. The tone is cynical and matter-of-fact. The detective's idealism, if they have any, is tested."
   },
   {
+    "name": "Raymond Chandler",
+    "description": "A femme fatale, corrupt cops, and a case that keeps changing shape. The detective is the only honest person in a dishonest city.",
+    "seed_prompt": "Generate a mystery in the style of Raymond Chandler. A beautiful, enigmatic woman hires the detective — or is at the center of the crime. What appears to be a simple case peels back into something much darker. The police are either corrupt, incompetent, or actively obstructing the investigation. Wealthy suspects use lawyers and social connections as weapons. The killer's motive is buried under layers of deception and self-reinvention. Clues are atmospheric as much as factual — a wrong look, a too-perfect alibi, a detail that doesn't fit the story. The tone is poetic and cynical. The detective sees through everyone, but it costs them something."
+  },
+  {
+    "name": "James M. Cain",
+    "description": "Passion crime. Ordinary people, an affair, and a body. The trap closes slowly. Sympathy for the devil.",
+    "seed_prompt": "Generate a mystery in the style of James M. Cain (The Postman Always Rings Twice, Double Indemnity). The crime is rooted in desire, desperation, and a bad idea that seemed brilliant at the time. Working-class or lower-middle-class characters are involved — this is not a crime of the elite. An insurance policy, an inheritance, or a debt is usually at the center. The killer and their accomplice (if any) are not monsters — they're people who made a terrible choice and then couldn't stop making it. The net tightens through small betrayals and bad luck. The tone is fatalistic and intimate. The detective may feel sympathy for the people they're about to bring down."
+  },
+  {
+    "name": "Gangster",
+    "description": "Mob territory, protection rackets, and a body that someone powerful wants to forget. The detective is caught between criminal interests.",
+    "seed_prompt": "Generate a mystery set in the world of 1930s organized crime. A body turns up in mob territory — a snitch, a double-crosser, a civilian who saw the wrong thing, or a made man whose death will start a war if the truth comes out. Suspects include rival gang members, corrupt police on the payroll, a fixer who knows too much, and someone who wanted out and almost made it. The detective must navigate competing criminal interests without becoming a liability themselves. Protection rackets, speakeasies, numbers running, and back-room deals are part of the fabric. Nobody talks to cops voluntarily. The tone is brutal, transactional, and occasionally darkly funny — these people have their own code, and it's not nothing."
+  },
+  {
+    "name": "The Set-Up",
+    "description": "Someone refused to play ball. A fighter, a witness, a union man. They paid for it. Find out who gave the order.",
+    "seed_prompt": "Generate a mystery in the style of Robert Wise's The Set-Up (1949) and the Robert Ryan noir tradition. The victim was someone who refused to cooperate — a boxer who wouldn't take a dive, a witness who wouldn't recant, a longshoreman who wouldn't look the other way. They knew the risk and took it anyway. Now they're dead, and the people who gave the order are insulated by layers of intermediaries. Suspects include the fixer who delivered the ultimatum, the higher-up who never gets their hands dirty, the person who tried to warn the victim and failed, and someone who was supposed to be a friend. The tone is brutal and moral — this is a story about what happens to people who try to stay honest in a dishonest world."
+  },
+  {
     "name": "Benoit Blanc",
     "description": "The detective is the spectacle. Meta-aware, theatrical, with a Southern Gothic flair. The mystery is almost secondary to the performance of solving it.",
     "seed_prompt": "Generate a mystery in the style of Rian Johnson's Benoit Blanc films. The crime occurs in a wealthy, eccentric family or social circle where everyone is theatrical and self-conscious. The killer is audacious and the method is almost absurdly overcomplicated. The detective's process is itself a performance — they announce their conclusions in stages, enjoy the drama, and occasionally seem to know more than they let on. Include a false solution that seems airtight before the real one emerges. The tone is playful, slightly self-aware, and occasionally breaks the fourth wall of detective fiction."

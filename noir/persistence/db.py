@@ -99,6 +99,22 @@ CREATE TABLE IF NOT EXISTS mystery_archetypes (
     seed_prompt TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS player_states (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    state TEXT NOT NULL UNIQUE,
+    intensity INTEGER DEFAULT 1,
+    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS player_suspects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    case_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    note TEXT,
+    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (case_id) REFERENCES cases(id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_cases_status ON cases(status);
 CREATE INDEX IF NOT EXISTS idx_conversation_history_character ON conversation_history(character_id);
 CREATE INDEX IF NOT EXISTS idx_conversation_history_case ON conversation_history(case_id);
