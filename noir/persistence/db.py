@@ -145,6 +145,19 @@ def get_connection() -> sqlite3.Connection:
     return conn
 
 
+_MIGRATIONS = [
+    "ALTER TABLE partner ADD COLUMN affection INTEGER DEFAULT 0",
+    "ALTER TABLE partner ADD COLUMN dark_past_state TEXT DEFAULT 'none'",
+    "ALTER TABLE partner ADD COLUMN dark_past TEXT",
+    "ALTER TABLE cases ADD COLUMN case_type TEXT DEFAULT 'standard'",
+]
+
+
 def create_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    for sql in _MIGRATIONS:
+        try:
+            conn.execute(sql)
+        except Exception:
+            pass  # column already exists
     conn.commit()
