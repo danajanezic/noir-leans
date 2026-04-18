@@ -78,7 +78,7 @@ def show_relationships(partner_name: str | None, partner_stage: str | None,
                        npc_relationships: list[dict]) -> None:
     lines = []
     if partner_name and partner_stage:
-        lines.append(f"[magenta]♥[/magenta] {partner_name} [dim](partner — {partner_stage})[/dim]")
+        lines.append(f"[magenta]♥ {partner_name} (partner — {partner_stage})[/magenta]")
     for rel in npc_relationships:
         stage = rel["stage"]
         color = {"cold": "dim", "curious": "white", "warm": "yellow",
