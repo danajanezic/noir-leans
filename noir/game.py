@@ -262,15 +262,12 @@ class Game:
     def _npc_relationship_context(self, npc_id: int) -> str:
         affection = get_npc_affection(self.conn, npc_id)
         stage = _affection_to_stage(affection)
-        stage_notes = {
-            "cold": "You are wary or indifferent to this person's attention.",
-            "curious": "You find yourself intrigued by this person, though you keep your guard up.",
-            "warm": "You feel warmly toward this person. You are more open than usual, and you hint that there is more to know about you.",
-            "smitten": "You are visibly affected by this person. You are conflicted — this is not a good time for feelings. You find yourself volunteering more than you intended.",
-            "devoted": "You have made a choice about this person. You will protect them. You will tell them the truth.",
-        }
-        note = stage_notes.get(stage, "")
-        return f"[Relationship with detective: {stage}. {note}] "
+        return (
+            f"[Relationship: {stage}. React accordingly — a cold NPC is dismissive or wary, "
+            "curious is intrigued but guarded, warm is genuinely friendly, "
+            "smitten is visibly affected and conflicted, "
+            "devoted has made a choice and will protect this person.] "
+        )
 
     def _handle_npc_flirt(self, npc_id: int) -> None:
         affection = get_npc_affection(self.conn, npc_id)
