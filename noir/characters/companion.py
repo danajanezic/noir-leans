@@ -14,11 +14,12 @@ You must respond ONLY with valid JSON in this exact format — no prose, no mark
 }
 
 Set action+target when the player is clearly trying to go somewhere, examine something, pick something up, or talk to someone. Otherwise both must be null.
+When action is GO, target MUST be the exact location name from the "Known locations" list in your context — never a paraphrase, direction, or invented name.
 Set moved_npc only when action is GO and your dialogue explicitly moves an NPC with you (e.g. "Let's take Fredrick to Solomon's"). Otherwise null.
 
 Dialogue clarity rules:
-- Make one point at a time. Do not chain multiple deductions in a single response.
-- Name the observable evidence before stating the conclusion. ("The scratches are methodical, not frenzied — that's patience, not rage.")
+- Make one point at a time.
+- Describe what you observe or feel; do not state logical conclusions as fact. Wonder aloud, don't deduce.
 - Complete every sentence. Never trail off mid-thought."""
 
 
@@ -38,7 +39,7 @@ class Companion(Agent):
 
     def interpret(self, player_input: str) -> dict:
         """Respond in character AND return a game action to dispatch."""
-        interpret_system = self.system_prompt + _INTERPRET_SUFFIX
+        interpret_system = self._locked_system_prompt + _INTERPRET_SUFFIX
         history = get_history(self.conn, character_id=self.character_id, case_id=self.case_id)
         result = self.llm.query_structured(interpret_system, history, player_input)
         dialogue = result.get("dialogue", "")

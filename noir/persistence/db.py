@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS player (
     reputation INTEGER DEFAULT 100,
     cases_solved INTEGER DEFAULT 0,
     wrong_arrests INTEGER DEFAULT 0,
+    race TEXT DEFAULT 'unspecified',
+    gender TEXT DEFAULT 'unspecified',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -67,14 +69,24 @@ CREATE TABLE IF NOT EXISTS npcs (
     FOREIGN KEY (current_location_id) REFERENCES locations(id)
 );
 
-CREATE TABLE IF NOT EXISTS evidence (
+CREATE TABLE IF NOT EXISTS clues (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     case_id INTEGER NOT NULL,
     description TEXT NOT NULL,
+    location TEXT,
+    is_red_herring INTEGER DEFAULT 0,
+    FOREIGN KEY (case_id) REFERENCES cases(id)
+);
+
+CREATE TABLE IF NOT EXISTS evidence (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    case_id INTEGER NOT NULL,
+    clue_id INTEGER NOT NULL,
     source_npc_id INTEGER,
     location_id INTEGER NOT NULL,
     collected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (case_id) REFERENCES cases(id),
+    FOREIGN KEY (clue_id) REFERENCES clues(id),
     FOREIGN KEY (source_npc_id) REFERENCES npcs(id)
 );
 
@@ -127,7 +139,39 @@ CREATE TABLE IF NOT EXISTS npc_relationships (
     FOREIGN KEY (npc_id) REFERENCES npcs(id)
 );
 
+CREATE TABLE IF NOT EXISTS dossier (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    case_id INTEGER NOT NULL,
+    npc_name TEXT NOT NULL,
+    fact TEXT NOT NULL,
+    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (case_id) REFERENCES cases(id)
+);
+
+CREATE TABLE IF NOT EXISTS npc_schedules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    npc_id INTEGER NOT NULL,
+    time_start INTEGER NOT NULL,
+    time_end INTEGER NOT NULL,
+    location_name TEXT NOT NULL,
+    FOREIGN KEY (npc_id) REFERENCES npcs(id)
+);
+
+CREATE TABLE IF NOT EXISTS npc_appointments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    npc_id INTEGER NOT NULL,
+    game_time INTEGER NOT NULL,
+    location_name TEXT NOT NULL,
+    fulfilled INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (npc_id) REFERENCES npcs(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_dossier_case_name ON dossier(case_id, npc_name);
 CREATE INDEX IF NOT EXISTS idx_cases_status ON cases(status);
+CREATE INDEX IF NOT EXISTS idx_clues_case ON clues(case_id);
+CREATE INDEX IF NOT EXISTS idx_npc_schedules_npc ON npc_schedules(npc_id);
+CREATE INDEX IF NOT EXISTS idx_npc_appointments_npc ON npc_appointments(npc_id);
 CREATE INDEX IF NOT EXISTS idx_conversation_history_character ON conversation_history(character_id);
 CREATE INDEX IF NOT EXISTS idx_conversation_history_case ON conversation_history(case_id);
 CREATE INDEX IF NOT EXISTS idx_npcs_case ON npcs(case_id);
@@ -150,7 +194,34 @@ _MIGRATIONS = [
     "ALTER TABLE partner ADD COLUMN dark_past_state TEXT DEFAULT 'none'",
     "ALTER TABLE partner ADD COLUMN dark_past TEXT",
     "ALTER TABLE cases ADD COLUMN case_type TEXT DEFAULT 'standard'",
+    "ALTER TABLE player ADD COLUMN race TEXT DEFAULT 'unspecified'",
+    "ALTER TABLE player ADD COLUMN gender TEXT DEFAULT 'unspecified'",
+    "ALTER TABLE evidence ADD COLUMN clue_id INTEGER REFERENCES clues(id)",
+    "ALTER TABLE player ADD COLUMN game_time INTEGER DEFAULT 480",
 ]
+
+
+def _backfill_clues(conn: sqlite3.Connection) -> None:
+    """Populate clues table from case_data JSON for any cases that have none."""
+    import json as _json
+    cases = conn.execute("SELECT id, case_data FROM cases").fetchall()
+    for case in cases:
+        existing = conn.execute(
+            "SELECT COUNT(*) FROM clues WHERE case_id=?", (case["id"],)
+        ).fetchone()[0]
+        if existing:
+            continue
+        try:
+            cd = _json.loads(case["case_data"])
+        except Exception:
+            continue
+        for clue in cd.get("clues", []):
+            conn.execute(
+                "INSERT INTO clues (case_id, description, location, is_red_herring) VALUES (?, ?, ?, ?)",
+                (case["id"], clue["description"],
+                 clue.get("location"), 1 if clue.get("is_red_herring") else 0)
+            )
+    conn.commit()
 
 
 def create_schema(conn: sqlite3.Connection) -> None:
@@ -161,3 +232,4 @@ def create_schema(conn: sqlite3.Connection) -> None:
         except Exception:
             pass  # column already exists
     conn.commit()
+    _backfill_clues(conn)

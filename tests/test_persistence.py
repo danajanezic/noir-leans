@@ -8,7 +8,7 @@ from noir.persistence.repository import (
     create_case, get_case, update_case_status,
     create_npc, get_npc, get_npcs_for_case,
     set_character_location, get_character_location,
-    add_evidence, get_evidence_for_case,
+    create_clue, add_evidence, get_evidence_for_case,
     create_arrest,
     save_archetype, get_archetype, list_archetypes,
     get_npc_affection, set_npc_affection, increment_npc_affection,
@@ -116,8 +116,8 @@ def test_character_location(db):
 def test_evidence_add_and_get(db):
     case_id = create_case(db, archetype="Blanc", title="Test", case_data={})
     loc_id = create_location(db, name="Study", description="Books.", is_fixed=False, case_id=case_id)
-    add_evidence(db, case_id=case_id, description="A monogrammed glove",
-                 source_npc_id=None, location_id=loc_id)
+    clue_id = create_clue(db, case_id=case_id, description="A monogrammed glove", location="Study")
+    add_evidence(db, case_id=case_id, clue_id=clue_id, source_npc_id=None, location_id=loc_id)
     evidence = get_evidence_for_case(db, case_id)
     assert len(evidence) == 1
     assert evidence[0]["description"] == "A monogrammed glove"

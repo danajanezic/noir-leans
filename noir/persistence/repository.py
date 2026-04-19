@@ -12,6 +12,11 @@ def get_player(conn: sqlite3.Connection) -> sqlite3.Row:
     return conn.execute("SELECT * FROM player WHERE id=1").fetchone()
 
 
+def update_player_identity(conn: sqlite3.Connection, *, race: str, gender: str) -> None:
+    conn.execute("UPDATE player SET race=?, gender=? WHERE id=1", (race, gender))
+    conn.commit()
+
+
 def update_player_reputation(conn: sqlite3.Connection, *, delta: int) -> None:
     conn.execute("UPDATE player SET reputation = reputation + ? WHERE id=1", (delta,))
     conn.commit()
@@ -88,14 +93,37 @@ def get_locations_for_case(conn: sqlite3.Connection, case_id: int) -> list[sqlit
     return conn.execute("SELECT * FROM locations WHERE case_id=?", (case_id,)).fetchall()
 
 
+def create_clue(conn: sqlite3.Connection, *, case_id: int, description: str,
+                location: str | None = None, is_red_herring: bool = False) -> int:
+    cur = conn.execute(
+        "INSERT INTO clues (case_id, description, location, is_red_herring) VALUES (?, ?, ?, ?)",
+        (case_id, description, location, 1 if is_red_herring else 0)
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def get_clues_for_case(conn: sqlite3.Connection, case_id: int) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM clues WHERE case_id=?", (case_id,)
+    ).fetchall()
+
+
 def create_case(conn: sqlite3.Connection, *, archetype: str, title: str,
                 case_data: dict) -> int:
     cur = conn.execute(
         "INSERT INTO cases (archetype, title, case_data) VALUES (?, ?, ?)",
         (archetype, title, json.dumps(case_data))
     )
+    case_id = cur.lastrowid
+    for clue in case_data.get("clues", []):
+        conn.execute(
+            "INSERT INTO clues (case_id, description, location, is_red_herring) VALUES (?, ?, ?, ?)",
+            (case_id, clue["description"],
+             clue.get("location"), 1 if clue.get("is_red_herring") else 0)
+        )
     conn.commit()
-    return cur.lastrowid
+    return case_id
 
 
 def get_case(conn: sqlite3.Connection, case_id: int) -> sqlite3.Row | None:
@@ -104,6 +132,15 @@ def get_case(conn: sqlite3.Connection, case_id: int) -> sqlite3.Row | None:
 
 def get_active_cases(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute("SELECT * FROM cases WHERE status='active'").fetchall()
+
+
+def get_all_cases(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute("SELECT * FROM cases ORDER BY id DESC").fetchall()
+
+
+def set_case_active(conn: sqlite3.Connection, *, case_id: int) -> None:
+    conn.execute("UPDATE cases SET status='active' WHERE id=?", (case_id,))
+    conn.commit()
 
 
 def update_case_status(conn: sqlite3.Connection, *, case_id: int, status: str,
@@ -157,11 +194,11 @@ def get_character_location(conn: sqlite3.Connection, character_id: str) -> int |
     return row["location_id"] if row else None
 
 
-def add_evidence(conn: sqlite3.Connection, *, case_id: int, description: str,
+def add_evidence(conn: sqlite3.Connection, *, case_id: int, clue_id: int,
                  source_npc_id: int | None, location_id: int) -> int:
     cur = conn.execute(
-        "INSERT INTO evidence (case_id, description, source_npc_id, location_id) VALUES (?, ?, ?, ?)",
-        (case_id, description, source_npc_id, location_id)
+        "INSERT INTO evidence (case_id, clue_id, source_npc_id, location_id) VALUES (?, ?, ?, ?)",
+        (case_id, clue_id, source_npc_id, location_id)
     )
     conn.commit()
     return cur.lastrowid
@@ -169,8 +206,12 @@ def add_evidence(conn: sqlite3.Connection, *, case_id: int, description: str,
 
 def get_evidence_for_case(conn: sqlite3.Connection, case_id: int) -> list[sqlite3.Row]:
     return conn.execute(
-        "SELECT e.*, l.name AS location_name FROM evidence e "
-        "LEFT JOIN locations l ON l.id = e.location_id WHERE e.case_id=?",
+        "SELECT e.id, e.case_id, e.clue_id, e.source_npc_id, e.location_id, e.collected_at, "
+        "c.description, c.is_red_herring, l.name AS location_name "
+        "FROM evidence e "
+        "JOIN clues c ON c.id = e.clue_id "
+        "LEFT JOIN locations l ON l.id = e.location_id "
+        "WHERE e.case_id=?",
         (case_id,)
     ).fetchall()
 
@@ -249,6 +290,15 @@ def get_player_suspects(conn: sqlite3.Connection, case_id: int) -> list[sqlite3.
     return conn.execute(
         "SELECT * FROM player_suspects WHERE case_id=? ORDER BY added_at", (case_id,)
     ).fetchall()
+
+
+def remove_player_suspect(conn: sqlite3.Connection, *, case_id: int, name: str) -> bool:
+    cur = conn.execute(
+        "DELETE FROM player_suspects WHERE case_id=? AND lower(name) LIKE lower(?)",
+        (case_id, f"%{name}%")
+    )
+    conn.commit()
+    return cur.rowcount > 0
 
 
 def get_npc_affection(conn: sqlite3.Connection, npc_id: int) -> int:
@@ -346,6 +396,100 @@ def set_partner_dark_past(conn: sqlite3.Connection, dark_past: str) -> None:
 def get_partner_dark_past(conn: sqlite3.Connection) -> str | None:
     row = conn.execute("SELECT dark_past FROM partner WHERE id=1").fetchone()
     return row["dark_past"] if row else None
+
+
+def add_dossier_facts(conn: sqlite3.Connection, *, case_id: int, npc_name: str, facts: list[str]) -> None:
+    for fact in facts:
+        conn.execute(
+            "INSERT INTO dossier (case_id, npc_name, fact) VALUES (?, ?, ?)",
+            (case_id, npc_name, fact)
+        )
+    conn.commit()
+
+
+def get_dossier(conn: sqlite3.Connection, *, case_id: int, npc_name: str) -> list[str]:
+    rows = conn.execute(
+        "SELECT fact FROM dossier WHERE case_id=? AND LOWER(npc_name) LIKE ? ORDER BY added_at",
+        (case_id, f"%{npc_name.lower()}%")
+    ).fetchall()
+    return [r["fact"] for r in rows]
+
+
+def get_all_dossier(conn: sqlite3.Connection, *, case_id: int) -> dict[str, list[str]]:
+    rows = conn.execute(
+        "SELECT npc_name, fact FROM dossier WHERE case_id=? ORDER BY npc_name, added_at",
+        (case_id,)
+    ).fetchall()
+    result: dict[str, list[str]] = {}
+    for r in rows:
+        result.setdefault(r["npc_name"], []).append(r["fact"])
+    return result
+
+
+def get_game_time(conn: sqlite3.Connection) -> int:
+    row = conn.execute("SELECT game_time FROM player WHERE id=1").fetchone()
+    return row["game_time"] if row and row["game_time"] is not None else 480
+
+
+def advance_game_time(conn: sqlite3.Connection, *, delta: int) -> int:
+    conn.execute("UPDATE player SET game_time = game_time + ? WHERE id=1", (delta,))
+    conn.commit()
+    return get_game_time(conn)
+
+
+def create_npc_schedule(conn: sqlite3.Connection, *, npc_id: int,
+                        time_start: int, time_end: int, location_name: str) -> None:
+    conn.execute(
+        "INSERT INTO npc_schedules (npc_id, time_start, time_end, location_name) VALUES (?, ?, ?, ?)",
+        (npc_id, time_start, time_end, location_name)
+    )
+
+
+def get_npc_schedule_entries(conn: sqlite3.Connection, npc_id: int) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM npc_schedules WHERE npc_id=? ORDER BY time_start", (npc_id,)
+    ).fetchall()
+
+
+def get_npc_location_at_time(conn: sqlite3.Connection, npc_id: int, game_time: int) -> str | None:
+    tod = game_time % 1440
+    entries = get_npc_schedule_entries(conn, npc_id)
+    for e in entries:
+        s, end = e["time_start"], e["time_end"]
+        if s <= end:
+            if s <= tod < end:
+                return e["location_name"]
+        else:  # spans midnight
+            if tod >= s or tod < end:
+                return e["location_name"]
+    return None
+
+
+def create_npc_appointment(conn: sqlite3.Connection, *, npc_id: int,
+                           game_time: int, location_name: str) -> int:
+    cur = conn.execute(
+        "INSERT INTO npc_appointments (npc_id, game_time, location_name) VALUES (?, ?, ?)",
+        (npc_id, game_time, location_name)
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def get_active_appointment(conn: sqlite3.Connection, npc_id: int,
+                           game_time: int) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM npc_appointments WHERE npc_id=? AND fulfilled=0 "
+        "AND game_time <= ? ORDER BY game_time DESC LIMIT 1",
+        (npc_id, game_time)
+    ).fetchone()
+
+
+def fulfill_past_appointments(conn: sqlite3.Connection, npc_id: int, game_time: int) -> None:
+    conn.execute(
+        "UPDATE npc_appointments SET fulfilled=1 WHERE npc_id=? AND game_time < ?",
+        (npc_id, game_time)
+    )
+    conn.commit()
 
 
 def remove_partner(conn: sqlite3.Connection) -> None:

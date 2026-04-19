@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+import time
 import urllib.error
 import urllib.request
 from rich.console import Console
@@ -39,23 +40,30 @@ class OllamaBackend(LLMBackend):
             headers={"Content-Type": "application/json"},
         )
 
+        t0 = time.perf_counter()
         try:
             if self.suppress_status:
                 with urllib.request.urlopen(req, timeout=180) as resp:
                     body = json.loads(resp.read())
             else:
-                with _console.status("[dim]Thinking...[/dim]", spinner="dots"):
+                with _console.status(f"[dim]{self.status_message}[/dim]", spinner="dots"):
                     with urllib.request.urlopen(req, timeout=180) as resp:
                         body = json.loads(resp.read())
         except urllib.error.URLError as e:
             log.error("ollama connection error: %s", e)
             self._fatal()
+        elapsed = time.perf_counter() - t0
 
         text = body.get("message", {}).get("content", "").strip()
         # strip role echoes and EOS artifacts
         text = re.sub(r'^(USER|ASSISTANT|Human|Assistant)\s*:\s*', '', text, flags=re.IGNORECASE)
         text = re.sub(r'</?s>|<\|endoftext\|>|<\|end\|>', '', text)
-        log.info("ollama response (json=%s): %s", json_mode, text[:500])
+        if not json_mode:
+            text = re.sub(r'^\[(?:[^\[\]]|\[[^\[\]]*\])*\]\s*', '', text)
+            text = re.sub(r'\(.*?\)', '', text, flags=re.DOTALL)
+            text = re.sub(r'\*.*?\*', '', text, flags=re.DOTALL)
+            text = re.sub(r'[ \t]+', ' ', text).strip()
+        log.info("LLM call model=%s json=%s elapsed=%.2fs response=%s", self.model, json_mode, elapsed, text[:300])
         return text
 
     def query(self, system_prompt: str, history: list[dict], user_input: str) -> str:

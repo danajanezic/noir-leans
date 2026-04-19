@@ -15,6 +15,7 @@ class Intent(Enum):
     LOOK = auto()
     HELP = auto()
     FLIRT = auto()
+    SHOOT_PARTNER = auto()
     UNKNOWN = auto()
 
 
@@ -58,6 +59,7 @@ _RULES: list[tuple[str, Intent, int]] = [
     (rf"^{_COMPLIMENT_WORDS}$", Intent.FLIRT, 0),
     (rf"^{_ROMANTIC_Q_WORDS}$", Intent.FLIRT, 0),
     (rf"^{_LOOK_WORDS}$", Intent.LOOK, 0),
+    (r"^(?:shoot|kill|murder|shoot|gun down|put a bullet in|fire at)\s+(?:my partner|partner|riley|the partner|\w+)$", Intent.SHOOT_PARTNER, 0),
     (r"^help\b", Intent.HELP, 0),
 ]
 

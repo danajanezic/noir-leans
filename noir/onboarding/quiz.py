@@ -119,7 +119,9 @@ class Quiz:
             "Based on these answers, generate their detective partner. "
             "Return the JSON partner profile."
         )
+        self.llm.status_message = "Creating your perfect antagonist..."
         traits = self.llm.query_structured(QUIZ_SYSTEM_PROMPT, [], prompt)
+        self.llm.status_message = "Thinking..."
         save_partner(
             self.conn,
             name=traits["name"],

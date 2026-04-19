@@ -1,8 +1,33 @@
+import sys
+import atexit
+try:
+    import readline
+    from pathlib import Path
+    _HIST = Path.home() / ".noir_detective" / "history"
+    _HIST.parent.mkdir(parents=True, exist_ok=True)
+    if _HIST.exists():
+        readline.read_history_file(str(_HIST))
+    readline.set_history_length(500)
+    atexit.register(readline.write_history_file, str(_HIST))
+except ImportError:
+    pass
 from noir.log import setup_logging
 from noir.persistence.db import get_connection
 from noir.llm.config import load_config
 from noir.llm.base import LLMBackend
 from noir.game import Game
+
+
+def _maybe_enable_hot_reload() -> None:
+    if "--dev" not in sys.argv:
+        return
+    try:
+        import jurigged
+        jurigged.watch("noir/")
+        print("[dev] Hot-reload active — save any file in noir/ to patch it live.")
+    except ImportError:
+        print("[dev] Install jurigged for hot-reload: pip install jurigged")
+        sys.exit(1)
 
 
 def create_backend(config: dict) -> LLMBackend:
@@ -25,7 +50,23 @@ def create_backend(config: dict) -> LLMBackend:
     )
 
 
+def _maybe_wipe_db() -> None:
+    if "--reset" not in sys.argv:
+        return
+    from noir.persistence.db import DB_PATH
+    confirm = input("Wipe the database and start over? This cannot be undone. (yes/no): ").strip().lower()
+    if confirm == "yes":
+        if DB_PATH.exists():
+            DB_PATH.unlink()
+        print("Database wiped.")
+    else:
+        print("Cancelled.")
+        sys.exit(0)
+
+
 def main():
+    _maybe_wipe_db()
+    _maybe_enable_hot_reload()
     setup_logging()
     config = load_config()
     conn = get_connection()
