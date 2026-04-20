@@ -8,7 +8,7 @@ from noir.persistence.repository import (
 )
 
 REQUIRED_FIELDS = {"title", "victim", "killer_name", "motive", "suspects", "clues", "locations"}
-REQUIRED_SUSPECT_FIELDS = {"name", "role", "alibi", "secret", "personality", "speech_style", "race", "political_connections", "backstory", "routine"}
+REQUIRED_SUSPECT_FIELDS = {"name", "role", "alibi", "secret", "personality", "speech_style", "race", "political_connections", "backstory", "routine", "alignment"}
 REQUIRED_CLUE_FIELDS = {"description", "is_red_herring", "location"}
 REQUIRED_LOCATION_FIELDS = {"name", "description"}
 
@@ -193,6 +193,7 @@ class MysteryGenerator:
             '     "alibi": "string", "secret": "string",\n'
             '     "backstory": "string (2-3 sentences: who they were before this case, what shaped them, what they want)",\n'
             '     "personality": "string", "speech_style": "string",\n'
+            '     "alignment": "string (one of: Lawful Good, Neutral Good, Chaotic Good, Lawful Neutral, True Neutral, Chaotic Neutral, Lawful Evil, Neutral Evil, Chaotic Evil — assign based on this character\'s role, morality, and relationship to authority)",\n'
             '     "routine": [{"time_start": "HH:MM", "time_end": "HH:MM", "location": "string (location name from the locations list, or \'home\' if unavailable)"}],\n'
             '     "relationships": [{"name": "string", "relationship": "string", "shared_facts": ["string — specific verifiable facts you both know, e.g. how long you\'ve worked together, where you first met, a shared event"]}]}\n'
             '  ],\n'
@@ -261,6 +262,7 @@ class MysteryGenerator:
             '     "alibi": "string", "secret": "string",\n'
             '     "backstory": "string (2-3 sentences: who they were before this case, what shaped them, what they want)",\n'
             '     "personality": "string", "speech_style": "string",\n'
+            '     "alignment": "string (one of: Lawful Good, Neutral Good, Chaotic Good, Lawful Neutral, True Neutral, Chaotic Neutral, Lawful Evil, Neutral Evil, Chaotic Evil — assign based on this character\'s role, morality, and relationship to authority)",\n'
             '     "routine": [{"time_start": "HH:MM", "time_end": "HH:MM", "location": "string (location name from the locations list, or \'home\' if unavailable)"}],\n'
             '     "relationships": [{"name": "string", "relationship": "string", "shared_facts": ["string — specific verifiable facts you both know, e.g. how long you\'ve worked together, where you first met, a shared event"]}]}\n'
             '  ],\n'

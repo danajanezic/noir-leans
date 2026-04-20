@@ -44,7 +44,8 @@ VALID_CASE = {
             "race": "White",
             "political_connections": "None",
             "backstory": "Raised flamingos since childhood, turned it into a criminal empire.",
-            "routine": "Opens the sanctuary at dawn, counts flamingos at dusk."
+            "routine": "Opens the sanctuary at dawn, counts flamingos at dusk.",
+            "alignment": "Chaotic Evil"
         },
         {
             "name": "Reginald Smoot",
@@ -56,7 +57,8 @@ VALID_CASE = {
             "race": "White",
             "political_connections": "None",
             "backstory": "Failed accordion salesman turned debtor.",
-            "routine": "Drinks at the Rusty Anchor every evening."
+            "routine": "Drinks at the Rusty Anchor every evening.",
+            "alignment": "Lawful Neutral"
         }
     ],
     "clues": [
@@ -125,3 +127,9 @@ def test_generator_system_prompt_does_not_have_hardcoded_fever_dream():
     from noir.mystery.generator import GENERATOR_SYSTEM_PROMPT
     # The old hardcoded description used this phrase — it should be gone
     assert "fever dream" not in GENERATOR_SYSTEM_PROMPT
+
+
+from noir.mystery.generator import REQUIRED_SUSPECT_FIELDS
+
+def test_required_suspect_fields_includes_alignment():
+    assert "alignment" in REQUIRED_SUSPECT_FIELDS
