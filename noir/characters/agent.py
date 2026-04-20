@@ -2,7 +2,7 @@ import logging
 import re
 import sqlite3
 from noir.llm.base import LLMBackend
-from noir.persistence.repository import append_history, get_history
+from noir.persistence.repository import append_history, get_history, get_world_context as _get_world_context
 
 log = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ class Agent:
 
     @property
     def _locked_system_prompt(self) -> str:
-        return self.system_prompt + _CHARACTER_LOCK
+        return _get_world_context() + "\n\n" + self.system_prompt + _CHARACTER_LOCK
 
     def _query_with_retry(self, prompt: str, history: list[dict]) -> str:
         response = _strip_stage_directions(self.llm.query(self._locked_system_prompt, history, prompt))

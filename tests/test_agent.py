@@ -136,3 +136,14 @@ def test_npc_move_updates_location(db, mock_llm):
 def test_npc_current_location(db, mock_llm):
     npc, loc_id, _ = _make_npc(db, mock_llm)
     assert npc.current_location_id == loc_id
+
+
+def test_agent_locked_system_prompt_contains_world_context(db, mock_llm):
+    agent = Agent(
+        character_id="npc_test",
+        system_prompt="You are a suspect named Gerald.",
+        llm=mock_llm,
+        conn=db,
+    )
+    assert "NOIRLEANS" in agent._locked_system_prompt
+    assert "Howie Short" in agent._locked_system_prompt
