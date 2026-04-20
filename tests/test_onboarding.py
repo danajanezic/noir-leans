@@ -1,7 +1,7 @@
 import json
 from noir.onboarding.quiz import Quiz, QUIZ_QUESTIONS, score_alignment, resolve_alignment
 from noir.onboarding.cold_open import ColdOpen
-from noir.persistence.repository import create_player, get_player, get_partner, update_player_alignment
+from noir.persistence.repository import create_player, get_player, get_partner
 from noir.llm.mock import MockLLMBackend
 
 PARTNER_TRAITS = json.dumps({
@@ -105,12 +105,12 @@ def test_quiz_stores_player_alignment(db):
     create_player(db)
     llm = MockLLMBackend(responses=[PARTNER_TRAITS])
     quiz = Quiz(conn=db, llm=llm)
-    # Q1-A: law+2 good-1, all others D: varying
     answers = ["A", "D", "D", "D", "D", "D", "D", "D"]
     quiz.run(answers=answers)
     player = get_player(db)
-    # Scores should be non-zero (quiz scored and stored)
-    assert player["law_chaos"] != 0 or player["good_evil"] != 0
+    law, good = score_alignment(answers)
+    assert player["law_chaos"] == law
+    assert player["good_evil"] == good
 
 
 def test_quiz_partner_alignment_stored(db):
