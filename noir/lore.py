@@ -1,15 +1,16 @@
 import functools
 import json
+import re
 from pathlib import Path
 
 _LORE_PATH = Path(__file__).parent / "data" / "world_lore.json"
 
 _HISTORY_KEYWORDS = {
-    "remember", "recall", "back then", "before", "used to", "grew up",
-    "young", "history", "past", "what happened", "when did", "around for",
+    "remember", "recall", "back then", "used to", "grew up",
+    "young", "history", "when did", "around for",
     "1917", "1919", "1928", "1929", "1932", "1933",
-    "prohibition", "crash", "depression", "strike", "howie", "short",
-    "red light", "war", "district"
+    "prohibition", "crash", "depression", "strike", "howie",
+    "red light", "war"
 }
 
 
@@ -42,4 +43,4 @@ def lore_memories_for_age(age: int) -> tuple[list[str], list[str]]:
 
 def is_history_query(text: str) -> bool:
     lower = text.lower()
-    return any(kw in lower for kw in _HISTORY_KEYWORDS)
+    return any(re.search(r'\b' + re.escape(kw) + r'\b', lower) for kw in _HISTORY_KEYWORDS)

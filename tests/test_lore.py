@@ -55,3 +55,11 @@ def test_is_history_query_no_match_on_simple_question():
 
 def test_is_history_query_case_insensitive():
     assert is_history_query("REMEMBER the crash?")
+
+
+def test_is_history_query_no_false_positive_warning():
+    assert not is_history_query("Just a warning about that door.")
+
+
+def test_is_history_query_no_false_positive_short():
+    assert not is_history_query("It was a short walk to the docks.")
