@@ -183,7 +183,7 @@ def _handle_accuse(data: dict, *, conn: sqlite3.Connection,
     manager = CaseManager(conn=conn, case_id=case_id, llm=llm)
     arrest_id = manager.arrest(npc_id=npc_row["id"],
                                evidence_summary=manager.get_evidence_summary())
-    arrest = manager.get_arrest()
+    arrest = conn.execute("SELECT * FROM arrests WHERE id=?", (arrest_id,)).fetchone()
     correct = bool(arrest["was_correct"]) if arrest else False
 
     update_case_status(conn, case_id=case_id, status="closed",
