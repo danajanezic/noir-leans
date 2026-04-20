@@ -167,3 +167,49 @@ def test_npc_locked_prompt_includes_alignment_disposition(db, mock_llm):
     mock_llm._responses = cycle(["I know nothing."])
     npc = NPC.load(conn=db, llm=mock_llm, npc_id=npc_id, case_id=case_id)
     assert "opposed" in npc._locked_system_prompt.lower() or "conflict" in npc._locked_system_prompt.lower()
+
+
+def test_npc_case_memories_in_locked_system_prompt(db, mock_llm):
+    case_id = create_case(db, archetype="test", title="Test Case", case_data={})
+    loc_id = create_location(db, name="The Diner", description="Greasy spoons.", is_fixed=True)
+    # age=60: born 1875, remembers red_light_closure (1917, case_hook=true)
+    npc_id = create_npc(db, case_id=case_id, name="Elder", role="witness",
+                        system_prompt="You are an elder.", current_location_id=loc_id, age=60)
+    npc = NPC.load(conn=db, llm=mock_llm, npc_id=npc_id, case_id=case_id)
+    assert "Historical events you personally remember" in npc._locked_system_prompt
+    assert "1917" in npc._locked_system_prompt
+
+
+def test_npc_young_has_no_case_memories(db, mock_llm):
+    case_id = create_case(db, archetype="test", title="Test Case", case_data={})
+    loc_id = create_location(db, name="The Diner", description="Greasy spoons.", is_fixed=True)
+    # age=10: born 1925, no events with age_during >= 12
+    npc_id = create_npc(db, case_id=case_id, name="Kid", role="witness",
+                        system_prompt="You are a kid.", current_location_id=loc_id, age=10)
+    npc = NPC.load(conn=db, llm=mock_llm, npc_id=npc_id, case_id=case_id)
+    assert "Historical events" not in npc._locked_system_prompt
+
+
+def test_npc_background_memories_injected_on_history_query(db, mock_llm):
+    from itertools import cycle
+    mock_llm._responses = cycle(["I remember."])
+    case_id = create_case(db, archetype="test", title="Test Case", case_data={})
+    loc_id = create_location(db, name="The Diner", description="Greasy spoons.", is_fixed=True)
+    # age=35: born 1900, remembers the_crash (1929, case_hook=false) as background
+    npc_id = create_npc(db, case_id=case_id, name="Adult", role="suspect",
+                        system_prompt="You are a suspect.", current_location_id=loc_id, age=35)
+    npc = NPC.load(conn=db, llm=mock_llm, npc_id=npc_id, case_id=case_id)
+    npc.speak("Do you remember the crash?")
+    assert any("Historical background" in call["user_input"] for call in mock_llm.calls)
+
+
+def test_npc_background_not_injected_on_non_history_query(db, mock_llm):
+    from itertools import cycle
+    mock_llm._responses = cycle(["The diner on Fifth."])
+    case_id = create_case(db, archetype="test", title="Test Case", case_data={})
+    loc_id = create_location(db, name="The Diner", description="Greasy spoons.", is_fixed=True)
+    npc_id = create_npc(db, case_id=case_id, name="Adult", role="suspect",
+                        system_prompt="You are a suspect.", current_location_id=loc_id, age=35)
+    npc = NPC.load(conn=db, llm=mock_llm, npc_id=npc_id, case_id=case_id)
+    npc.speak("Where were you last Tuesday?")
+    assert all("Historical background" not in call["user_input"] for call in mock_llm.calls)
