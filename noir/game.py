@@ -38,6 +38,7 @@ from noir.persistence.repository import (
     create_npc_appointment, get_active_appointment, fulfill_past_appointments,
     create_suspect, mark_suspect_met, get_met_suspects_for_case,
     link_evidence_to_suspect,
+    seed_locations_to_db, get_seeded_location_names,
 )
 from noir.persistence.db import create_schema
 from noir.characters.companion import Companion
@@ -228,6 +229,14 @@ class Game:
                 loc_id = existing[name]
             result[name] = loc_id
         return result
+
+    def _ensure_seeded_locations(self) -> None:
+        from pathlib import Path
+        if get_seeded_location_names(self.conn):
+            return  # already seeded
+        locs_path = Path(__file__).parent / "data" / "seeded_locations.json"
+        if locs_path.exists():
+            seed_locations_to_db(self.conn, json.loads(locs_path.read_text()))
 
     def run_onboarding(self) -> None:
         cold_open = ColdOpen(llm=self.llm)
@@ -1595,12 +1604,7 @@ class Game:
         create_schema(self.conn)
         fixed_locs = self.setup_fixed_locations()
         seed_archetypes_to_db(self.conn)
-        from pathlib import Path as _PathLoc
-        import json as _json_loc
-        from noir.persistence.repository import seed_locations_to_db as _seed_locs
-        _locs_path = _PathLoc(__file__).parent / "data" / "seeded_locations.json"
-        if _locs_path.exists():
-            _seed_locs(self.conn, _json_loc.loads(_locs_path.read_text()))
+        self._ensure_seeded_locations()
 
         player = get_player(self.conn)
         if player is None:

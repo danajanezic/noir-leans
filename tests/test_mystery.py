@@ -218,3 +218,10 @@ def test_get_seeded_location_description(db):
 
 def test_get_seeded_location_description_unknown_returns_none(db):
     assert get_seeded_location_description(db, "Nonexistent Place") is None
+
+def test_seed_locations_to_db_is_idempotent(db):
+    locations = [{"name": "The Blue Room", "description": "Smoky, low-lit.", "type": "club"}]
+    seed_locations_to_db(db, locations)
+    seed_locations_to_db(db, locations)  # second call must not error or duplicate
+    names = get_seeded_location_names(db)
+    assert names.count("The Blue Room") == 1

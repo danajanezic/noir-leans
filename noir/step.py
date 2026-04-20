@@ -29,6 +29,7 @@ from noir.persistence.repository import (
     update_case_status, update_player_stats,
     get_player_suspects, add_player_suspect,
     get_history, add_dossier_facts, get_game_time,
+    seed_locations_to_db, get_seeded_location_names,
 )
 from noir.characters.companion import Companion
 from noir.characters.npc import NPC
@@ -90,12 +91,10 @@ def _ensure_archetypes(conn: sqlite3.Connection) -> None:
 
 def _ensure_seeded_locations(conn: sqlite3.Connection) -> None:
     from pathlib import Path
-    from noir.persistence.repository import seed_locations_to_db, get_seeded_location_names
     if get_seeded_location_names(conn):
         return  # already seeded
     locs_path = Path(__file__).parent / "data" / "seeded_locations.json"
     if locs_path.exists():
-        import json
         seed_locations_to_db(conn, json.loads(locs_path.read_text()))
 
 
