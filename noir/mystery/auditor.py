@@ -184,7 +184,70 @@ class CaseAuditor:
         ]
 
     def _patch(self, case: dict, issues: list[Issue]) -> dict:
-        return copy.deepcopy(case)
+        case = copy.deepcopy(case)
+        loc_names = self._location_names(case)
+        first_loc = case["locations"][0]["name"] if case.get("locations") else "home"
+        victim_found_at = case.get("victim", {}).get("found_at", first_loc)
+        fallback_loc = victim_found_at if victim_found_at in loc_names else first_loc
+
+        for issue in issues:
+            if issue.severity != "patchable":
+                continue
+
+            if issue.type == "ghost_name":
+                m = re.search(r"references '([^']+)'", issue.detail)
+                ghost = m.group(1) if m else None
+                if ghost:
+                    for clue in case["clues"]:
+                        if clue.get("description") == issue.subject:
+                            clue["description"] = clue["description"].replace(ghost, "a witness")
+                            break
+
+            elif issue.type == "bad_clue_location":
+                for clue in case["clues"]:
+                    if clue.get("description") == issue.subject:
+                        clue["location"] = fallback_loc
+                        break
+
+            elif issue.type == "bad_routine_location":
+                for suspect in case["suspects"]:
+                    if suspect["name"] == issue.subject:
+                        for entry in suspect.get("routine", []):
+                            if entry.get("location") not in loc_names:
+                                entry["location"] = first_loc
+                        break
+
+            elif issue.type == "npc_unreachable":
+                for suspect in case["suspects"]:
+                    if suspect["name"] == issue.subject:
+                        if not isinstance(suspect.get("routine"), list):
+                            suspect["routine"] = []
+                        suspect["routine"].append({
+                            "time_start": "09:00",
+                            "time_end": "17:00",
+                            "location": first_loc,
+                        })
+                        break
+
+            elif issue.type == "alibi_contradiction":
+                for suspect in case["suspects"]:
+                    if suspect["name"] == issue.subject:
+                        suspect["alibi"] = ""
+                        break
+
+            elif issue.type == "bad_relationship_ref":
+                m = re.search(r"references '([^']+)'", issue.detail)
+                bad_name = m.group(1) if m else None
+                if bad_name:
+                    for suspect in case["suspects"]:
+                        if suspect["name"] == issue.subject:
+                            suspect["relationships"] = [
+                                r for r in suspect.get("relationships", [])
+                                if r.get("name") != bad_name
+                            ]
+                            break
+
+        return case
 
     def _regenerate(self, case: dict, fatal: list[Issue], system_prompt: str) -> dict:
         return case

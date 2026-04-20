@@ -236,3 +236,97 @@ def test_llm_check_sends_full_case_json_in_prompt(auditor, clean_case, mock_llm)
     prompt = mock_llm.calls[-1]["user_input"]
     assert "Dolores Mink" in prompt
     assert "solvability" in prompt.lower() or "unsolvable" in prompt.lower()
+
+
+def test_patch_ghost_name_replaces_with_witness(auditor, clean_case):
+    clean_case["clues"].append({
+        "description": "A witness saw Reginald Smoot leaving the club",
+        "is_red_herring": False,
+        "location": "Fournier's Jazz Club",
+    })
+    issue = Issue(
+        type="ghost_name",
+        subject="A witness saw Reginald Smoot leaving the club",
+        detail="clue references 'Reginald Smoot' who is not a known character",
+        severity="patchable",
+        source="deterministic",
+    )
+    patched = auditor._patch(clean_case, [issue])
+    desc = patched["clues"][-1]["description"]
+    assert "Reginald Smoot" not in desc
+    assert "witness" in desc
+
+
+def test_patch_bad_clue_location_uses_found_at(auditor, clean_case):
+    clean_case["clues"][0]["location"] = "The Moon"
+    issue = Issue(
+        type="bad_clue_location",
+        subject=clean_case["clues"][0]["description"],
+        detail="clue location 'The Moon' not in locations list",
+        severity="patchable",
+        source="deterministic",
+    )
+    patched = auditor._patch(clean_case, [issue])
+    assert patched["clues"][0]["location"] == "Fournier's Jazz Club"
+
+
+def test_patch_bad_routine_location_uses_first_location(auditor, clean_case):
+    clean_case["suspects"][0]["routine"][0]["location"] = "Atlantis"
+    issue = Issue(
+        type="bad_routine_location",
+        subject="Dolores Mink",
+        detail="routine entry location 'Atlantis' not in locations list",
+        severity="patchable",
+        source="deterministic",
+    )
+    patched = auditor._patch(clean_case, [issue])
+    assert patched["suspects"][0]["routine"][0]["location"] == "Fournier's Jazz Club"
+
+
+def test_patch_npc_unreachable_adds_default_routine(auditor, clean_case):
+    clean_case["suspects"][1]["routine"] = []
+    issue = Issue(
+        type="npc_unreachable",
+        subject="René LeBlanc",
+        detail="René LeBlanc has no routine entries and cannot be reached",
+        severity="patchable",
+        source="deterministic",
+    )
+    patched = auditor._patch(clean_case, [issue])
+    routine = patched["suspects"][1]["routine"]
+    assert len(routine) == 1
+    assert routine[0]["location"] == "Fournier's Jazz Club"
+    assert routine[0]["time_start"] == "09:00"
+    assert routine[0]["time_end"] == "17:00"
+
+
+def test_patch_alibi_contradiction_blanks_alibi(auditor, clean_case):
+    issue = Issue(
+        type="alibi_contradiction",
+        subject="Dolores Mink",
+        detail="alibi contradicts routine",
+        severity="patchable",
+        source="llm",
+    )
+    patched = auditor._patch(clean_case, [issue])
+    dolores = next(s for s in patched["suspects"] if s["name"] == "Dolores Mink")
+    assert dolores["alibi"] == ""
+
+
+def test_patch_does_not_mutate_original(auditor, clean_case):
+    original_desc = clean_case["clues"][0]["description"]
+    clean_case["clues"].append({
+        "description": "A witness saw Reginald Smoot leaving",
+        "is_red_herring": False,
+        "location": "Fournier's Jazz Club",
+    })
+    issue = Issue(
+        type="ghost_name",
+        subject="A witness saw Reginald Smoot leaving",
+        detail="clue references 'Reginald Smoot' who is not a known character",
+        severity="patchable",
+        source="deterministic",
+    )
+    auditor._patch(clean_case, [issue])
+    # original unchanged
+    assert clean_case["clues"][-1]["description"] == "A witness saw Reginald Smoot leaving"
