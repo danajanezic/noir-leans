@@ -90,7 +90,7 @@ def test_check_factual_contradictions_no_other_speakers():
 
 
 def test_check_factual_contradictions_skips_self():
-    llm = MockLLMBackend(responses=[json.dumps({"contradictions": []})])
+    llm = MockLLMBackend()  # No responses — any LLM call would return "mock response" which fails JSON parse
     flags = check_factual_contradictions(
         new_facts=["was home"],
         speaker="Rex Fontaine",
