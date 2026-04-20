@@ -1,0 +1,167 @@
+{
+  "figures": [
+    {
+      "id": "howie_short",
+      "real_historical_name": "Huey Long",
+      "noirleans_name": "Howie Short",
+      "role": "Governor / Senator",
+      "status": "assassinated",
+      "faction": "shortites",
+      "active_since": { "month": "January", "year": 1928 },
+      "died": { "month": "September", "year": 1935 },
+      "summary": "Populist demagogue who built roads, schools, and a machine that ate anyone who crossed it. Shot in the Capitol six weeks ago. The city hasn't decided how to feel.",
+      "npc_reactions": ["reverence", "relief", "conspiracy theories", "grief weaponized into rage"],
+      "fault_lines": ["machine_politics", "assassination_backlash", "labor_capital"]
+    },
+    {
+      "id": "emil_voss",
+      "real_historical_name": "Carl Weiss",
+      "noirleans_name": "Emil Voss",
+      "role": "Physician",
+      "status": "dead — killed at the scene",
+      "faction": null,
+      "active_since": null,
+      "died": { "month": "September", "year": 1935 },
+      "summary": "Young doctor who shot Howie Short in the State Capitol and was killed on the spot. His family is now being systematically destroyed by Short's loyalists. His motive remains unknown.",
+      "npc_reactions": ["scapegoat", "martyr", "guilty", "convenient"],
+      "fault_lines": ["assassination_backlash", "machine_politics"]
+    },
+    {
+      "id": "archbishop_moreau",
+      "real_historical_name": null,
+      "noirleans_name": "Archbishop Théodore Moreau",
+      "role": "Archbishop of Noirleans",
+      "status": "active",
+      "faction": "church",
+      "active_since": { "month": "April", "year": 1919 },
+      "died": null,
+      "summary": "Has run the Diocese for sixteen years. Owns a third of the city's property and the conscience of most of its residents. Opposed Short quietly and is now quiet about being relieved. Has opinions about everything and the leverage to make them matter.",
+      "npc_reactions": ["deference", "resentment", "genuine faith", "transactional respect"],
+      "fault_lines": ["church_vs_vice", "machine_politics", "old_vs_new_money"]
+    },
+    {
+      "id": "boss_tureaud",
+      "real_historical_name": null,
+      "noirleans_name": "Alderman Clovis Tureaud",
+      "role": "Old Regular ward boss, 7th Ward",
+      "status": "active",
+      "faction": "old_regulars",
+      "active_since": { "month": "March", "year": 1911 },
+      "died": null,
+      "summary": "The Old Regulars' most durable survivor. Spent fifteen years being humiliated by Short's machine and is now very carefully not smiling. Controls patronage in the 7th Ward. Everyone who needs something in city hall goes through him.",
+      "npc_reactions": ["fear", "grudging respect", "contempt", "careful neutrality"],
+      "fault_lines": ["machine_politics", "assassination_backlash", "old_vs_new_money"]
+    }
+  ],
+  "factions": [
+    {
+      "id": "shortites",
+      "name": "The Shortites",
+      "summary": "Short's loyalists. Grieving and dangerous. Still control significant state patronage networks and local law enforcement in many parishes. Looking for someone to punish and not being subtle about it.",
+      "opposed_by": ["old_regulars", "federal_reformers", "old_money"],
+      "fault_lines": ["machine_politics", "assassination_backlash", "labor_capital"]
+    },
+    {
+      "id": "old_regulars",
+      "name": "The Old Regulars",
+      "summary": "The pre-Short city machine. Spent a decade being dismantled. Now reassembling carefully, quietly thrilled, and pretending they had nothing to do with anything.",
+      "opposed_by": ["shortites"],
+      "fault_lines": ["machine_politics", "old_vs_new_money"]
+    },
+    {
+      "id": "old_money",
+      "name": "The Old Families",
+      "summary": "Plantation names, Garden District addresses, and fortunes that predate the Civil War — some of them, anyway. Despised Short for taxing them. Quietly relieved. Being very careful not to say so.",
+      "opposed_by": ["shortites", "labor_organizers"],
+      "fault_lines": ["old_vs_new_money", "assassination_backlash", "machine_politics"]
+    },
+    {
+      "id": "bootlegger_money",
+      "name": "The New Money",
+      "summary": "Bootlegger fortunes three years into respectability. Some absorbed into old money, some still outside looking in. Unpredictable. Loyal to whoever is useful.",
+      "opposed_by": [],
+      "fault_lines": ["old_vs_new_money", "machine_politics"]
+    },
+    {
+      "id": "labor_organizers",
+      "name": "The Organizers",
+      "summary": "Longshoremen, factory workers, domestic workers. Still bitter about 1932. New CIO organizing is happening quietly. Watching for who'll push back and how hard.",
+      "opposed_by": ["old_money", "port_bosses"],
+      "fault_lines": ["labor_capital", "race"]
+    },
+    {
+      "id": "church",
+      "name": "The Diocese",
+      "summary": "The Catholic Church. Owns property, controls consciences, has the Archbishop's ear and the Archbishop's leverage. Disapproves of most things. Collects from everyone.",
+      "opposed_by": [],
+      "fault_lines": ["church_vs_vice", "old_vs_new_money"]
+    },
+    {
+      "id": "federal_reformers",
+      "name": "The Federals",
+      "summary": "New Deal agencies, FBI, Washington outsiders. Have offices now. Are asking questions. Not loved. Not leaving.",
+      "opposed_by": ["shortites", "old_regulars", "bootlegger_money"],
+      "fault_lines": ["federal_intrusion", "machine_politics"]
+    },
+    {
+      "id": "voss_family",
+      "name": "The Voss Family",
+      "summary": "Emil Voss's surviving family. Being systematically destroyed by Short's loyalists. Lost jobs, received threats, had property vandalized. Not a power faction — a target.",
+      "opposed_by": ["shortites"],
+      "fault_lines": ["assassination_backlash"]
+    }
+  ],
+  "events": [
+    {
+      "id": "short_assassination",
+      "start": { "month": "September", "year": 1935 },
+      "summary": "Governor Howie Short shot by Dr. Emil Voss in the State Capitol on a Sunday evening. Short died two days later. Voss was killed on the spot by Short's bodyguards. Voss's motive is unknown. His family is now being destroyed by Short's loyalists.",
+      "fault_lines": ["assassination_backlash", "machine_politics"],
+      "case_hook": true
+    },
+    {
+      "id": "longshoremen_strike",
+      "start": { "month": "March", "year": 1932 },
+      "end": { "month": "July", "year": 1932 },
+      "summary": "Dock workers walked out for four months. Broken by Pinkerton men and parish deputies. Three men killed on the picket line. Union not certified. Workers returned at lower wages. Bitterness has not faded.",
+      "fault_lines": ["labor_capital", "race"],
+      "case_hook": true
+    },
+    {
+      "id": "prohibition_end",
+      "start": { "month": "December", "year": 1933 },
+      "summary": "Prohibition repealed. The bootleggers had already pivoted. The speakeasies got licenses. The men who got rich stayed rich. Nothing actually changed except the paperwork.",
+      "fault_lines": ["old_vs_new_money", "machine_politics"],
+      "case_hook": false
+    },
+    {
+      "id": "the_crash",
+      "start": { "month": "October", "year": 1929 },
+      "summary": "The stock market crashed. Noirleans had been rich. Then it wasn't. The middle class hollowed out. Bread lines formed past speakeasies. The port slowed. Men in good suits started sleeping in doorways.",
+      "fault_lines": ["labor_capital", "old_vs_new_money"],
+      "case_hook": false
+    },
+    {
+      "id": "short_rise",
+      "start": { "month": "January", "year": 1928 },
+      "end": { "month": "September", "year": 1935 },
+      "summary": "Howie Short's political ascent: Governor 1928, built roads and schools, destroyed rival machines, taxed the oil companies, consolidated total control of state government. Made enemies that lasted.",
+      "fault_lines": ["machine_politics", "labor_capital", "old_vs_new_money"],
+      "case_hook": false
+    },
+    {
+      "id": "red_light_closure",
+      "start": { "month": "November", "year": 1917 },
+      "summary": "The city's official red-light district closed under federal pressure during wartime. The establishments dispersed into the rest of the city. The trade continued. The district's closure is where jazz started traveling everywhere.",
+      "fault_lines": ["church_vs_vice", "federal_intrusion"],
+      "case_hook": true
+    },
+    {
+      "id": "great_migration_acceleration",
+      "start": { "month": "January", "year": 1929 },
+      "summary": "The Depression accelerated Black emigration to northern cities — Detroit, Chicago, New York. Those who stayed navigated an increasingly hostile legal and economic system. The pace has not slowed.",
+      "fault_lines": ["race", "labor_capital"],
+      "case_hook": false
+    }
+  ]
+}
