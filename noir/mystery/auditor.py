@@ -251,15 +251,49 @@ class CaseAuditor:
 
         return case
 
+    def _build_correction_vector(self, case: dict, fatal: list[Issue]) -> dict:
+        suspect_names = [s["name"] for s in case.get("suspects", [])]
+        loc_names = [loc["name"] for loc in case.get("locations", [])]
+        vector: dict = {}
+
+        for issue in fatal:
+            if issue.type == "killer_mismatch":
+                vector["killer_name"] = {
+                    "problem": issue.detail,
+                    "valid_values": suspect_names,
+                }
+            elif issue.type == "unsolvable":
+                vector["solvability"] = {
+                    "problem": issue.detail,
+                    "fix": (
+                        "Add at least one clue with is_red_herring=false whose description "
+                        "meaningfully points to the killer by name, role, location, or motive. "
+                        f"The killer is one of: {suspect_names}"
+                    ),
+                }
+            elif issue.type == "hidden_motive":
+                vector["motive_discoverability"] = {
+                    "problem": issue.detail,
+                    "fix": (
+                        "The motive must be discoverable through at least one clue description "
+                        "or through what NPCs say — not only in the internal 'motive' field."
+                    ),
+                }
+            else:
+                vector[f"{issue.type}:{issue.subject}"] = {
+                    "problem": issue.detail,
+                    "valid_locations": loc_names if "location" in issue.type else None,
+                }
+
+        return {k: v for k, v in vector.items() if v}
+
     def _regenerate(self, case: dict, fatal: list[Issue], system_prompt: str) -> dict:
-        issue_lines = "\n".join(
-            f"- [{i.type}] {i.subject}: {i.detail}" for i in fatal
-        )
+        vector = self._build_correction_vector(case, fatal)
         preamble = (
-            "The previous case had the following issues that MUST be corrected:\n"
-            f"{issue_lines}\n\n"
-            "Regenerate the case fixing all listed issues. "
-            "Return the same JSON schema.\n\n"
-            f"Previous case for reference:\n{json.dumps(case, indent=2)}"
+            "The previous case generation had the following errors that MUST be fixed.\n"
+            "Correction vector (JSON):\n"
+            f"{json.dumps(vector, indent=2)}\n\n"
+            "Regenerate the full case from scratch, fixing every issue in the correction vector. "
+            "Return the same JSON schema."
         )
         return self.llm.query_structured(system_prompt, [], preamble)

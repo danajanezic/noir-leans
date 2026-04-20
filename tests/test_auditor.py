@@ -362,8 +362,9 @@ def test_regenerate_calls_llm_with_issue_preamble(auditor, clean_case, mock_llm)
     )]
     result = auditor._regenerate(clean_case, fatal, "system prompt")
     prompt = mock_llm.calls[-1]["user_input"]
-    assert "killer_mismatch" in prompt
-    assert "must be corrected" in prompt.lower() or "issues" in prompt.lower()
+    assert "killer_name" in prompt  # vector key for killer_mismatch
+    assert "correction vector" in prompt.lower()
+    assert "Dolores Mink" in prompt  # valid_values contains suspect names
 
 
 def test_audit_and_fix_triggers_regenerate_for_killer_mismatch(auditor, clean_case, mock_llm):
