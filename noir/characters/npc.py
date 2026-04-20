@@ -16,7 +16,7 @@ def _build_alignment_prefix(player_alignment: str, npc_alignment: str,
     elif disposition == "opposed":
         disposition_note = "Your values conflict fundamentally. You are guarded."
     else:
-        return ""
+        return ""  # neutral — inject nothing
 
     prefix = f"[Player alignment: {player_alignment}. {disposition_note}"
 
@@ -63,7 +63,7 @@ class NPC(Agent):
         if self._background_memories and is_history_query(prompt):
             mem_block = (
                 "[Historical background you remember, relevant to this question: "
-                + " / ".join(self._background_memories)
+                + " / ".join(m for m in self._background_memories if m)
                 + "]"
             )
             prompt = mem_block + "\n\n" + prompt

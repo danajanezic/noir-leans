@@ -191,7 +191,6 @@ def test_npc_young_has_no_case_memories(db, mock_llm):
 
 
 def test_npc_background_memories_injected_on_history_query(db, mock_llm):
-    from itertools import cycle
     mock_llm._responses = cycle(["I remember."])
     case_id = create_case(db, archetype="test", title="Test Case", case_data={})
     loc_id = create_location(db, name="The Diner", description="Greasy spoons.", is_fixed=True)
@@ -204,7 +203,6 @@ def test_npc_background_memories_injected_on_history_query(db, mock_llm):
 
 
 def test_npc_background_not_injected_on_non_history_query(db, mock_llm):
-    from itertools import cycle
     mock_llm._responses = cycle(["The diner on Fifth."])
     case_id = create_case(db, archetype="test", title="Test Case", case_data={})
     loc_id = create_location(db, name="The Diner", description="Greasy spoons.", is_fixed=True)
