@@ -9,9 +9,14 @@ from noir.persistence.repository import (
 from noir.mystery.auditor import CaseAuditor
 
 REQUIRED_FIELDS = {"title", "victim", "killer_name", "motive", "suspects", "clues", "locations"}
-REQUIRED_SUSPECT_FIELDS = {"name", "role", "alibi", "secret", "personality", "speech_style", "race", "political_connections", "backstory", "routine", "alignment", "age"}
+REQUIRED_SUSPECT_FIELDS = {
+    "name", "role", "alibi", "secret", "archetype_id", "race",
+    "political_connections", "routine", "alignment", "age",
+    "pressure_tolerance", "kindness_weight", "empathy",
+    "starting_guilt", "revelation_style", "revelation_stages",
+}
 REQUIRED_CLUE_FIELDS = {"description", "is_red_herring", "location"}
-REQUIRED_LOCATION_FIELDS = {"name", "description"}
+REQUIRED_LOCATION_FIELDS = {"name"}
 
 GENERATOR_SYSTEM_PROMPT = (
     _get_world_context() + "\n\n"
@@ -78,7 +83,11 @@ def _validate_case(case: dict) -> bool:
     for suspect in case["suspects"]:
         if not REQUIRED_SUSPECT_FIELDS.issubset(suspect.keys()):
             return False
-        if not isinstance(suspect.get("age"), int):
+        for int_field in ("age", "pressure_tolerance", "kindness_weight",
+                          "empathy", "starting_guilt", "revelation_stages"):
+            if not isinstance(suspect.get(int_field), int):
+                return False
+        if suspect.get("revelation_style") not in ("staged", "sudden"):
             return False
     if not isinstance(case["clues"], list) or len(case["clues"]) < 1:
         return False
@@ -143,6 +152,14 @@ class MysteryGenerator:
         return causes
 
     def generate(self, archetype_name: str, theme: str | None = None) -> dict:
+        from noir.characters.npc_archetype_loader import archetype_ids
+        from noir.persistence.repository import get_seeded_location_names
+        import random
+        _archetype_list = ", ".join(archetype_ids())
+        _location_pool = get_seeded_location_names(self.conn)
+        _loc_sample = random.sample(_location_pool, min(40, len(_location_pool))) if _location_pool else []
+        _location_list = "\n".join(f"- {n}" for n in _loc_sample)
+
         player = get_player(self.conn)
         player_context = _build_player_context(player)
 
@@ -183,6 +200,7 @@ class MysteryGenerator:
         prompt = (
             f"{archetype_prompt}{theme_text}{avoid_text}{names_text}\n\n"
             f"{player_context}\n\n"
+            f"Available locations to choose from (pick 4-6 for this case):\n{_location_list}\n\n"
             "Return a JSON object with this exact schema:\n"
             "{\n"
             '  "title": "string",\n'
@@ -194,18 +212,23 @@ class MysteryGenerator:
             '     "race": "string (e.g. Black, white, Creole, Cajun, Italian, Irish — reflect the real demographic diversity of 1930s New Orleans)",\n'
             '     "political_connections": "string (e.g. none, alderman on payroll, police captain, judge, city council, organized crime, none — who protects them in 1935 Noirleans)",\n'
             '     "alibi": "string", "secret": "string",\n'
-            '     "backstory": "string (2-3 sentences: who they were before this case, what shaped them, what they want)",\n'
-            '     "personality": "string", "speech_style": "string",\n'
-            '     "alignment": "string (one of: Lawful Good, Neutral Good, Chaotic Good, Lawful Neutral, True Neutral, Chaotic Neutral, Lawful Evil, Neutral Evil, Chaotic Evil — assign based on this character\'s role, morality, and relationship to authority)",\n'
-            '     "age": "integer — the character\'s age in 1935. Guidelines: law enforcement / legal professionals: 28–65; working adults (merchants, laborers, clerks): 20–60; young adults (students, apprentices): 18–30. CRITICAL: respect relationship logic — a father must be at least 18 years older than his child, an employer typically older than an apprentice, a mentor older than their protégé. All ages are as of 1935.",\n'
-            '     "routine": [{"time_start": "HH:MM", "time_end": "HH:MM", "location": "string (location name from the locations list, or \'home\' if unavailable)"}],\n'
-            '     "relationships": [{"name": "string", "relationship": "string", "shared_facts": ["string — specific verifiable facts you both know, e.g. how long you\'ve worked together, where you first met, a shared event"]}]}\n'
+            f'     "archetype_id": "string (MUST be one of: {{_archetype_list}})",\n'
+            '     "alignment": "string (one of: Lawful Good, Neutral Good, Chaotic Good, Lawful Neutral, True Neutral, Chaotic Neutral, Lawful Evil, Neutral Evil, Chaotic Evil)",\n'
+            '     "age": integer (guidelines: law/legal 28-65, working adults 20-60, young 18-30),\n'
+            '     "pressure_tolerance": integer 1-10 (1=cracks immediately under pressure, 10=barely flinches),\n'
+            '     "kindness_weight": integer 1-10 (how much sympathy and warmth moves them),\n'
+            '     "empathy": integer 1-10 (guilt response to emotional appeals about victim consequences),\n'
+            '     "starting_guilt": integer 0-10 (initial guilt at case start — 0=no guilt, 10=barely keeping it together),\n'
+            '     "revelation_style": "staged" or "sudden" (staged=reveals secret gradually, sudden=cracks all at once),\n'
+            '     "revelation_stages": integer 2-5 for staged, 1 for sudden,\n'
+            '     "routine": [{"time_start": "HH:MM", "time_end": "HH:MM", "location": "string (location name from the locations list, or \'home\')"}],\n'
+            '     "relationships": [{"name": "string", "relationship": "string", "shared_facts": ["string"]}]}\n'
             '  ],\n'
             '  "clues": [\n'
             '    {"description": "string", "is_red_herring": boolean, "location": "string"}\n'
             '  ],\n'
             '  "locations": [\n'
-            '    {"name": "string", "description": "string"}\n'
+            '    {"name": "string (MUST be from the available locations list above)"}\n'
             '  ]\n'
             "}"
         )
@@ -237,6 +260,14 @@ class MysteryGenerator:
         return random.choice(archetypes)["name"]
 
     def generate_from_dark_past(self, crime_summary: str, theme: str, partner_name: str) -> tuple[dict, str]:
+        from noir.characters.npc_archetype_loader import archetype_ids
+        from noir.persistence.repository import get_seeded_location_names
+        import random
+        _archetype_list = ", ".join(archetype_ids())
+        _location_pool = get_seeded_location_names(self.conn)
+        _loc_sample = random.sample(_location_pool, min(40, len(_location_pool))) if _location_pool else []
+        _location_list = "\n".join(f"- {n}" for n in _loc_sample)
+
         player = get_player(self.conn)
         player_context = _build_player_context(player)
         archetypes = list_archetypes(self.conn)
@@ -258,6 +289,7 @@ class MysteryGenerator:
             "unless they are explicitly written as relatives. The victim and every suspect must have distinct family names.\n\n"
             "Generate the case. The partner should be implicated but not obviously guilty — "
             "the player must investigate to understand what really happened. "
+            f"Available locations to choose from (pick 4-6 for this case):\n{_location_list}\n\n"
             "Return a JSON object with this exact schema:\n"
             "{\n"
             '  "title": "string",\n'
@@ -269,18 +301,23 @@ class MysteryGenerator:
             '     "race": "string (e.g. Black, white, Creole, Cajun, Italian, Irish — reflect the real demographic diversity of 1930s New Orleans)",\n'
             '     "political_connections": "string (e.g. none, alderman on payroll, police captain, judge, city council, organized crime, none — who protects them in 1935 Noirleans)",\n'
             '     "alibi": "string", "secret": "string",\n'
-            '     "backstory": "string (2-3 sentences: who they were before this case, what shaped them, what they want)",\n'
-            '     "personality": "string", "speech_style": "string",\n'
-            '     "alignment": "string (one of: Lawful Good, Neutral Good, Chaotic Good, Lawful Neutral, True Neutral, Chaotic Neutral, Lawful Evil, Neutral Evil, Chaotic Evil — assign based on this character\'s role, morality, and relationship to authority)",\n'
-            '     "age": "integer — the character\'s age in 1935. Guidelines: law enforcement / legal professionals: 28–65; working adults (merchants, laborers, clerks): 20–60; young adults (students, apprentices): 18–30. CRITICAL: respect relationship logic — a father must be at least 18 years older than his child, an employer typically older than an apprentice, a mentor older than their protégé. All ages are as of 1935.",\n'
-            '     "routine": [{"time_start": "HH:MM", "time_end": "HH:MM", "location": "string (location name from the locations list, or \'home\' if unavailable)"}],\n'
-            '     "relationships": [{"name": "string", "relationship": "string", "shared_facts": ["string — specific verifiable facts you both know, e.g. how long you\'ve worked together, where you first met, a shared event"]}]}\n'
+            f'     "archetype_id": "string (MUST be one of: {{_archetype_list}})",\n'
+            '     "alignment": "string (one of: Lawful Good, Neutral Good, Chaotic Good, Lawful Neutral, True Neutral, Chaotic Neutral, Lawful Evil, Neutral Evil, Chaotic Evil)",\n'
+            '     "age": integer (guidelines: law/legal 28-65, working adults 20-60, young 18-30),\n'
+            '     "pressure_tolerance": integer 1-10 (1=cracks immediately under pressure, 10=barely flinches),\n'
+            '     "kindness_weight": integer 1-10 (how much sympathy and warmth moves them),\n'
+            '     "empathy": integer 1-10 (guilt response to emotional appeals about victim consequences),\n'
+            '     "starting_guilt": integer 0-10 (initial guilt at case start — 0=no guilt, 10=barely keeping it together),\n'
+            '     "revelation_style": "staged" or "sudden" (staged=reveals secret gradually, sudden=cracks all at once),\n'
+            '     "revelation_stages": integer 2-5 for staged, 1 for sudden,\n'
+            '     "routine": [{"time_start": "HH:MM", "time_end": "HH:MM", "location": "string (location name from the locations list, or \'home\')"}],\n'
+            '     "relationships": [{"name": "string", "relationship": "string", "shared_facts": ["string"]}]}\n'
             '  ],\n'
             '  "clues": [\n'
             '    {"description": "string", "is_red_herring": boolean, "location": "string"}\n'
             '  ],\n'
             '  "locations": [\n'
-            '    {"name": "string", "description": "string"}\n'
+            '    {"name": "string (MUST be from the available locations list above)"}\n'
             '  ]\n'
             "}"
         )

@@ -30,7 +30,7 @@ def test_seed_archetypes_to_db(db):
 
 VALID_CASE = {
     "title": "The Fitch Affair",
-    "victim": {"name": "Gerald Fitch", "cause_of_death": "spontaneous accordion implosion"},
+    "victim": {"name": "Gerald Fitch", "cause_of_death": "spontaneous accordion implosion", "found_at": "The Parlour"},
     "killer_name": "Dolores Mink",
     "motive": "Gerald knew about her collection of illegal flamingos",
     "suspects": [
@@ -39,28 +39,36 @@ VALID_CASE = {
             "role": "suspect",
             "alibi": "Claims she was at the flamingo sanctuary",
             "secret": "She owns the flamingos",
-            "personality": "Aggressively cheerful",
-            "speech_style": "Speaks exclusively in the third person",
+            "archetype_id": "femme_fatale",
             "race": "White",
             "political_connections": "None",
-            "backstory": "Raised flamingos since childhood, turned it into a criminal empire.",
+            "age": 34,
             "routine": [{"time_start": "09:00", "time_end": "17:00", "location": "The Parlour"}],
             "alignment": "Chaotic Evil",
-            "age": 38
+            "pressure_tolerance": 7,
+            "kindness_weight": 3,
+            "empathy": 2,
+            "starting_guilt": 1,
+            "revelation_style": "sudden",
+            "revelation_stages": 1,
         },
         {
             "name": "Reginald Smoot",
             "role": "suspect",
             "alibi": "Was definitely not at the scene",
             "secret": "Owes Gerald money",
-            "personality": "Aggressively normal",
-            "speech_style": "Uses the wrong word constantly",
+            "archetype_id": "desperate_debtor",
             "race": "White",
             "political_connections": "None",
-            "backstory": "Failed accordion salesman turned debtor.",
+            "age": 45,
             "routine": [{"time_start": "09:00", "time_end": "17:00", "location": "The Parlour"}],
             "alignment": "Lawful Neutral",
-            "age": 44
+            "pressure_tolerance": 2,
+            "kindness_weight": 5,
+            "empathy": 6,
+            "starting_guilt": 3,
+            "revelation_style": "staged",
+            "revelation_stages": 3,
         }
     ],
     "clues": [
@@ -69,9 +77,9 @@ VALID_CASE = {
         {"description": "Reginald's IOU note", "is_red_herring": True, "location": "The Parlour"}
     ],
     "locations": [
-        {"name": "The Music Room", "description": "Smells of rosin and regret"},
-        {"name": "The Victim's Desk", "description": "Piled with incomprehensible ledgers"},
-        {"name": "The Parlour", "description": "A room for sitting and being suspicious in"}
+        {"name": "The Music Room"},
+        {"name": "The Victim's Desk"},
+        {"name": "The Parlour"}
     ]
 }
 

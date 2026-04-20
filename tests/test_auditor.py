@@ -18,22 +18,23 @@ BASE_CASE = {
         {
             "name": "Dolores Mink",
             "role": "suspect",
-            "alibi": "Claims she was counting receipts in the back office",
-            "secret": "Has been skimming from the till for months",
-            "personality": "Charming and ruthless",
-            "speech_style": "All business, no small talk",
+            "alibi": "Claims she was playing cards at Fournier's Jazz Club all evening",
+            "secret": "She was present at the murder scene but did not commit it",
+            "archetype_id": "charming_liar",
             "race": "White",
-            "political_connections": "None",
-            "backstory": "Ran speakeasies during Prohibition. Now runs Fournier's.",
-            "alignment": "Neutral Evil",
+            "political_connections": "none",
+            "age": 34,
+            "alignment": "Chaotic Neutral",
+            "pressure_tolerance": 7, "kindness_weight": 3, "empathy": 2,
+            "starting_guilt": 2, "revelation_style": "sudden", "revelation_stages": 1,
             "routine": [
                 {"time_start": "18:00", "time_end": "02:00", "location": "Fournier's Jazz Club"}
             ],
             "relationships": [
                 {
                     "name": "Victor Voss",
-                    "relationship": "employer",
-                    "shared_facts": ["Victor hired her three years ago"],
+                    "relationship": "former employer",
+                    "shared_facts": ["worked together for 3 years"],
                 }
             ],
         },
@@ -42,12 +43,13 @@ BASE_CASE = {
             "role": "witness",
             "alibi": "Was playing trumpet on stage all night",
             "secret": "Saw Dolores leaving the back office",
-            "personality": "Nervous, avoids eye contact",
-            "speech_style": "Speaks in short bursts",
+            "archetype_id": "nervous_witness",
             "race": "Creole",
             "political_connections": "None",
-            "backstory": "Jazz musician who knows more than he lets on.",
+            "age": 28,
             "alignment": "True Neutral",
+            "pressure_tolerance": 3, "kindness_weight": 6, "empathy": 7,
+            "starting_guilt": 1, "revelation_style": "staged", "revelation_stages": 3,
             "routine": [
                 {"time_start": "20:00", "time_end": "02:00", "location": "Fournier's Jazz Club"}
             ],
@@ -67,8 +69,8 @@ BASE_CASE = {
         },
     ],
     "locations": [
-        {"name": "Fournier's Jazz Club", "description": "Smoky and crowded"},
-        {"name": "City Hall", "description": "Marble floors, suspicious eyes"},
+        {"name": "Fournier's Jazz Club"},
+        {"name": "City Hall"},
     ],
 }
 
