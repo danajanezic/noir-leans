@@ -126,22 +126,12 @@ class PlaythroughAgent:
         claims = extract_location_claims(game_text, speaker, self.llm)
         meeting = extract_meeting_agreement(game_text, speaker, self.llm)
 
-        # Update location notes and check spatial contradictions
+        # Update location notes
         for claim in claims:
             char = claim.get("character", speaker)
             time_ref = claim.get("time_ref", "unspecified")
             loc = claim.get("location", "")
-            key = f"{char}|{time_ref}"
-            existing = self.location_notes.get(key)
-            if existing and existing != loc:
-                self.contradiction_log.append({
-                    "type": "spatial_contradiction",
-                    "character": char,
-                    "time_ref": time_ref,
-                    "claim_a": existing,
-                    "claim_b": f"{loc} (per {speaker})",
-                })
-            self.location_notes[key] = loc
+            self.location_notes[f"{char}|{time_ref}"] = loc
 
         spatial_flags = check_spatial_contradictions(claims, self.location_notes, self.llm)
         self.contradiction_log.extend(spatial_flags)
@@ -179,7 +169,7 @@ class PlaythroughAgent:
 
     def _check_pending_meetings(self, arrived_at: str, current_turn: int) -> None:
         for m in self.pending_meetings:
-            if m["resolved"] or m["flagged"]:
+            if m["resolved"]:
                 continue
             if arrived_at.lower() in m["location"].lower():
                 m["resolved"] = True
