@@ -163,10 +163,10 @@ def update_case_status(conn: sqlite3.Connection, *, case_id: int, status: str,
 
 def create_npc(conn: sqlite3.Connection, *, case_id: int, name: str, role: str,
                system_prompt: str, current_location_id: int,
-               alignment: str = "True Neutral") -> int:
+               alignment: str = "True Neutral", age: int = 35) -> int:
     cur = conn.execute(
-        "INSERT INTO npcs (case_id, name, role, system_prompt, current_location_id, alignment) VALUES (?, ?, ?, ?, ?, ?)",
-        (case_id, name, role, system_prompt, current_location_id, alignment)
+        "INSERT INTO npcs (case_id, name, role, system_prompt, current_location_id, alignment, age) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (case_id, name, role, system_prompt, current_location_id, alignment, age)
     )
     conn.commit()
     return cur.lastrowid

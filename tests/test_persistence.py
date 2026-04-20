@@ -372,3 +372,21 @@ def test_get_alignment_chaotic_evil(db):
     update_player_alignment(db, law_delta=-6, good_delta=-6)
     player = get_player(db)
     assert get_alignment(player) == "Chaotic Evil"
+
+
+def test_create_npc_stores_age(db):
+    case_id = create_case(db, archetype="test", title="T", case_data={})
+    loc_id = create_location(db, name="Bar", description="A bar.", is_fixed=True)
+    npc_id = create_npc(db, case_id=case_id, name="Jake", role="suspect",
+                        system_prompt="You are Jake.", current_location_id=loc_id, age=45)
+    row = get_npc(db, npc_id)
+    assert row["age"] == 45
+
+
+def test_create_npc_age_defaults_to_35(db):
+    case_id = create_case(db, archetype="test", title="T", case_data={})
+    loc_id = create_location(db, name="Bar", description="A bar.", is_fixed=True)
+    npc_id = create_npc(db, case_id=case_id, name="Jake", role="suspect",
+                        system_prompt="You are Jake.", current_location_id=loc_id)
+    row = get_npc(db, npc_id)
+    assert row["age"] == 35
