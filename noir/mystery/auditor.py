@@ -66,7 +66,91 @@ class CaseAuditor:
         return re.findall(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b', text)
 
     def _deterministic_check(self, case: dict) -> list[Issue]:
-        return []
+        issues: list[Issue] = []
+        name_words = self._name_words(case)
+        loc_names = self._location_names(case)
+        loc_words = self._location_words(case)
+        suspect_names = {s["name"] for s in case.get("suspects", [])}
+        victim_name = case.get("victim", {}).get("name", "")
+        all_char_names = suspect_names | ({victim_name} if victim_name else set())
+
+        killer = case.get("killer_name", "")
+        if killer not in suspect_names:
+            issues.append(Issue(
+                type="killer_mismatch",
+                subject=killer,
+                detail=f"killer_name '{killer}' does not match any suspect name",
+                severity="fatal",
+                source="deterministic",
+            ))
+
+        for clue in case.get("clues", []):
+            desc = clue.get("description", "")
+            for candidate in self._extract_name_candidates(desc):
+                parts = candidate.split()
+                if (
+                    not any(p in name_words for p in parts)
+                    and not any(p in loc_words for p in parts)
+                    and not any(p in self._COMMON for p in parts)
+                ):
+                    issues.append(Issue(
+                        type="ghost_name",
+                        subject=desc,
+                        detail=f"clue references '{candidate}' who is not a known character",
+                        severity="patchable",
+                        source="deterministic",
+                    ))
+
+        for clue in case.get("clues", []):
+            loc = clue.get("location", "")
+            if loc and loc not in loc_names:
+                issues.append(Issue(
+                    type="bad_clue_location",
+                    subject=clue.get("description", ""),
+                    detail=f"clue location '{loc}' not in locations list",
+                    severity="patchable",
+                    source="deterministic",
+                ))
+
+        for suspect in case.get("suspects", []):
+            routine = suspect.get("routine", [])
+            if not isinstance(routine, list):
+                continue
+            for entry in routine:
+                loc = entry.get("location", "")
+                if loc and loc not in loc_names:
+                    issues.append(Issue(
+                        type="bad_routine_location",
+                        subject=suspect["name"],
+                        detail=f"routine entry location '{loc}' not in locations list",
+                        severity="patchable",
+                        source="deterministic",
+                    ))
+
+        for suspect in case.get("suspects", []):
+            routine = suspect.get("routine", [])
+            if not isinstance(routine, list) or len(routine) == 0:
+                issues.append(Issue(
+                    type="npc_unreachable",
+                    subject=suspect["name"],
+                    detail=f"{suspect['name']} has no routine entries and cannot be reached",
+                    severity="patchable",
+                    source="deterministic",
+                ))
+
+        for suspect in case.get("suspects", []):
+            for rel in suspect.get("relationships", []):
+                rel_name = rel.get("name", "")
+                if rel_name and rel_name not in all_char_names:
+                    issues.append(Issue(
+                        type="bad_relationship_ref",
+                        subject=suspect["name"],
+                        detail=f"relationship references '{rel_name}' not in the case",
+                        severity="patchable",
+                        source="deterministic",
+                    ))
+
+        return issues
 
     def _llm_check(self, case: dict) -> list[Issue]:
         return []

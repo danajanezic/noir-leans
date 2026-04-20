@@ -117,3 +117,69 @@ def test_extract_name_candidates_ignores_single_words(auditor):
     text = "Something happened at midnight"
     candidates = auditor._extract_name_candidates(text)
     assert candidates == []
+
+
+def test_killer_mismatch_detected(auditor, clean_case):
+    clean_case["killer_name"] = "Nobody McFakerson"
+    issues = auditor._deterministic_check(clean_case)
+    types = [i.type for i in issues]
+    assert "killer_mismatch" in types
+    fatal = [i for i in issues if i.type == "killer_mismatch"]
+    assert fatal[0].severity == "fatal"
+
+
+def test_ghost_name_in_clue_detected(auditor, clean_case):
+    clean_case["clues"].append({
+        "description": "A witness saw Reginald Smoot leaving the club",
+        "is_red_herring": False,
+        "location": "Fournier's Jazz Club",
+    })
+    issues = auditor._deterministic_check(clean_case)
+    types = [i.type for i in issues]
+    assert "ghost_name" in types
+    ghost = [i for i in issues if i.type == "ghost_name"]
+    assert "Reginald Smoot" in ghost[0].detail
+
+
+def test_known_name_in_clue_not_flagged(auditor, clean_case):
+    # Dolores Mink is a known suspect — should not be flagged
+    issues = auditor._deterministic_check(clean_case)
+    types = [i.type for i in issues]
+    assert "ghost_name" not in types
+
+
+def test_bad_clue_location_detected(auditor, clean_case):
+    clean_case["clues"][0]["location"] = "The Moon"
+    issues = auditor._deterministic_check(clean_case)
+    types = [i.type for i in issues]
+    assert "bad_clue_location" in types
+    bad = [i for i in issues if i.type == "bad_clue_location"]
+    assert bad[0].severity == "patchable"
+
+
+def test_bad_routine_location_detected(auditor, clean_case):
+    clean_case["suspects"][0]["routine"][0]["location"] = "Atlantis"
+    issues = auditor._deterministic_check(clean_case)
+    types = [i.type for i in issues]
+    assert "bad_routine_location" in types
+
+
+def test_npc_unreachable_detected(auditor, clean_case):
+    clean_case["suspects"][1]["routine"] = []
+    issues = auditor._deterministic_check(clean_case)
+    types = [i.type for i in issues]
+    assert "npc_unreachable" in types
+    unreachable = [i for i in issues if i.type == "npc_unreachable"]
+    assert unreachable[0].subject == "René LeBlanc"
+
+
+def test_bad_relationship_ref_detected(auditor, clean_case):
+    clean_case["suspects"][0]["relationships"][0]["name"] = "Ghost Person"
+    issues = auditor._deterministic_check(clean_case)
+    types = [i.type for i in issues]
+    assert "bad_relationship_ref" in types
+
+
+def test_clean_case_has_no_deterministic_issues(auditor, clean_case):
+    issues = auditor._deterministic_check(clean_case)
+    assert issues == []
