@@ -217,6 +217,8 @@ class Quiz:
     def run(self, *, answers: list[str]) -> dict:
         law_total, good_total = score_alignment(answers)
         player_alignment = resolve_alignment(law_total, good_total)
+        self.conn.execute("UPDATE player SET law_chaos=0, good_evil=0 WHERE id=1")
+        self.conn.commit()
         update_player_alignment(self.conn, law_delta=law_total, good_delta=good_total)
 
         answers_text = "\n".join(
