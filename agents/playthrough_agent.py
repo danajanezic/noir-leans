@@ -49,41 +49,44 @@ class PlaythroughAgent:
     def run(self, max_turns: int = 40) -> dict:
         case_id = self._get_active_case_id()
         if case_id is None:
+            self.conn.close()
             raise RuntimeError("No active case found in DB. Start a game first.")
 
-        self._load_ground_truth(case_id)
+        try:
+            self._load_ground_truth(case_id)
 
-        state: dict = {}
-        verdict: dict | None = None
-        turns = 0
+            state: dict = {}
+            verdict: dict | None = None
+            turns = 0
 
-        while turns < max_turns:
-            action = self._get_next_action(state)
-            turns += 1
+            while turns < max_turns:
+                action = self._get_next_action(state)
+                turns += 1
 
-            if action.get("action") == "accuse":
-                result, _ = self._step({"type": "accuse", "target": action.get("target", "")})
+                if action.get("action") == "accuse":
+                    result, _ = self._step({"type": "accuse", "target": action.get("target", "")})
+                    if result.get("ok"):
+                        verdict = result["verdict"]
+                    break
+
+                input_data = self._action_to_step_input(action)
+                result, game_text = self._step(input_data)
+
                 if result.get("ok"):
-                    verdict = result["verdict"]
-                break
+                    state = result.get("state", state)
+                    action_type = action.get("action")
 
-            input_data = self._action_to_step_input(action)
-            result, game_text = self._step(input_data)
+                    if action_type == "talk":
+                        target = action.get("target", "unknown")
+                        speaker = target if target.lower() != "partner" else "partner"
+                        self._process_dialogue(speaker, game_text)
 
-            if result.get("ok"):
-                state = result.get("state", state)
-                action_type = action.get("action")
+                    if action_type == "go":
+                        loc = action.get("target", "")
+                        self._check_pending_meetings(loc, turns)
 
-                if action_type == "talk":
-                    target = action.get("target", "unknown")
-                    speaker = target if target.lower() != "partner" else "partner"
-                    self._process_dialogue(speaker, game_text)
-
-                if action_type == "go":
-                    loc = action.get("target", "")
-                    self._check_pending_meetings(loc, turns)
-
-        self.conn.close()
+        finally:
+            self.conn.close()
 
         return build_report(
             persona=self.persona_name,
@@ -126,14 +129,15 @@ class PlaythroughAgent:
         claims = extract_location_claims(game_text, speaker, self.llm)
         meeting = extract_meeting_agreement(game_text, speaker, self.llm)
 
-        # Update location notes
+        # Snapshot before mutating so check_spatial_contradictions sees original state
+        location_snapshot = dict(self.location_notes)
         for claim in claims:
             char = claim.get("character", speaker)
             time_ref = claim.get("time_ref", "unspecified")
             loc = claim.get("location", "")
             self.location_notes[f"{char}|{time_ref}"] = loc
 
-        spatial_flags = check_spatial_contradictions(claims, self.location_notes, self.llm)
+        spatial_flags = check_spatial_contradictions(claims, location_snapshot, self.llm)
         self.contradiction_log.extend(spatial_flags)
 
         # Merge facts and check contradictions
