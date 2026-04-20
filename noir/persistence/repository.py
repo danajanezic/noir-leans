@@ -238,6 +238,17 @@ def get_npc_psychology(conn: sqlite3.Connection, npc_id: int) -> dict:
     return result
 
 
+def initialize_npc_relationship(conn: sqlite3.Connection, npc_id: int,
+                                 starting_guilt: int = 3) -> None:
+    conn.execute(
+        """INSERT INTO npc_relationships (npc_id, guilt)
+           VALUES (?, ?)
+           ON CONFLICT(npc_id) DO NOTHING""",
+        (npc_id, starting_guilt * 10)
+    )
+    conn.commit()
+
+
 def update_npc_guilt(conn: sqlite3.Connection, *, npc_id: int, delta: int) -> None:
     conn.execute(
         """INSERT INTO npc_relationships (npc_id, guilt)

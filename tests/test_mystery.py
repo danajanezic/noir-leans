@@ -376,3 +376,22 @@ def test_enrich_npc_updates_system_prompt(db, mock_llm):
     assert "Dockworker turned numbers runner" in row["system_prompt"]
     assert "Marcus Dupree" in row["system_prompt"]
     assert row["system_prompt"] != "partial prompt"
+
+
+def test_initialize_npc_relationship_sets_guilt(db):
+    from noir.persistence.repository import create_npc, initialize_npc_relationship, get_npc_psychology, create_location
+    db.execute("INSERT INTO cases (archetype, title, case_data) VALUES ('t','t','{}')")
+    db.commit()
+    case_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    loc_id = create_location(db, name="SpotInit", description=".", is_fixed=False)
+    npc_id = create_npc(db, case_id=case_id, name="Init NPC", role="suspect",
+                        system_prompt=".", current_location_id=loc_id, starting_guilt=5)
+    initialize_npc_relationship(db, npc_id, starting_guilt=5)
+    psych = get_npc_psychology(db, npc_id)
+    assert psych["guilt"] == 50
+    assert psych["pressure_score"] == 0
+    assert psych["revelation_stage"] == 0
+    # Calling again should not error or change values (idempotent)
+    initialize_npc_relationship(db, npc_id, starting_guilt=5)
+    psych2 = get_npc_psychology(db, npc_id)
+    assert psych2["guilt"] == 50

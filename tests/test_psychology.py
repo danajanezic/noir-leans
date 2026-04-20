@@ -6,6 +6,69 @@ from noir.characters.psychology import (
     classify_events, update_npc_state, check_revelation,
     _revelation_thresholds,
 )
+from noir.characters.psychology import (
+    _pressure_delta, _guilt_delta, _combined_score, _next_threshold,
+    _build_revelation_prompt,
+)
+
+_NO_EVENTS = {
+    "pressure_applied": False, "threat_made": False,
+    "kindness_shown": False, "guilt_trigger": False, "evidence_confronted": False,
+}
+
+def test_pressure_delta_zero_when_no_pressure():
+    assert _pressure_delta(_NO_EVENTS, pressure_tolerance=5) == 0
+
+def test_pressure_delta_higher_for_low_tolerance():
+    events = {**_NO_EVENTS, "pressure_applied": True}
+    low = _pressure_delta(events, pressure_tolerance=1)
+    high = _pressure_delta(events, pressure_tolerance=9)
+    assert low > high
+
+def test_pressure_delta_threat_larger_than_push():
+    push = _pressure_delta({**_NO_EVENTS, "pressure_applied": True}, pressure_tolerance=5)
+    threat = _pressure_delta({**_NO_EVENTS, "threat_made": True}, pressure_tolerance=5)
+    assert threat > push
+
+def test_guilt_delta_zero_with_no_emotional_events():
+    assert _guilt_delta(_NO_EVENTS, empathy=10) == 0
+
+def test_guilt_delta_scales_with_empathy():
+    events = {**_NO_EVENTS, "guilt_trigger": True}
+    low = _guilt_delta(events, empathy=1)
+    high = _guilt_delta(events, empathy=10)
+    assert high > low
+
+def test_combined_score():
+    state = {"pressure_score": 30, "guilt": 20}
+    psychology = {"kindness_weight": 10}
+    # 30 + 20 + (50 * 10 // 10) = 100
+    assert _combined_score(state, psychology, affection=50) == 100
+
+def test_next_threshold_sudden_unrevealed():
+    assert _next_threshold(0, {"revelation_style": "sudden", "revelation_stages": 1}) == 100
+
+def test_next_threshold_sudden_already_revealed():
+    assert _next_threshold(1, {"revelation_style": "sudden", "revelation_stages": 1}) is None
+
+def test_next_threshold_staged_2():
+    p = {"revelation_style": "staged", "revelation_stages": 2}
+    assert _next_threshold(0, p) == 60
+    assert _next_threshold(1, p) == 100
+    assert _next_threshold(2, p) is None
+
+def test_build_revelation_prompt_sudden():
+    events = {**_NO_EVENTS, "pressure_applied": True}
+    prompt = _build_revelation_prompt(stage=1, total_stages=1, events=events, style="sudden")
+    assert "breaking point" in prompt
+    assert "pressure_applied" in prompt
+
+def test_build_revelation_prompt_staged():
+    events = {**_NO_EVENTS, "guilt_trigger": True}
+    prompt = _build_revelation_prompt(stage=2, total_stages=4, events=events, style="staged")
+    assert "stage 2 of 4" in prompt
+    assert "1/4" in prompt
+    assert "guilt_trigger" in prompt
 
 
 # --- threshold logic (pure Python, no LLM) ---

@@ -44,24 +44,69 @@ def classify_events(llm: LLMBackend, player_msg: str, npc_response: str) -> dict
     return defaults
 
 
+def _pressure_delta(events: dict, pressure_tolerance: int) -> int:
+    resist = 11 - pressure_tolerance
+    delta = 0
+    if events.get("pressure_applied"):
+        delta += resist * 5
+    if events.get("threat_made"):
+        delta += resist * 10
+    if events.get("evidence_confronted"):
+        delta += resist * 8
+    return delta  # 0 means no pressure events
+
+
+def _guilt_delta(events: dict, empathy: int) -> int:
+    delta = 0
+    if events.get("kindness_shown"):
+        delta += empathy * 2
+    if events.get("guilt_trigger"):
+        delta += empathy * 4
+    return delta
+
+
+def _combined_score(state: dict, psychology: dict, affection: int = 0) -> int:
+    kw = psychology.get("kindness_weight", 5)
+    return (
+        state.get("pressure_score", 0)
+        + state.get("guilt", 0)
+        + int(affection * kw / 10)
+    )
+
+
+def _next_threshold(current_stage: int, psychology: dict) -> int | None:
+    style = psychology.get("revelation_style", "staged")
+    stages = psychology.get("revelation_stages", 3)
+    thresholds = _revelation_thresholds(style, stages)
+    if current_stage >= len(thresholds):
+        return None
+    return thresholds[current_stage]
+
+
+def _build_revelation_prompt(stage: int, total_stages: int,
+                              events: dict, style: str) -> str:
+    fired = [k for k, v in events.items() if v]
+    events_desc = ", ".join(fired) if fired else "accumulated pressure and guilt"
+    if style == "sudden":
+        return (
+            "[You have reached your breaking point. Tell the detective your secret — all of it. "
+            f"What broke you: {events_desc}. "
+            "Stay fully in character. No speeches. Speak the way this person actually speaks.]"
+        )
+    return (
+        f"[You are about to reveal something you have been hiding. "
+        f"This is stage {stage} of {total_stages} — reveal approximately "
+        f"1/{total_stages} of your secret. Do not reveal more than this stage calls for. "
+        f"What broke you open just now: {events_desc}. "
+        "Stay fully in character. Do not announce that you are confessing. "
+        "Speak naturally, as the moment demands.]"
+    )
+
+
 def update_npc_state(conn: sqlite3.Connection, npc_id: int,
                      events: dict, psychology: dict) -> None:
-    pt = psychology.get("pressure_tolerance", 5)
-    emp = psychology.get("empathy", 5)
-
-    pressure_delta = 0
-    if events.get("pressure_applied"):
-        pressure_delta += (11 - pt) * 5
-    if events.get("threat_made"):
-        pressure_delta += (11 - pt) * 10
-    if events.get("evidence_confronted"):
-        pressure_delta += (11 - pt) * 8
-
-    guilt_delta = 0
-    if events.get("kindness_shown"):
-        guilt_delta += emp * 2
-    if events.get("guilt_trigger"):
-        guilt_delta += emp * 4
+    pressure_delta = _pressure_delta(events, psychology.get("pressure_tolerance", 5))
+    guilt_delta = _guilt_delta(events, psychology.get("empathy", 5))
 
     any_pressure = (events.get("pressure_applied") or
                     events.get("threat_made") or
@@ -109,26 +154,19 @@ def check_revelation(conn: sqlite3.Connection, llm: LLMBackend,
     if is_final:
         set_npc_secret_revealed(conn, npc_id)
 
-    fired = [k for k, v in events.items() if v]
-    fired_str = ", ".join(fired) if fired else "sustained pressure"
     override_note = " (guilt override — couldn't live with it)" if guilt_override else ""
-
-    if style == "sudden" or is_final:
-        prompt = (
-            f"[You have reached your breaking point{override_note}. "
-            f"Tell the detective your secret — all of it. "
-            f"What broke you: {fired_str}. "
-            "Stay fully in character. No speeches. Speak the way this person actually speaks.]"
-        )
-    else:
-        prompt = (
-            f"[You are about to reveal something you have been hiding{override_note}. "
-            f"This is stage {new_stage} of {len(thresholds)} — reveal approximately "
-            f"1/{len(thresholds)} of your secret. Do not reveal more than this stage calls for. "
-            f"What broke you open just now: {fired_str}. "
-            "Stay fully in character. Do not announce that you are confessing. "
-            "Speak naturally, as the moment demands.]"
-        )
+    effective_style = "sudden" if (style == "sudden" or is_final) else style
+    prompt = _build_revelation_prompt(
+        stage=new_stage,
+        total_stages=len(thresholds),
+        events=events,
+        style=effective_style,
+    )
+    if override_note:
+        prompt = prompt.replace("[You have reached your breaking point.",
+                                f"[You have reached your breaking point{override_note}.")
+        prompt = prompt.replace("[You are about to reveal something you have been hiding.",
+                                f"[You are about to reveal something you have been hiding{override_note}.")
 
     npc_row = get_npc(conn, npc_id)
     if npc_row is None:

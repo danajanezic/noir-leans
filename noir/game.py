@@ -39,6 +39,7 @@ from noir.persistence.repository import (
     create_suspect, mark_suspect_met, get_met_suspects_for_case,
     link_evidence_to_suspect,
     seed_locations_to_db, get_seeded_location_names, get_seeded_location_description,
+    initialize_npc_relationship,
 )
 from noir.persistence.db import create_schema
 from noir.characters.companion import Companion
@@ -339,10 +340,7 @@ class Game:
                 revelation_stages=suspect.get("revelation_stages", 3),
             )
             set_character_location(self.conn, character_id=f"npc_{npc_id}", location_id=loc_id)
-            self.conn.execute(
-                "INSERT OR IGNORE INTO npc_relationships (npc_id, guilt) VALUES (?, ?)",
-                (npc_id, suspect.get("starting_guilt", 0) * 10)
-            )
+            initialize_npc_relationship(self.conn, npc_id, suspect.get("starting_guilt", 0))
             is_killer = suspect["name"].lower() == case_data.get("killer_name", "").lower()
             create_suspect(self.conn, case_id=case_id, npc_id=npc_id, is_killer=is_killer,
                            race=suspect.get("race"),
