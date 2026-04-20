@@ -1,6 +1,13 @@
 import json
 import sqlite3
 from datetime import datetime, timezone
+from pathlib import Path
+
+_WORLD_CONTEXT_PATH = Path(__file__).parent.parent / "data" / "world_context.txt"
+
+
+def get_world_context() -> str:
+    return _WORLD_CONTEXT_PATH.read_text()
 
 
 def create_player(conn: sqlite3.Connection) -> None:
@@ -206,14 +213,21 @@ def add_evidence(conn: sqlite3.Connection, *, case_id: int, clue_id: int,
 
 def get_evidence_for_case(conn: sqlite3.Connection, case_id: int) -> list[sqlite3.Row]:
     return conn.execute(
-        "SELECT e.id, e.case_id, e.clue_id, e.source_npc_id, e.location_id, e.collected_at, "
-        "c.description, c.is_red_herring, l.name AS location_name "
+        "SELECT e.id, e.case_id, e.clue_id, e.source_npc_id, e.accused_npc_id, e.location_id, "
+        "e.collected_at, c.description, c.is_red_herring, l.name AS location_name, "
+        "an.name AS accused_npc_name "
         "FROM evidence e "
         "JOIN clues c ON c.id = e.clue_id "
         "LEFT JOIN locations l ON l.id = e.location_id "
+        "LEFT JOIN npcs an ON an.id = e.accused_npc_id "
         "WHERE e.case_id=?",
         (case_id,)
     ).fetchall()
+
+
+def link_evidence_to_suspect(conn: sqlite3.Connection, *, evidence_id: int, npc_id: int) -> None:
+    conn.execute("UPDATE evidence SET accused_npc_id=? WHERE id=?", (npc_id, evidence_id))
+    conn.commit()
 
 
 def create_arrest(conn: sqlite3.Connection, *, case_id: int, npc_id: int,
@@ -490,6 +504,38 @@ def fulfill_past_appointments(conn: sqlite3.Connection, npc_id: int, game_time: 
         (npc_id, game_time)
     )
     conn.commit()
+
+
+def create_suspect(conn: sqlite3.Connection, *, case_id: int, npc_id: int,
+                   is_killer: bool = False, race: str | None = None,
+                   political_connections: str | None = None, alibi: str | None = None,
+                   secret: str | None = None, backstory: str | None = None,
+                   relationships: str | None = None) -> None:
+    conn.execute(
+        """INSERT OR IGNORE INTO suspects
+           (case_id, npc_id, is_killer, race, political_connections, alibi, secret, backstory, relationships)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (case_id, npc_id, 1 if is_killer else 0,
+         race, political_connections, alibi, secret, backstory, relationships)
+    )
+    conn.commit()
+
+
+def mark_suspect_met(conn: sqlite3.Connection, *, npc_id: int) -> None:
+    conn.execute("UPDATE suspects SET met=1 WHERE npc_id=?", (npc_id,))
+    conn.commit()
+
+
+def get_suspect_by_npc(conn: sqlite3.Connection, npc_id: int) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM suspects WHERE npc_id=?", (npc_id,)).fetchone()
+
+
+def get_met_suspects_for_case(conn: sqlite3.Connection, case_id: int) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT n.* FROM npcs n JOIN suspects s ON s.npc_id=n.id "
+        "WHERE s.case_id=? AND s.met=1 AND n.role='suspect'",
+        (case_id,)
+    ).fetchall()
 
 
 def remove_partner(conn: sqlite3.Connection) -> None:

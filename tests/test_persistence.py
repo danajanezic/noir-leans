@@ -8,7 +8,7 @@ from noir.persistence.repository import (
     create_case, get_case, update_case_status,
     create_npc, get_npc, get_npcs_for_case,
     set_character_location, get_character_location,
-    create_clue, add_evidence, get_evidence_for_case,
+    create_clue, add_evidence, get_evidence_for_case, link_evidence_to_suspect,
     create_arrest,
     save_archetype, get_archetype, list_archetypes,
     get_npc_affection, set_npc_affection, increment_npc_affection,
@@ -121,6 +121,29 @@ def test_evidence_add_and_get(db):
     evidence = get_evidence_for_case(db, case_id)
     assert len(evidence) == 1
     assert evidence[0]["description"] == "A monogrammed glove"
+
+
+def test_link_evidence_to_suspect(db):
+    case_id = create_case(db, archetype="Blanc", title="Test", case_data={})
+    loc_id = create_location(db, name="Study", description="Books.", is_fixed=False, case_id=case_id)
+    npc_id = create_npc(db, case_id=case_id, name="Marcel", role="suspect",
+                        system_prompt="You are Marcel.", current_location_id=loc_id)
+    clue_id = create_clue(db, case_id=case_id, description="A bloody cufflink", location="Study")
+    ev_id = add_evidence(db, case_id=case_id, clue_id=clue_id, source_npc_id=None, location_id=loc_id)
+    link_evidence_to_suspect(db, evidence_id=ev_id, npc_id=npc_id)
+    evidence = get_evidence_for_case(db, case_id)
+    assert evidence[0]["accused_npc_id"] == npc_id
+    assert evidence[0]["accused_npc_name"] == "Marcel"
+
+
+def test_link_evidence_accused_npc_name_is_none_when_unlinked(db):
+    case_id = create_case(db, archetype="Blanc", title="Test", case_data={})
+    loc_id = create_location(db, name="Study", description="Books.", is_fixed=False, case_id=case_id)
+    clue_id = create_clue(db, case_id=case_id, description="A monogrammed glove", location="Study")
+    add_evidence(db, case_id=case_id, clue_id=clue_id, source_npc_id=None, location_id=loc_id)
+    evidence = get_evidence_for_case(db, case_id)
+    assert evidence[0]["accused_npc_id"] is None
+    assert evidence[0]["accused_npc_name"] is None
 
 
 def test_arrest_create(db):
@@ -264,3 +287,22 @@ def test_partner_dark_past_content(db):
     assert get_partner_dark_past(db) is None
     set_partner_dark_past(db, "I did a terrible thing in 1928.")
     assert get_partner_dark_past(db) == "I did a terrible thing in 1928."
+
+
+def test_get_world_context_returns_nonempty_string():
+    from noir.persistence.repository import get_world_context
+    result = get_world_context()
+    assert isinstance(result, str)
+    assert len(result) > 50
+
+
+def test_get_world_context_contains_noirleans():
+    from noir.persistence.repository import get_world_context
+    result = get_world_context()
+    assert "NOIRLEANS" in result
+
+
+def test_get_world_context_contains_howie_short():
+    from noir.persistence.repository import get_world_context
+    result = get_world_context()
+    assert "Howie Short" in result
