@@ -230,6 +230,16 @@ _MIGRATIONS = [
     "ALTER TABLE partner ADD COLUMN alignment TEXT DEFAULT 'True Neutral'",
     "ALTER TABLE npcs ADD COLUMN alignment TEXT DEFAULT 'True Neutral'",
     "ALTER TABLE npcs ADD COLUMN age INTEGER DEFAULT 35",
+    "ALTER TABLE npcs ADD COLUMN pressure_tolerance INTEGER DEFAULT 5",
+    "ALTER TABLE npcs ADD COLUMN kindness_weight INTEGER DEFAULT 5",
+    "ALTER TABLE npcs ADD COLUMN empathy INTEGER DEFAULT 5",
+    "ALTER TABLE npcs ADD COLUMN starting_guilt INTEGER DEFAULT 0",
+    "ALTER TABLE npcs ADD COLUMN revelation_style TEXT DEFAULT 'staged'",
+    "ALTER TABLE npcs ADD COLUMN revelation_stages INTEGER DEFAULT 3",
+    "ALTER TABLE npc_relationships ADD COLUMN guilt INTEGER DEFAULT 0",
+    "ALTER TABLE npc_relationships ADD COLUMN pressure_score INTEGER DEFAULT 0",
+    "ALTER TABLE npc_relationships ADD COLUMN revelation_stage INTEGER DEFAULT 0",
+    "ALTER TABLE suspects ADD COLUMN archetype_id TEXT",
 ]
 
 

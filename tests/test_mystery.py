@@ -233,3 +233,25 @@ def test_seed_locations_to_db_is_idempotent(db):
     seed_locations_to_db(db, locations)  # second call must not error or duplicate
     names = get_seeded_location_names(db)
     assert names.count("The Blue Room") == 1
+
+def test_npcs_table_has_psychology_columns(db):
+    row = db.execute("PRAGMA table_info(npcs)").fetchall()
+    col_names = {r["name"] for r in row}
+    assert "pressure_tolerance" in col_names
+    assert "kindness_weight" in col_names
+    assert "empathy" in col_names
+    assert "starting_guilt" in col_names
+    assert "revelation_style" in col_names
+    assert "revelation_stages" in col_names
+
+def test_npc_relationships_has_psychology_columns(db):
+    row = db.execute("PRAGMA table_info(npc_relationships)").fetchall()
+    col_names = {r["name"] for r in row}
+    assert "guilt" in col_names
+    assert "pressure_score" in col_names
+    assert "revelation_stage" in col_names
+
+def test_suspects_has_archetype_id_column(db):
+    row = db.execute("PRAGMA table_info(suspects)").fetchall()
+    col_names = {r["name"] for r in row}
+    assert "archetype_id" in col_names
