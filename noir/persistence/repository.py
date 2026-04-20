@@ -540,6 +540,11 @@ def get_met_suspects_for_case(conn: sqlite3.Connection, case_id: int) -> list[sq
     ).fetchall()
 
 
+def update_player_alignment(conn: sqlite3.Connection, *, law_delta: int, good_delta: int) -> None:
+    """Placeholder — full implementation in Task 3 (adds alignment columns to player table)."""
+    pass
+
+
 def remove_partner(conn: sqlite3.Connection) -> None:
     conn.execute("UPDATE partner SET dark_past_state='lost' WHERE id=1")
     conn.execute("DELETE FROM conversation_history WHERE character_id='partner'")

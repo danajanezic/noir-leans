@@ -1,5 +1,5 @@
 import json
-from noir.onboarding.quiz import Quiz, QUIZ_QUESTIONS
+from noir.onboarding.quiz import Quiz, QUIZ_QUESTIONS, score_alignment, resolve_alignment
 from noir.onboarding.cold_open import ColdOpen
 from noir.persistence.repository import create_player, get_partner
 from noir.llm.mock import MockLLMBackend
@@ -62,3 +62,39 @@ def test_quiz_questions_are_defined():
         assert "question" in q
         assert "options" in q
         assert len(q["options"]) >= 2
+
+
+def test_score_alignment_sums_weights():
+    # Q1-A: law+2, good-1; Q2-A: law+2, good+2; Q3-D: law-1, good-1; Q4-D: law+1, good0;
+    # Q5-D: law-1, good-1; Q6-D: law-1, good-2; Q7-D: law0, good0; Q8-D: law0, good+1
+    answers = ["A", "A", "D", "D", "D", "D", "D", "D"]
+    law, good = score_alignment(answers)
+    assert law == 2
+    assert good == -2
+
+def test_resolve_alignment_lawful_good():
+    assert resolve_alignment(4, 4) == "Lawful Good"
+
+def test_resolve_alignment_true_neutral():
+    assert resolve_alignment(0, 0) == "True Neutral"
+
+def test_resolve_alignment_chaotic_evil():
+    assert resolve_alignment(-4, -4) == "Chaotic Evil"
+
+def test_resolve_alignment_lawful_neutral():
+    assert resolve_alignment(5, 2) == "Lawful Neutral"
+
+def test_resolve_alignment_neutral_good():
+    assert resolve_alignment(0, 6) == "Neutral Good"
+
+def test_resolve_alignment_chaotic_neutral():
+    assert resolve_alignment(-5, 0) == "Chaotic Neutral"
+
+def test_resolve_alignment_lawful_evil():
+    assert resolve_alignment(6, -5) == "Lawful Evil"
+
+def test_resolve_alignment_neutral_evil():
+    assert resolve_alignment(1, -6) == "Neutral Evil"
+
+def test_resolve_alignment_chaotic_good():
+    assert resolve_alignment(-5, 5) == "Chaotic Good"
