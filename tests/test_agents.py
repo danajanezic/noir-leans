@@ -87,6 +87,7 @@ def test_check_factual_contradictions_no_other_speakers():
         new_facts=["was home"], speaker="Rex Fontaine", case_notes={}, llm=llm,
     )
     assert flags == []
+    assert llm.calls == []
 
 
 def test_check_factual_contradictions_skips_self():
@@ -98,6 +99,7 @@ def test_check_factual_contradictions_skips_self():
         llm=llm,
     )
     assert flags == []
+    assert llm.calls == []
 
 
 # ── check_routine_contradiction ───────────────────────────────────────────────
@@ -127,6 +129,7 @@ def test_check_routine_contradiction_no_routine():
         new_facts=["was at the club"], speaker="Rex Fontaine", routine=[], llm=llm,
     )
     assert flags == []
+    assert llm.calls == []
 
 
 # ── check_spatial_contradictions ─────────────────────────────────────────────
@@ -152,6 +155,7 @@ def test_check_spatial_contradictions_empty_inputs():
     assert check_spatial_contradictions([], {}, llm) == []
     assert check_spatial_contradictions([], {"key": "val"}, llm) == []
     assert check_spatial_contradictions([{"character": "x"}], {}, llm) == []
+    assert llm.calls == []
 
 
 # ── check_jailbreak_success ───────────────────────────────────────────────────
