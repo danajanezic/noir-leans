@@ -313,8 +313,22 @@ def test_patch_alibi_contradiction_blanks_alibi(auditor, clean_case):
     assert dolores["alibi"] == ""
 
 
+def test_patch_bad_relationship_ref_removes_entry(auditor, clean_case):
+    clean_case["suspects"][0]["relationships"][0]["name"] = "Ghost Person"
+    issue = Issue(
+        type="bad_relationship_ref",
+        subject="Dolores Mink",
+        detail="relationship references 'Ghost Person' not in the case",
+        severity="patchable",
+        source="deterministic",
+    )
+    patched = auditor._patch(clean_case, [issue])
+    dolores = next(s for s in patched["suspects"] if s["name"] == "Dolores Mink")
+    names = [r["name"] for r in dolores["relationships"]]
+    assert "Ghost Person" not in names
+
+
 def test_patch_does_not_mutate_original(auditor, clean_case):
-    original_desc = clean_case["clues"][0]["description"]
     clean_case["clues"].append({
         "description": "A witness saw Reginald Smoot leaving",
         "is_red_herring": False,
@@ -327,6 +341,9 @@ def test_patch_does_not_mutate_original(auditor, clean_case):
         severity="patchable",
         source="deterministic",
     )
-    auditor._patch(clean_case, [issue])
-    # original unchanged
+    patched = auditor._patch(clean_case, [issue])
+    # patched copy has the replacement
+    assert "Reginald Smoot" not in patched["clues"][-1]["description"]
+    assert "witness" in patched["clues"][-1]["description"]
+    # original is untouched
     assert clean_case["clues"][-1]["description"] == "A witness saw Reginald Smoot leaving"
