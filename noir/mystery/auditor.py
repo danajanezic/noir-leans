@@ -153,7 +153,35 @@ class CaseAuditor:
         return issues
 
     def _llm_check(self, case: dict) -> list[Issue]:
-        return []
+        prompt = (
+            "Evaluate this mystery case for three types of semantic issues:\n\n"
+            "1. unsolvable (fatal): Is there at least one non-red-herring clue whose "
+            "description meaningfully points toward the killer by name, role, location, "
+            "or motive? If not, report this.\n"
+            "2. hidden_motive (fatal): Is the motive something a player could discover "
+            "through NPC dialogue or clue descriptions, or does it exist only in the "
+            "internal 'motive' field with no in-world trail? If hidden, report this.\n"
+            "3. alibi_contradiction (patchable): Does any suspect's alibi directly "
+            "contradict their own routine entries (e.g. claims to be elsewhere during "
+            "a time their routine places them at the crime scene)? If so, report this.\n\n"
+            f"Case JSON:\n{json.dumps(case, indent=2)}\n\n"
+            'Return ONLY: {"issues": [{"type": "unsolvable"|"hidden_motive"|"alibi_contradiction", '
+            '"subject": "suspect or clue name", "detail": "string", '
+            '"severity": "patchable"|"fatal"}]} '
+            'If no issues, return {"issues": []}.'
+        )
+        result = self.llm.query_structured(AUDITOR_SYSTEM_PROMPT, [], prompt)
+        return [
+            Issue(
+                type=i.get("type", "unknown"),
+                subject=i.get("subject", ""),
+                detail=i.get("detail", ""),
+                severity=i.get("severity", "patchable"),
+                source="llm",
+            )
+            for i in result.get("issues", [])
+            if isinstance(i, dict)
+        ]
 
     def _patch(self, case: dict, issues: list[Issue]) -> dict:
         return copy.deepcopy(case)

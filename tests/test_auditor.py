@@ -190,3 +190,49 @@ def test_bad_relationship_ref_detected(auditor, clean_case):
 def test_clean_case_has_no_deterministic_issues(auditor, clean_case):
     issues = auditor._deterministic_check(clean_case)
     assert issues == []
+
+
+def test_llm_check_returns_empty_when_no_issues(auditor, clean_case, mock_llm):
+    mock_llm._responses = cycle(['{"issues": []}'])
+    issues = auditor._llm_check(clean_case)
+    assert issues == []
+
+
+def test_llm_check_parses_unsolvable_issue(auditor, clean_case, mock_llm):
+    response = json.dumps({"issues": [
+        {
+            "type": "unsolvable",
+            "subject": "all clues",
+            "detail": "No clue points toward the killer",
+            "severity": "fatal",
+        }
+    ]})
+    mock_llm._responses = cycle([response])
+    issues = auditor._llm_check(clean_case)
+    assert len(issues) == 1
+    assert issues[0].type == "unsolvable"
+    assert issues[0].severity == "fatal"
+    assert issues[0].source == "llm"
+
+
+def test_llm_check_parses_alibi_contradiction(auditor, clean_case, mock_llm):
+    response = json.dumps({"issues": [
+        {
+            "type": "alibi_contradiction",
+            "subject": "Dolores Mink",
+            "detail": "Alibi says back office but routine places her on stage",
+            "severity": "patchable",
+        }
+    ]})
+    mock_llm._responses = cycle([response])
+    issues = auditor._llm_check(clean_case)
+    assert issues[0].type == "alibi_contradiction"
+    assert issues[0].severity == "patchable"
+
+
+def test_llm_check_sends_full_case_json_in_prompt(auditor, clean_case, mock_llm):
+    mock_llm._responses = cycle(['{"issues": []}'])
+    auditor._llm_check(clean_case)
+    prompt = mock_llm.calls[-1]["user_input"]
+    assert "Dolores Mink" in prompt
+    assert "solvability" in prompt.lower() or "unsolvable" in prompt.lower()
