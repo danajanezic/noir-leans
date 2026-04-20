@@ -153,6 +153,20 @@ class CaseAuditor:
         return issues
 
     def _llm_check(self, case: dict) -> list[Issue]:
+        slim = {
+            "killer_name": case.get("killer_name"),
+            "motive": case.get("motive"),
+            "suspects": [
+                {
+                    "name": s.get("name"),
+                    "alibi": s.get("alibi"),
+                    "secret": s.get("secret"),
+                    "routine": s.get("routine"),
+                }
+                for s in case.get("suspects", [])
+            ],
+            "clues": case.get("clues", []),
+        }
         prompt = (
             "Evaluate this mystery case for three types of semantic issues:\n\n"
             "1. unsolvable (fatal): Is there at least one non-red-herring clue whose "
@@ -164,7 +178,7 @@ class CaseAuditor:
             "3. alibi_contradiction (patchable): Does any suspect's alibi directly "
             "contradict their own routine entries (e.g. claims to be elsewhere during "
             "a time their routine places them at the crime scene)? If so, report this.\n\n"
-            f"Case JSON:\n{json.dumps(case, indent=2)}\n\n"
+            f"Case:\n{json.dumps(slim)}\n\n"
             'Return ONLY: {"issues": [{"type": "unsolvable"|"hidden_motive"|"alibi_contradiction", '
             '"subject": "suspect or clue name", "detail": "string", '
             '"severity": "patchable"|"fatal"}]} '

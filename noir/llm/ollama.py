@@ -13,9 +13,11 @@ _console = Console()
 
 class OllamaBackend(LLMBackend):
 
-    def __init__(self, *, model: str = "qwen2.5:14b", host: str = "http://localhost:11434"):
+    def __init__(self, *, model: str = "qwen2.5:14b", host: str = "http://localhost:11434",
+                 timeout: int = 360):
         self.model = model
         self.host = host.rstrip("/")
+        self.timeout = timeout
 
     def _build_messages(self, system_prompt: str, history: list[dict], user_input: str) -> list[dict]:
         messages = [{"role": "system", "content": system_prompt}]
@@ -43,11 +45,11 @@ class OllamaBackend(LLMBackend):
         t0 = time.perf_counter()
         try:
             if self.suppress_status:
-                with urllib.request.urlopen(req, timeout=180) as resp:
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                     body = json.loads(resp.read())
             else:
                 with _console.status(f"[dim]{self.status_message}[/dim]", spinner="dots"):
-                    with urllib.request.urlopen(req, timeout=180) as resp:
+                    with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                         body = json.loads(resp.read())
         except urllib.error.URLError as e:
             log.error("ollama connection error: %s", e)
