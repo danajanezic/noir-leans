@@ -173,6 +173,13 @@ def test_npc_unreachable_detected(auditor, clean_case):
     assert unreachable[0].subject == "René LeBlanc"
 
 
+def test_npc_unreachable_detected_when_routine_not_a_list(auditor, clean_case):
+    clean_case["suspects"][1]["routine"] = "goes to the club sometimes"
+    issues = auditor._deterministic_check(clean_case)
+    types = [i.type for i in issues]
+    assert "npc_unreachable" in types
+
+
 def test_bad_relationship_ref_detected(auditor, clean_case):
     clean_case["suspects"][0]["relationships"][0]["name"] = "Ghost Person"
     issues = auditor._deterministic_check(clean_case)
