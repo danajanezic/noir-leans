@@ -31,6 +31,96 @@ GENERATOR_SYSTEM_PROMPT = (
 DARK_PAST_CASE_SYSTEM_PROMPT = """You are a mystery generator for Noirleans, 1935. Generate a case directly tied to a partner's dark past — a crime they committed or were part of. The player must investigate this case knowing their partner is implicated. The tone is morally complex and personal. The partner should appear as a named NPC in the case (as a suspect or witness). Return ONLY valid JSON matching the case schema."""
 
 
+def _build_npc_system_prompt(name: str, role: str, race: str,
+                              political_connections: str, alibi: str, secret: str,
+                              relationships_json: str, personality: str,
+                              speech_style: str, backstory: str = "") -> str:
+    import json as _j
+    race_line = (
+        f"Race/background: {race}. This shapes your experience of 1935 Noirleans — "
+        "the spaces you can enter, who treats you with respect or contempt, "
+        "what you can and cannot say to a white detective. "
+    ) if race else ""
+    political_line = (
+        f"Political connections: {political_connections}. "
+        "You know who protects you and you know how to use that knowledge. "
+    ) if political_connections and political_connections.lower() not in ("none", "") else ""
+    backstory_line = f"Your history: {backstory} " if backstory else ""
+    try:
+        rels = _j.loads(relationships_json) if relationships_json else []
+    except Exception:
+        rels = []
+    rel_parts = []
+    for r in rels:
+        if not r.get("name") or not r.get("relationship"):
+            continue
+        part = f"Your relationship to {r['name']}: {r['relationship']}."
+        facts = r.get("shared_facts", [])
+        if facts:
+            part += f" Facts you both know: {' '.join(facts)}"
+        rel_parts.append(part)
+    rel_text = " ".join(rel_parts)
+    return (
+        f"You are {name}, a {role} in a murder investigation. "
+        f"{backstory_line}"
+        f"Personality: {personality}. Speech style: {speech_style}. "
+        f"{race_line}"
+        f"{political_line}"
+        f"Your alibi (which may or may not be true): {alibi}. "
+        f"Your secret: {secret}. "
+        + (f"{rel_text} " if rel_text else "")
+        + "You are in Noirleans, 1935 — Depression-era, corrupt to the bone, "
+        "jazz leaking out of every cracked window. Stay in character. "
+        "Be evasive about your secret but not impossibly so."
+    )
+
+
+def enrich_npc(conn, llm, npc_id: int) -> None:
+    from noir.persistence.repository import get_npc, update_npc_system_prompt, update_suspect_backstory
+    from noir.characters.npc_archetype_loader import get_npc_archetype
+
+    npc_row = get_npc(conn, npc_id)
+    if npc_row is None:
+        return
+    suspect_row = conn.execute(
+        "SELECT race, political_connections, alibi, secret, archetype_id, relationships "
+        "FROM suspects WHERE npc_id=?", (npc_id,)
+    ).fetchone()
+    if suspect_row is None:
+        return
+
+    archetype = get_npc_archetype(suspect_row["archetype_id"] or "world_weary_barkeep")
+    personality = archetype["personality"] if archetype else "Reserved and watchful"
+    speech_style = archetype["speech_style"] if archetype else "Short, careful sentences"
+
+    result = llm.query_structured(
+        "Generate a one-sentence backstory for this character. "
+        "Return ONLY valid JSON: {\"backstory\": \"string\"}",
+        [],
+        f"Name: {npc_row['name']}, Role: {npc_row['role']}, "
+        f"Race: {suspect_row['race']}, Alibi: {suspect_row['alibi']}, "
+        f"Secret: {suspect_row['secret']}. "
+        "Write one sentence about who they were before this case — specific, grounded, 1935 Noirleans."
+    )
+    backstory = result.get("backstory", "")
+
+    system_prompt = _build_npc_system_prompt(
+        name=npc_row["name"],
+        role=npc_row["role"],
+        race=suspect_row["race"] or "",
+        political_connections=suspect_row["political_connections"] or "",
+        alibi=suspect_row["alibi"] or "",
+        secret=suspect_row["secret"] or "",
+        relationships_json=suspect_row["relationships"] or "[]",
+        personality=personality,
+        speech_style=speech_style,
+        backstory=backstory,
+    )
+    update_npc_system_prompt(conn, npc_id=npc_id, system_prompt=system_prompt)
+    if backstory:
+        update_suspect_backstory(conn, npc_id=npc_id, backstory=backstory)
+
+
 def _pick_best_archetype(llm, archetypes: list, crime_summary: str) -> str:
     archetype_names = [a["name"] for a in archetypes]
     if not archetype_names:

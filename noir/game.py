@@ -38,12 +38,12 @@ from noir.persistence.repository import (
     create_npc_appointment, get_active_appointment, fulfill_past_appointments,
     create_suspect, mark_suspect_met, get_met_suspects_for_case,
     link_evidence_to_suspect,
-    seed_locations_to_db, get_seeded_location_names,
+    seed_locations_to_db, get_seeded_location_names, get_seeded_location_description,
 )
 from noir.persistence.db import create_schema
 from noir.characters.companion import Companion
 from noir.characters.npc import NPC
-from noir.mystery.generator import MysteryGenerator
+from noir.mystery.generator import MysteryGenerator, _build_npc_system_prompt
 from noir.mystery.archetype_loader import seed_archetypes_to_db
 from noir.cases.manager import CaseManager
 from noir.cases.trial import TrialSystem
@@ -291,12 +291,14 @@ class Game:
         show_dialogue(self.companion.name, self.companion.narrate(intro_prompt))
 
     def _seed_case_locations_and_npcs(self, case_id: int, case_data: dict, fixed: dict) -> None:
+        from noir.characters.npc_archetype_loader import get_npc_archetype
         loc_map = {}
         for loc in case_data.get("locations", []):
-            loc_id = create_location(self.conn, name=loc["name"],
-                                     description=loc["description"],
+            loc_name = loc["name"] if isinstance(loc, dict) else loc
+            desc = get_seeded_location_description(self.conn, loc_name) or "A location in Noirleans."
+            loc_id = create_location(self.conn, name=loc_name, description=desc,
                                      is_fixed=False, case_id=case_id)
-            loc_map[loc["name"]] = loc_id
+            loc_map[loc_name] = loc_id
 
         found_at = case_data.get("victim", {}).get("found_at", "").lower()
         npc_locs = {k: v for k, v in loc_map.items() if k.lower() != found_at} or loc_map
@@ -304,43 +306,40 @@ class Game:
         for suspect in case_data.get("suspects", []):
             loc_name = random.choice(list(npc_locs.keys())) if npc_locs else None
             loc_id = npc_locs.get(loc_name) or next(iter(fixed.values()))
-            relationships = suspect.get("relationships", [])
-            rel_parts = []
-            for r in relationships:
-                if not r.get("name") or not r.get("relationship"):
-                    continue
-                part = f"Your relationship to {r['name']}: {r['relationship']}."
-                facts = r.get("shared_facts", [])
-                if facts:
-                    part += f" Facts you both know: {' '.join(facts)}"
-                rel_parts.append(part)
-            rel_text = " ".join(rel_parts)
-            race = suspect.get("race", "")
-            political = suspect.get("political_connections", "none")
-            race_line = f"Race/background: {race}. This shapes your experience of 1935 Noirleans — the spaces you can enter, who treats you with respect or contempt, what you can and cannot say to a white detective. " if race else ""
-            political_line = f"Political connections: {political}. You know who protects you and you know how to use that knowledge. " if political and political.lower() != "none" else ""
-            backstory = suspect.get("backstory", "")
-            backstory_line = f"Your history: {backstory} " if backstory else ""
-            npc_system_prompt = (
-                f"You are {suspect['name']}, a {suspect['role']} in a murder investigation. "
-                f"{backstory_line}"
-                f"Personality: {suspect['personality']}. Speech style: {suspect['speech_style']}. "
-                f"{race_line}"
-                f"{political_line}"
-                f"Your alibi (which may or may not be true): {suspect['alibi']}. "
-                f"Your secret: {suspect['secret']}. "
-                + (f"{rel_text} " if rel_text else "")
-                + "You are in Noirleans, 1935 — Depression-era, corrupt to the bone, jazz leaking out of every cracked window. Stay in character. "
-                "Be evasive about your secret but not impossibly so."
+
+            archetype = get_npc_archetype(suspect.get("archetype_id", "world_weary_barkeep"))
+            personality = archetype["personality"] if archetype else "Reserved and watchful"
+            speech_style = archetype["speech_style"] if archetype else "Short, careful sentences"
+
+            npc_system_prompt = _build_npc_system_prompt(
+                name=suspect["name"],
+                role=suspect["role"],
+                race=suspect.get("race", ""),
+                political_connections=suspect.get("political_connections", ""),
+                alibi=suspect.get("alibi", ""),
+                secret=suspect.get("secret", ""),
+                relationships_json=json.dumps(suspect.get("relationships", [])),
+                personality=personality,
+                speech_style=speech_style,
+                backstory="",  # phase 2 will update this
             )
-            npc_id = create_npc(self.conn, case_id=case_id, name=suspect["name"],
-                                role=suspect["role"], system_prompt=npc_system_prompt,
-                                current_location_id=loc_id,
-                                alignment=suspect.get("alignment", "True Neutral"),
-                                age=suspect.get("age", 35))
+            npc_id = create_npc(
+                self.conn, case_id=case_id, name=suspect["name"],
+                role=suspect["role"], system_prompt=npc_system_prompt,
+                current_location_id=loc_id,
+                alignment=suspect.get("alignment", "True Neutral"),
+                age=suspect.get("age", 35),
+                pressure_tolerance=suspect.get("pressure_tolerance", 5),
+                kindness_weight=suspect.get("kindness_weight", 5),
+                empathy=suspect.get("empathy", 5),
+                starting_guilt=suspect.get("starting_guilt", 0),
+                revelation_style=suspect.get("revelation_style", "staged"),
+                revelation_stages=suspect.get("revelation_stages", 3),
+            )
             set_character_location(self.conn, character_id=f"npc_{npc_id}", location_id=loc_id)
             self.conn.execute(
-                "INSERT OR IGNORE INTO npc_relationships (npc_id) VALUES (?)", (npc_id,)
+                "INSERT OR IGNORE INTO npc_relationships (npc_id, guilt) VALUES (?, ?)",
+                (npc_id, suspect.get("starting_guilt", 0) * 10)
             )
             is_killer = suspect["name"].lower() == case_data.get("killer_name", "").lower()
             create_suspect(self.conn, case_id=case_id, npc_id=npc_id, is_killer=is_killer,
@@ -348,8 +347,9 @@ class Game:
                            political_connections=suspect.get("political_connections"),
                            alibi=suspect.get("alibi"),
                            secret=suspect.get("secret"),
-                           backstory=suspect.get("backstory"),
-                           relationships=json.dumps(suspect.get("relationships", [])))
+                           backstory=None,
+                           relationships=json.dumps(suspect.get("relationships", [])),
+                           archetype_id=suspect.get("archetype_id"))
             for entry in suspect.get("routine", []):
                 ts = _parse_hhmm(entry.get("time_start", "00:00"))
                 te = _parse_hhmm(entry.get("time_end", "00:00"))
@@ -385,6 +385,31 @@ class Game:
         self._pending_gen_thread = threading.Thread(target=_run, daemon=True)
         self._pending_gen_thread.start()
 
+    def _start_background_enrichment(self, case_id: int) -> None:
+        from noir.mystery.generator import enrich_npc
+        npcs = self.conn.execute(
+            "SELECT id FROM npcs WHERE case_id=?", (case_id,)
+        ).fetchall()
+        npc_ids = [row["id"] for row in npcs]
+        bg_llm = copy.copy(self.llm)
+        if hasattr(bg_llm, 'suppress_status'):
+            bg_llm.suppress_status = True
+
+        def _enrich_all() -> None:
+            from noir.persistence.db import get_connection as _gc
+            bg_conn = _gc()
+            try:
+                for npc_id in npc_ids:
+                    try:
+                        enrich_npc(bg_conn, bg_llm, npc_id)
+                    except Exception:
+                        pass
+            finally:
+                bg_conn.close()
+
+        t = threading.Thread(target=_enrich_all, daemon=True)
+        t.start()
+
     def start_new_case(self) -> None:
         if self._pending_gen_thread and self._pending_gen_thread.is_alive():
             console.print("[dim]Reviewing the file...[/dim]")
@@ -409,6 +434,7 @@ class Game:
         self.active_case_id = case_id
 
         self._seed_case_locations_and_npcs(case_id, case_data, fixed)
+        self._start_background_enrichment(case_id)
 
         console.print(f"\n[bold red]NEW CASE: {case_data['title']}[/bold red]")
         console.print(
@@ -1532,6 +1558,7 @@ class Game:
 
         self.active_case_id = case_id
         self._seed_case_locations_and_npcs(case_id, case_data, fixed)
+        self._start_background_enrichment(case_id)
 
         console.print(f"\n[bold red]NEW CASE: {case_data['title']}[/bold red]")
         console.print(

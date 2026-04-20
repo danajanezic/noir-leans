@@ -342,3 +342,37 @@ def test_update_npc_system_prompt(db):
                         system_prompt="old prompt", current_location_id=loc_id)
     update_npc_system_prompt(db, npc_id=npc_id, system_prompt="new prompt with backstory")
     assert get_npc(db, npc_id)["system_prompt"] == "new prompt with backstory"
+
+
+def test_enrich_npc_updates_system_prompt(db, mock_llm):
+    from itertools import cycle
+    import json
+    from noir.mystery.generator import enrich_npc
+    from noir.persistence.repository import (
+        create_location, create_npc, get_npc, create_suspect,
+        seed_locations_to_db,
+    )
+    seed_locations_to_db(db, [{"name": "The Spot", "description": "Dark.", "type": "bar"}])
+    db.execute("INSERT INTO cases (archetype, title, case_data) VALUES ('t','t','{}')")
+    db.commit()
+    case_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    loc_id = create_location(db, name="The Spot", description="Dark.", is_fixed=False, case_id=case_id)
+    npc_id = create_npc(
+        db, case_id=case_id, name="Marcus Dupree", role="suspect",
+        system_prompt="partial prompt",
+        current_location_id=loc_id,
+        pressure_tolerance=5, kindness_weight=5, empathy=5,
+        starting_guilt=2, revelation_style="staged", revelation_stages=3,
+    )
+    create_suspect(db, case_id=case_id, npc_id=npc_id, is_killer=False,
+                   race="Black", alibi="Was at home", secret="Owes money",
+                   archetype_id="bitter_veteran")
+    db.commit()
+
+    mock_llm._responses = cycle(['{"backstory": "Dockworker turned numbers runner, trying to stay clean."}'])
+    enrich_npc(db, mock_llm, npc_id)
+
+    row = get_npc(db, npc_id)
+    assert "Dockworker turned numbers runner" in row["system_prompt"]
+    assert "Marcus Dupree" in row["system_prompt"]
+    assert row["system_prompt"] != "partial prompt"
