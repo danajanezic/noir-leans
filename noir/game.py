@@ -327,7 +327,8 @@ class Game:
             npc_id = create_npc(self.conn, case_id=case_id, name=suspect["name"],
                                 role=suspect["role"], system_prompt=npc_system_prompt,
                                 current_location_id=loc_id,
-                                alignment=suspect.get("alignment", "True Neutral"))
+                                alignment=suspect.get("alignment", "True Neutral"),
+                                age=suspect.get("age", 35))
             set_character_location(self.conn, character_id=f"npc_{npc_id}", location_id=loc_id)
             self.conn.execute(
                 "INSERT OR IGNORE INTO npc_relationships (npc_id) VALUES (?)", (npc_id,)

@@ -222,6 +222,7 @@ _MIGRATIONS = [
     "ALTER TABLE player ADD COLUMN good_evil INTEGER DEFAULT 0",
     "ALTER TABLE partner ADD COLUMN alignment TEXT DEFAULT 'True Neutral'",
     "ALTER TABLE npcs ADD COLUMN alignment TEXT DEFAULT 'True Neutral'",
+    "ALTER TABLE npcs ADD COLUMN age INTEGER DEFAULT 35",
 ]
 
 

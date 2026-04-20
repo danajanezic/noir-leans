@@ -9,7 +9,7 @@ from noir.persistence.repository import (
 from noir.mystery.auditor import CaseAuditor
 
 REQUIRED_FIELDS = {"title", "victim", "killer_name", "motive", "suspects", "clues", "locations"}
-REQUIRED_SUSPECT_FIELDS = {"name", "role", "alibi", "secret", "personality", "speech_style", "race", "political_connections", "backstory", "routine", "alignment"}
+REQUIRED_SUSPECT_FIELDS = {"name", "role", "alibi", "secret", "personality", "speech_style", "race", "political_connections", "backstory", "routine", "alignment", "age"}
 REQUIRED_CLUE_FIELDS = {"description", "is_red_herring", "location"}
 REQUIRED_LOCATION_FIELDS = {"name", "description"}
 
@@ -77,6 +77,8 @@ def _validate_case(case: dict) -> bool:
         return False
     for suspect in case["suspects"]:
         if not REQUIRED_SUSPECT_FIELDS.issubset(suspect.keys()):
+            return False
+        if not isinstance(suspect.get("age"), int):
             return False
     if not isinstance(case["clues"], list) or len(case["clues"]) < 1:
         return False
@@ -195,6 +197,7 @@ class MysteryGenerator:
             '     "backstory": "string (2-3 sentences: who they were before this case, what shaped them, what they want)",\n'
             '     "personality": "string", "speech_style": "string",\n'
             '     "alignment": "string (one of: Lawful Good, Neutral Good, Chaotic Good, Lawful Neutral, True Neutral, Chaotic Neutral, Lawful Evil, Neutral Evil, Chaotic Evil — assign based on this character\'s role, morality, and relationship to authority)",\n'
+            '     "age": "integer — the character\'s age in 1935. Guidelines: law enforcement / legal professionals: 28–65; working adults (merchants, laborers, clerks): 20–60; young adults (students, apprentices): 18–30. CRITICAL: respect relationship logic — a father must be at least 18 years older than his child, an employer typically older than an apprentice, a mentor older than their protégé. All ages are as of 1935.",\n'
             '     "routine": [{"time_start": "HH:MM", "time_end": "HH:MM", "location": "string (location name from the locations list, or \'home\' if unavailable)"}],\n'
             '     "relationships": [{"name": "string", "relationship": "string", "shared_facts": ["string — specific verifiable facts you both know, e.g. how long you\'ve worked together, where you first met, a shared event"]}]}\n'
             '  ],\n'
@@ -269,6 +272,7 @@ class MysteryGenerator:
             '     "backstory": "string (2-3 sentences: who they were before this case, what shaped them, what they want)",\n'
             '     "personality": "string", "speech_style": "string",\n'
             '     "alignment": "string (one of: Lawful Good, Neutral Good, Chaotic Good, Lawful Neutral, True Neutral, Chaotic Neutral, Lawful Evil, Neutral Evil, Chaotic Evil — assign based on this character\'s role, morality, and relationship to authority)",\n'
+            '     "age": "integer — the character\'s age in 1935. Guidelines: law enforcement / legal professionals: 28–65; working adults (merchants, laborers, clerks): 20–60; young adults (students, apprentices): 18–30. CRITICAL: respect relationship logic — a father must be at least 18 years older than his child, an employer typically older than an apprentice, a mentor older than their protégé. All ages are as of 1935.",\n'
             '     "routine": [{"time_start": "HH:MM", "time_end": "HH:MM", "location": "string (location name from the locations list, or \'home\' if unavailable)"}],\n'
             '     "relationships": [{"name": "string", "relationship": "string", "shared_facts": ["string — specific verifiable facts you both know, e.g. how long you\'ve worked together, where you first met, a shared event"]}]}\n'
             '  ],\n'

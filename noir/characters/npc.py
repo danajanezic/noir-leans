@@ -2,6 +2,7 @@ import sqlite3
 from noir.llm.base import LLMBackend
 from noir.persistence.repository import get_npc, get_player, get_partner, update_npc_location, set_character_location
 from noir.onboarding.quiz import alignment_disposition, resolve_alignment
+from noir.lore import lore_memories_for_age, is_history_query
 from .agent import Agent
 
 
@@ -29,20 +30,44 @@ def _build_alignment_prefix(player_alignment: str, npc_alignment: str,
 class NPC(Agent):
 
     def __init__(self, *, npc_id: int, name: str, role: str,
-                 current_location_id: int, alignment_prefix: str = "", **kwargs):
+                 current_location_id: int, alignment_prefix: str = "",
+                 case_memories: list[str] | None = None,
+                 background_memories: list[str] | None = None,
+                 **kwargs):
         super().__init__(**kwargs)
         self.npc_id = npc_id
         self.name = name
         self.role = role
         self.current_location_id = current_location_id
         self._alignment_prefix = alignment_prefix
+        self._case_memories: list[str] = case_memories or []
+        self._background_memories: list[str] = background_memories or []
 
     @property
     def _locked_system_prompt(self) -> str:
         base = super()._locked_system_prompt
+        parts = []
         if self._alignment_prefix:
-            return self._alignment_prefix + "\n\n" + base
-        return base
+            parts.append(self._alignment_prefix)
+        if self._case_memories:
+            mem_block = (
+                "[Historical events you personally remember:\n "
+                + "\n ".join(self._case_memories)
+                + "]"
+            )
+            parts.append(mem_block)
+        parts.append(base)
+        return "\n\n".join(parts)
+
+    def _query_with_retry(self, prompt: str, history: list[dict]) -> str:
+        if self._background_memories and is_history_query(prompt):
+            mem_block = (
+                "[Historical background you remember, relevant to this question: "
+                + " / ".join(m for m in self._background_memories if m)
+                + "]"
+            )
+            prompt = mem_block + "\n\n" + prompt
+        return super()._query_with_retry(prompt, history)
 
     @classmethod
     def load(cls, *, conn: sqlite3.Connection, llm: LLMBackend,
@@ -61,6 +86,8 @@ class NPC(Agent):
                 player_alignment, row["alignment"], partner_alignment
             )
 
+        case_memories, background_memories = lore_memories_for_age(row["age"] or 35)
+
         return cls(
             character_id=f"npc_{npc_id}",
             system_prompt=row["system_prompt"],
@@ -72,6 +99,8 @@ class NPC(Agent):
             role=row["role"],
             current_location_id=row["current_location_id"],
             alignment_prefix=alignment_prefix,
+            case_memories=case_memories,
+            background_memories=background_memories,
         )
 
     def move_to(self, location_id: int) -> None:
