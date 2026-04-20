@@ -18,7 +18,7 @@ from pathlib import Path
 from noir.llm.base import LLMBackend
 from noir.llm.config import load_config
 from noir.persistence.db import DB_PATH, create_schema
-from noir.persistence.repository import get_partner
+from noir.persistence.repository import get_partner, get_active_cases
 from noir.step import run_step
 from agents.personas import PERSONAS
 from agents.playthrough_agent import PlaythroughAgent
@@ -61,6 +61,25 @@ def _ensure_onboarded(conn: sqlite3.Connection, llm) -> None:
     print(f"Onboarding complete. Partner: {result['partner']['name']}", file=sys.stderr)
 
 
+def _ensure_active_case(conn: sqlite3.Connection, llm: LLMBackend) -> None:
+    active = get_active_cases(conn)
+    if active:
+        return
+    print("No active case — generating a new one...", file=sys.stderr)
+    from noir.game import Game
+    import noir.display as _display
+    from rich.console import Console
+    _orig = _display.console
+    _display.console = Console(file=sys.stderr, highlight=False, markup=False)
+    try:
+        game = Game(conn=conn, llm=llm)
+        game.setup_fixed_locations()
+        game.start_new_case()
+    finally:
+        _display.console = _orig
+    print("Case generated.", file=sys.stderr)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run a Noirleans playthrough agent")
     parser.add_argument("--persona", required=True, choices=list(PERSONAS),
@@ -83,6 +102,7 @@ def main() -> None:
     conn.row_factory = sqlite3.Row
     create_schema(conn)
     _ensure_onboarded(conn, llm)
+    _ensure_active_case(conn, llm)
     conn.close()
 
     print(f"Starting {args.persona} agent (max {args.max_turns} turns)...", file=sys.stderr)
