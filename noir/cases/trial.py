@@ -41,7 +41,7 @@ You speak in a dry, matter-of-fact tone with occasional flashes of unexpected po
 
 
 def _suspect_profile(conn: sqlite3.Connection, case_id: int) -> dict:
-    """Pull the arrested suspect's details from case_data for the DA's consideration."""
+    """Pull the arrested suspect's details for the DA's consideration."""
     arrest = conn.execute(
         "SELECT npc_id FROM arrests WHERE case_id=? ORDER BY id DESC LIMIT 1", (case_id,)
     ).fetchone()
@@ -50,6 +50,19 @@ def _suspect_profile(conn: sqlite3.Connection, case_id: int) -> dict:
     npc = conn.execute("SELECT * FROM npcs WHERE id=?", (arrest["npc_id"],)).fetchone()
     if not npc:
         return {}
+    suspect_row = conn.execute(
+        "SELECT * FROM suspects WHERE npc_id=?", (arrest["npc_id"],)
+    ).fetchone()
+    if suspect_row:
+        relationships = json.loads(suspect_row["relationships"] or "[]")
+        return {
+            "name": npc["name"],
+            "role": npc["role"],
+            "race": suspect_row["race"] or "unknown",
+            "political_connections": suspect_row["political_connections"] or "none",
+            "relationships": relationships,
+        }
+    # fallback for old cases without suspects table rows
     case = get_case(conn, case_id)
     case_data = json.loads(case["case_data"])
     for suspect in case_data.get("suspects", []):

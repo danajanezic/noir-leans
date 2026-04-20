@@ -34,6 +34,8 @@ from noir.persistence.repository import (
     get_game_time, advance_game_time,
     create_npc_schedule, get_npc_location_at_time,
     create_npc_appointment, get_active_appointment, fulfill_past_appointments,
+    create_suspect, mark_suspect_met, get_met_suspects_for_case,
+    link_evidence_to_suspect,
 )
 from noir.persistence.db import create_schema
 from noir.characters.companion import Companion
@@ -151,7 +153,7 @@ def _is_question(text: str) -> bool:
 _SLASH_COMMANDS = (
     "/locations", "/leads", "/evidence", "/suspects", "/add", "/status",
     "/help", "/dossier", "/who", "/romance", "/cases",
-    "/go", "/visit", "/talk", "/look", "/examine", "/collect", "/pick", "/arrest",
+    "/go", "/visit", "/talk", "/look", "/examine", "/collect", "/pick", "/arrest", "/link",
 )
 
 
@@ -324,6 +326,14 @@ class Game:
             self.conn.execute(
                 "INSERT OR IGNORE INTO npc_relationships (npc_id) VALUES (?)", (npc_id,)
             )
+            is_killer = suspect["name"].lower() == case_data.get("killer_name", "").lower()
+            create_suspect(self.conn, case_id=case_id, npc_id=npc_id, is_killer=is_killer,
+                           race=suspect.get("race"),
+                           political_connections=suspect.get("political_connections"),
+                           alibi=suspect.get("alibi"),
+                           secret=suspect.get("secret"),
+                           backstory=suspect.get("backstory"),
+                           relationships=json.dumps(suspect.get("relationships", [])))
             for entry in suspect.get("routine", []):
                 ts = _parse_hhmm(entry.get("time_start", "00:00"))
                 te = _parse_hhmm(entry.get("time_end", "00:00"))
@@ -475,6 +485,7 @@ class Game:
             else:
                 console.print(f"[red]Can't find '{target}' around here.[/red]")
             return
+        mark_suspect_met(self.conn, npc_id=npc_row["id"])
         npc = NPC.load(
             conn=self.conn,
             llm=self.llm,
@@ -906,6 +917,8 @@ class Game:
                     show_evidence_collected(result["description"])
                 else:
                     console.print(f"[dim]{result['message']}[/dim]")
+        elif slug.startswith("/link "):
+            self.handle_slash_link(raw.strip())
         elif slug.startswith("/arrest "):
             parts = raw.strip().split(None, 1)
             target = parts[1].strip() if len(parts) > 1 else ""
@@ -1069,10 +1082,14 @@ class Game:
         if self.active_case_id is None:
             console.print("[dim]No active case.[/dim]")
             return
-        npcs = [n for n in get_npcs_for_case(self.conn, self.active_case_id)
-                if n["role"] == "suspect"]
+        npcs = get_met_suspects_for_case(self.conn, self.active_case_id)
         player_suspects = get_player_suspects(self.conn, self.active_case_id)
-        show_suspects(npcs, list(player_suspects))
+        evidence = get_evidence_for_case(self.conn, self.active_case_id)
+        evidence_by_npc: dict[int, list] = {}
+        for ev in evidence:
+            if ev["accused_npc_id"] is not None:
+                evidence_by_npc.setdefault(ev["accused_npc_id"], []).append(ev)
+        show_suspects(list(npcs), list(player_suspects), evidence_by_npc=evidence_by_npc)
 
     def handle_slash_look(self) -> None:
         if self.current_location_id and self.world:
@@ -1098,6 +1115,34 @@ class Game:
             console.print(f"[dim]{name} removed from your suspect list.[/dim]")
         else:
             console.print(f"[dim]No suspect matching '{name}' found.[/dim]")
+
+    def handle_slash_link(self, raw: str) -> None:
+        """Link a collected evidence item to a suspect: /link <#> <suspect name>"""
+        if self.active_case_id is None:
+            console.print("[dim]No active case.[/dim]")
+            return
+        parts = raw.split(None, 2)
+        if len(parts) < 3:
+            console.print("[dim]Usage: /link <evidence #> <suspect name>[/dim]")
+            return
+        try:
+            ev_num = int(parts[1])
+        except ValueError:
+            console.print("[dim]Usage: /link <evidence #> <suspect name>[/dim]")
+            return
+        suspect_name = parts[2].strip()
+        evidence = list(get_evidence_for_case(self.conn, self.active_case_id))
+        if ev_num < 1 or ev_num > len(evidence):
+            console.print(f"[dim]No evidence item #{ev_num}. Use /evidence to see the list.[/dim]")
+            return
+        ev = evidence[ev_num - 1]
+        npcs = get_npcs_for_case(self.conn, self.active_case_id)
+        npc = next((n for n in npcs if suspect_name.lower() in n["name"].lower()), None)
+        if npc is None:
+            console.print(f"[dim]Can't find suspect '{suspect_name}' in this case.[/dim]")
+            return
+        link_evidence_to_suspect(self.conn, evidence_id=ev["id"], npc_id=npc["id"])
+        console.print(f"[yellow]Evidence #{ev_num} linked to {npc['name']}.[/yellow]")
 
     def handle_slash_cases(self, raw: str) -> None:
         parts = raw.split(None, 2)
@@ -1249,6 +1294,17 @@ class Game:
         if self.active_case_id is None or self.case_manager is None:
             console.print("[dim]No active case to bring to the DA.[/dim]")
             return
+        current_case = get_case(self.conn, self.active_case_id)
+        if current_case and current_case["status"] in ("closed",):
+            console.print("[dim]That case is already closed. The DA's done with it.[/dim]")
+            console.print("[dim]start — open a new case[/dim]")
+            choice = console.input("[bold white]>[/bold white] ").strip().lower()
+            if choice.startswith("start"):
+                self.active_case_id = None
+                self.world = None
+                self.case_manager = None
+                self.start_new_case()
+            return
         console.print(
             "[dim]submit — present your evidence for trial\n"
             "drop   — close this case and start a new one[/dim]\n"
@@ -1293,6 +1349,10 @@ class Game:
             show_trial_status(case["title"], "closed", None)
             if verdict:
                 show_dialogue("Courthouse Clerk", verdict.get("summary", "The verdict is in."))
+            self.active_case_id = None
+            self.world = None
+            self.case_manager = None
+            console.print("[dim]The case is behind you now. Head to the DA's office for a new one.[/dim]")
         else:
             console.print("[dim]Nothing here yet. Take a case to the DA first.[/dim]")
 
@@ -1508,6 +1568,11 @@ class Game:
             console.print("\n[bold yellow]Welcome back, detective.[/bold yellow]")
 
         active_cases = get_active_cases(self.conn)
+        if not active_cases:
+            # Also resume in_trial cases — don't generate a new case if one exists in trial
+            active_cases = self.conn.execute(
+                "SELECT * FROM cases WHERE status='in_trial' ORDER BY id DESC"
+            ).fetchall()
         resuming = bool(active_cases)
         if not active_cases:
             self.start_new_case()
@@ -1519,19 +1584,28 @@ class Game:
             case = get_case(self.conn, self.active_case_id)
             console.print(f"\n[bold red]Active case: {case['title']}[/bold red]")
             if self.companion:
-                import json as _json
-                cd = _json.loads(case["case_data"])
-                victim = cd.get("victim", {})
-                locations = [loc["name"] for loc in cd.get("locations", [])]
-                clues = [c["description"] for c in cd.get("clues", []) if not c.get("is_red_herring")]
+                from noir.recap import build_case_recap
+                ctx = build_case_recap(self.conn, self.active_case_id)
+                evidence_lines = []
+                for e in ctx["evidence"]:
+                    line = e["description"]
+                    if e["accused_npc_name"]:
+                        line += f" (points to {e['accused_npc_name']})"
+                    evidence_lines.append(line)
+                dossier_lines = []
+                for name, facts in ctx["dossier"].items():
+                    dossier_lines.append(f"{name}: {'; '.join(facts[:2])}")
                 recap_prompt = (
-                    f"[You are both at: The Precinct. Resuming work on case: {case['title']}. "
-                    f"Victim: {victim.get('name', '?')}, cause of death: {victim.get('cause_of_death', '?')}. "
-                    f"Locations to investigate: {', '.join(locations)}. "
-                    f"Known leads so far: {', '.join(clues[:2]) if clues else 'nothing solid yet'}.] "
-                    f"Good. You're back. We have work to do. "
-                    f"Physical setting: you are both INSIDE The Precinct, at the detective's desk. Indoors. No cars. "
-                    f"Do NOT name suspects. Strongly steer toward the crime scene. Stay physically grounded here. Stay in character. 2-3 sentences."
+                    f"[You are both at: The Precinct, at the detective's desk. Resuming case: {ctx['case_title']}. "
+                    f"Victim: {ctx['victim_name']}, cause of death: {ctx['cause_of_death']}, found at: {ctx['found_at']}. "
+                    + (f"Evidence collected ({ctx['evidence_count']} items): {', '.join(evidence_lines)}. " if evidence_lines else "No evidence collected yet. ")
+                    + (f"People you've spoken to: {', '.join(s['name'] for s in ctx['met_suspects'])}. " if ctx["met_suspects"] else "You haven't spoken to any suspects yet. ")
+                    + (f"Still haven't found: {', '.join(s['name'] for s in ctx['unmet_suspects'])}. " if ctx["unmet_suspects"] else "")
+                    + (f"What you know about them: {'; '.join(dossier_lines)}. " if dossier_lines else "")
+                    + (f"Locations still to visit: {', '.join(l['name'] for l in ctx['locations_unvisited'])}. " if ctx["locations_unvisited"] else "")
+                    + "] "
+                    f"Give a sharp, in-character recap — one specific thing we should do next. "
+                    f"Physical setting: indoors at The Precinct. No cars, no outdoors. Stay in character. 2-3 sentences."
                 )
                 show_dialogue(self.companion.name, self.companion.narrate(recap_prompt))
 
@@ -1604,6 +1678,9 @@ class Game:
                 continue
             if slug == "/suspects":
                 self.handle_slash_suspects()
+                continue
+            if slug.startswith("/link "):
+                self.handle_slash_link(raw.strip())
                 continue
             if slug.startswith("/add "):
                 self.handle_slash_add(raw.strip())

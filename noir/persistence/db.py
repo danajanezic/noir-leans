@@ -83,11 +83,13 @@ CREATE TABLE IF NOT EXISTS evidence (
     case_id INTEGER NOT NULL,
     clue_id INTEGER NOT NULL,
     source_npc_id INTEGER,
+    accused_npc_id INTEGER,
     location_id INTEGER NOT NULL,
     collected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (case_id) REFERENCES cases(id),
     FOREIGN KEY (clue_id) REFERENCES clues(id),
-    FOREIGN KEY (source_npc_id) REFERENCES npcs(id)
+    FOREIGN KEY (source_npc_id) REFERENCES npcs(id),
+    FOREIGN KEY (accused_npc_id) REFERENCES npcs(id)
 );
 
 CREATE TABLE IF NOT EXISTS arrests (
@@ -167,6 +169,23 @@ CREATE TABLE IF NOT EXISTS npc_appointments (
     FOREIGN KEY (npc_id) REFERENCES npcs(id)
 );
 
+CREATE TABLE IF NOT EXISTS suspects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    case_id INTEGER NOT NULL,
+    npc_id INTEGER NOT NULL UNIQUE,
+    is_killer INTEGER DEFAULT 0,
+    met INTEGER DEFAULT 0,
+    race TEXT,
+    political_connections TEXT,
+    alibi TEXT,
+    secret TEXT,
+    backstory TEXT,
+    relationships TEXT,
+    FOREIGN KEY (case_id) REFERENCES cases(id),
+    FOREIGN KEY (npc_id) REFERENCES npcs(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_suspects_case ON suspects(case_id);
 CREATE INDEX IF NOT EXISTS idx_dossier_case_name ON dossier(case_id, npc_name);
 CREATE INDEX IF NOT EXISTS idx_cases_status ON cases(status);
 CREATE INDEX IF NOT EXISTS idx_clues_case ON clues(case_id);
@@ -198,6 +217,7 @@ _MIGRATIONS = [
     "ALTER TABLE player ADD COLUMN gender TEXT DEFAULT 'unspecified'",
     "ALTER TABLE evidence ADD COLUMN clue_id INTEGER REFERENCES clues(id)",
     "ALTER TABLE player ADD COLUMN game_time INTEGER DEFAULT 480",
+    "ALTER TABLE evidence ADD COLUMN accused_npc_id INTEGER REFERENCES npcs(id)",
 ]
 
 

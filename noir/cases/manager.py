@@ -3,7 +3,8 @@ import sqlite3
 from noir.llm.base import LLMBackend
 from noir.persistence.repository import (
     add_evidence, get_evidence_for_case, get_clues_for_case, create_arrest,
-    update_arrest_verdict, update_player_reputation, update_player_stats, get_case, get_npc
+    update_arrest_verdict, update_player_reputation, update_player_stats, get_case, get_npc,
+    get_suspect_by_npc,
 )
 
 _VALIDATE_SYSTEM = (
@@ -83,11 +84,15 @@ class CaseManager:
         return {"ok": True, "description": canonical}
 
     def arrest(self, *, npc_id: int, evidence_summary: str) -> int:
-        case = get_case(self.conn, self.case_id)
-        case_data = json.loads(case["case_data"])
-        killer_name = case_data.get("killer_name", "")
-        npc = get_npc(self.conn, npc_id)
-        is_correct = npc["name"] == killer_name
+        suspect_row = get_suspect_by_npc(self.conn, npc_id)
+        if suspect_row is not None:
+            is_correct = bool(suspect_row["is_killer"])
+        else:
+            # fallback for old cases without suspects table rows
+            case = get_case(self.conn, self.case_id)
+            case_data = json.loads(case["case_data"])
+            npc = get_npc(self.conn, npc_id)
+            is_correct = npc["name"] == case_data.get("killer_name", "")
 
         arrest_id = create_arrest(self.conn, case_id=self.case_id, npc_id=npc_id,
                                   evidence_summary=evidence_summary)
@@ -104,5 +109,18 @@ class CaseManager:
         evidence = get_evidence_for_case(self.conn, self.case_id)
         if not evidence:
             return "No evidence collected."
-        lines = [f"- {e['description']}" for e in evidence]
+        linked: dict[str, list[str]] = {}
+        unlinked: list[str] = []
+        for e in evidence:
+            if e["accused_npc_name"]:
+                linked.setdefault(e["accused_npc_name"], []).append(e["description"])
+            else:
+                unlinked.append(e["description"])
+        lines = []
+        for name, descs in linked.items():
+            lines.append(f"Against {name}:")
+            lines.extend(f"  - {d}" for d in descs)
+        if unlinked:
+            lines.append("Unlinked evidence:")
+            lines.extend(f"  - {d}" for d in unlinked)
         return "\n".join(lines)

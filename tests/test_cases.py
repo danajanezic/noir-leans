@@ -4,7 +4,7 @@ from noir.cases.manager import CaseManager
 from noir.persistence.repository import (
     create_player, create_case, create_location,
     create_npc, get_player, get_evidence_for_case, get_clues_for_case, get_history, get_case,
-    update_case_status, create_arrest,
+    update_case_status, create_arrest, link_evidence_to_suspect,
 )
 from noir.cases.trial import TrialSystem, DA_CHARACTER_ID, CLERK_CHARACTER_ID
 from noir.llm.mock import MockLLMBackend
@@ -142,6 +142,20 @@ def test_get_evidence_summary_for_da(case_setup):
     mgr.collect_evidence(clue_id=clues[0]["id"], location_id=loc_id, source_npc_id=None)
     mgr.collect_evidence(clue_id=clues[1]["id"], location_id=loc_id, source_npc_id=npc_id)
     summary = mgr.get_evidence_summary()
+    assert clues[0]["description"] in summary
+    assert clues[1]["description"] in summary
+
+
+def test_get_evidence_summary_groups_by_accused(case_setup):
+    db, case_id, loc_id, npc_id = case_setup
+    clues = get_clues_for_case(db, case_id)
+    mgr = CaseManager(conn=db, case_id=case_id)
+    ev_id = mgr.collect_evidence(clue_id=clues[0]["id"], location_id=loc_id, source_npc_id=None)
+    mgr.collect_evidence(clue_id=clues[1]["id"], location_id=loc_id, source_npc_id=None)
+    link_evidence_to_suspect(db, evidence_id=ev_id, npc_id=npc_id)
+    summary = mgr.get_evidence_summary()
+    assert "Against Dolores Mink" in summary
+    assert "Unlinked evidence" in summary
     assert clues[0]["description"] in summary
     assert clues[1]["description"] in summary
 

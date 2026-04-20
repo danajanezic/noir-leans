@@ -15,6 +15,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from noir.llm.base import LLMBackend
 from noir.llm.config import load_config
 from noir.persistence.db import DB_PATH, create_schema
 from noir.persistence.repository import get_partner
@@ -24,7 +25,7 @@ from agents.playthrough_agent import PlaythroughAgent
 from agents.report import write_report
 
 
-def _create_backend(config: dict):
+def _create_backend(config: dict) -> "LLMBackend":
     backend = config.get("backend", "claude_cli")
     if backend == "claude_cli":
         from noir.llm.claude_cli import ClaudeCLIBackend
@@ -90,7 +91,10 @@ def main() -> None:
 
     write_report(report, out_path)
     print(f"Report written to {out_path}", file=sys.stderr)
-    print(json.dumps(report["verdict"], indent=2))
+    if report["verdict"] is None:
+        print(json.dumps({"ok": False, "reason": "max_turns_reached", "turns": report["turns"]}))
+    else:
+        print(json.dumps({"ok": True, "verdict": report["verdict"]}))
 
 
 if __name__ == "__main__":

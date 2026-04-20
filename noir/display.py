@@ -251,10 +251,14 @@ def show_leads(clues: list[str], evidence: list) -> None:
     console.print(Panel(body, title="[bold cyan]Active Leads[/bold cyan]", border_style="cyan"))
 
 
-def show_suspects(npcs: list, player_suspects: list) -> None:
+def show_suspects(npcs: list, player_suspects: list,
+                  evidence_by_npc: dict[int, list] | None = None) -> None:
     lines = []
     for n in npcs:
         lines.append(f"[red]·[/red] {n['name']} [dim]({n['role']})[/dim]")
+        if evidence_by_npc:
+            for ev in evidence_by_npc.get(n["id"], []):
+                lines.append(f"    [dim]→ {ev['description']}[/dim]")
     for s in player_suspects:
         note = f" — {s['note']}" if s["note"] else ""
         lines.append(f"[yellow]·[/yellow] {s['name']} [dim](noted by you{note})[/dim]")
@@ -344,8 +348,9 @@ def show_help() -> None:
         "  /locations — known locations\n"
         "  /leads — active leads for current case\n"
         "  /evidence — collected evidence\n"
-        "  /suspects — suspect list\n"
+        "  /suspects — suspect list (with linked evidence)\n"
         "  /suspects remove <name> — remove from your suspect list\n"
+        "  /link <#> <name> — link evidence item to a suspect\n"
         "  /cases — all cases (★ = active)\n"
         "  /cases activate <title> — switch to a different case\n"
         "  /dossier — everything learned about all persons\n"
