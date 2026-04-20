@@ -347,3 +347,40 @@ def test_patch_does_not_mutate_original(auditor, clean_case):
     assert "witness" in patched["clues"][-1]["description"]
     # original is untouched
     assert clean_case["clues"][-1]["description"] == "A witness saw Reginald Smoot leaving"
+
+
+def test_regenerate_calls_llm_with_issue_preamble(auditor, clean_case, mock_llm):
+    fixed_case = copy.deepcopy(clean_case)
+    fixed_case["killer_name"] = "Dolores Mink"  # valid
+    mock_llm._responses = cycle([json.dumps(fixed_case)])
+    fatal = [Issue(
+        type="killer_mismatch",
+        subject="Nobody",
+        detail="killer_name 'Nobody' does not match any suspect name",
+        severity="fatal",
+        source="deterministic",
+    )]
+    result = auditor._regenerate(clean_case, fatal, "system prompt")
+    prompt = mock_llm.calls[-1]["user_input"]
+    assert "killer_mismatch" in prompt
+    assert "must be corrected" in prompt.lower() or "issues" in prompt.lower()
+
+
+def test_audit_and_fix_triggers_regenerate_for_killer_mismatch(auditor, clean_case, mock_llm):
+    broken = copy.deepcopy(clean_case)
+    broken["killer_name"] = "Ghost Person"
+
+    fixed = copy.deepcopy(clean_case)  # valid case returned by regeneration
+    # LLM calls: 1 for _llm_check (no issues), 1 for _regenerate
+    mock_llm._responses = cycle(['{"issues": []}', json.dumps(fixed)])
+
+    result = auditor.audit_and_fix(broken, "system prompt")
+    assert result["killer_name"] == "Dolores Mink"
+    assert len(mock_llm.calls) == 2
+
+
+def test_audit_and_fix_no_llm_calls_for_clean_case(auditor, clean_case, mock_llm):
+    mock_llm._responses = cycle(['{"issues": []}'])
+    auditor.audit_and_fix(clean_case, "system prompt")
+    # Only the _llm_check call — no regeneration
+    assert len(mock_llm.calls) == 1

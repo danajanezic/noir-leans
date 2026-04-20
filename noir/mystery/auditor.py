@@ -250,4 +250,14 @@ class CaseAuditor:
         return case
 
     def _regenerate(self, case: dict, fatal: list[Issue], system_prompt: str) -> dict:
-        return case
+        issue_lines = "\n".join(
+            f"- [{i.type}] {i.subject}: {i.detail}" for i in fatal
+        )
+        preamble = (
+            "The previous case had the following issues that MUST be corrected:\n"
+            f"{issue_lines}\n\n"
+            "Regenerate the case fixing all listed issues. "
+            "Return the same JSON schema.\n\n"
+            f"Previous case for reference:\n{json.dumps(case, indent=2)}"
+        )
+        return self.llm.query_structured(system_prompt, [], preamble)
