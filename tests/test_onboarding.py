@@ -1,5 +1,5 @@
 import json
-from noir.onboarding.quiz import Quiz, QUIZ_QUESTIONS, score_alignment, resolve_alignment
+from noir.onboarding.quiz import Quiz, QUIZ_QUESTIONS, score_alignment, resolve_alignment, alignment_disposition
 from noir.onboarding.cold_open import ColdOpen
 from noir.persistence.repository import create_player, get_player, get_partner
 from noir.llm.mock import MockLLMBackend
@@ -131,3 +131,19 @@ def test_quiz_prompt_includes_player_alignment(db):
     quiz.run(answers=answers)
     last_call = llm.calls[-1]
     assert "alignment" in last_call["user_input"].lower()
+
+
+def test_alignment_disposition_opposed():
+    assert alignment_disposition("Lawful Good", "Chaotic Evil") == "opposed"
+    assert alignment_disposition("Chaotic Evil", "Lawful Good") == "opposed"
+
+
+def test_alignment_disposition_aligned():
+    assert alignment_disposition("Lawful Good", "Neutral Good") == "aligned"
+    assert alignment_disposition("Lawful Good", "Lawful Neutral") == "aligned"
+    assert alignment_disposition("True Neutral", "True Neutral") == "aligned"
+
+
+def test_alignment_disposition_neutral():
+    assert alignment_disposition("Lawful Good", "Chaotic Neutral") == "neutral"
+    assert alignment_disposition("Lawful Neutral", "Chaotic Neutral") == "neutral"

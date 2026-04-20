@@ -149,27 +149,7 @@ def test_agent_locked_system_prompt_contains_world_context(db, mock_llm):
     assert "Howie Short" in agent._locked_system_prompt
 
 
-from noir.onboarding.quiz import alignment_disposition
-
-
-def test_alignment_disposition_opposed():
-    assert alignment_disposition("Lawful Good", "Chaotic Evil") == "opposed"
-    assert alignment_disposition("Chaotic Evil", "Lawful Good") == "opposed"
-
-
-def test_alignment_disposition_aligned():
-    assert alignment_disposition("Lawful Good", "Neutral Good") == "aligned"
-    assert alignment_disposition("Lawful Good", "Lawful Neutral") == "aligned"
-    assert alignment_disposition("True Neutral", "True Neutral") == "aligned"
-
-
-def test_alignment_disposition_neutral():
-    assert alignment_disposition("Lawful Good", "Chaotic Neutral") == "neutral"
-    assert alignment_disposition("Lawful Neutral", "Chaotic Neutral") == "neutral"
-
-
 def test_npc_locked_prompt_includes_alignment_disposition(db, mock_llm):
-    from itertools import cycle
     from noir.persistence.repository import (
         create_player, save_partner, update_player_alignment,
         create_case, create_location, create_npc
