@@ -147,3 +147,43 @@ def test_agent_locked_system_prompt_contains_world_context(db, mock_llm):
     )
     assert "NOIRLEANS" in agent._locked_system_prompt
     assert "Howie Short" in agent._locked_system_prompt
+
+
+from noir.onboarding.quiz import alignment_disposition
+
+
+def test_alignment_disposition_opposed():
+    assert alignment_disposition("Lawful Good", "Chaotic Evil") == "opposed"
+    assert alignment_disposition("Chaotic Evil", "Lawful Good") == "opposed"
+
+
+def test_alignment_disposition_aligned():
+    assert alignment_disposition("Lawful Good", "Neutral Good") == "aligned"
+    assert alignment_disposition("Lawful Good", "Lawful Neutral") == "aligned"
+    assert alignment_disposition("True Neutral", "True Neutral") == "aligned"
+
+
+def test_alignment_disposition_neutral():
+    assert alignment_disposition("Lawful Good", "Chaotic Neutral") == "neutral"
+    assert alignment_disposition("Lawful Neutral", "Chaotic Neutral") == "neutral"
+
+
+def test_npc_locked_prompt_includes_alignment_disposition(db, mock_llm):
+    from itertools import cycle
+    from noir.persistence.repository import (
+        create_player, save_partner, update_player_alignment,
+        create_case, create_location, create_npc
+    )
+    create_player(db)
+    update_player_alignment(db, law_delta=6, good_delta=6)  # Lawful Good
+    save_partner(db, name="Vera", sex="female", personality_archetype="cynic",
+                 speech_style="terse", relationship_stance="exasperated",
+                 system_prompt="You are Vera.", alignment="Neutral Good")
+    case_id = create_case(db, archetype="test", title="T", case_data={})
+    loc_id = create_location(db, name="Bar", description="A bar.", is_fixed=True)
+    npc_id = create_npc(db, case_id=case_id, name="Rex", role="suspect",
+                        system_prompt="You are Rex, a suspect.",
+                        current_location_id=loc_id, alignment="Chaotic Evil")
+    mock_llm._responses = cycle(["I know nothing."])
+    npc = NPC.load(conn=db, llm=mock_llm, npc_id=npc_id, case_id=case_id)
+    assert "opposed" in npc._locked_system_prompt.lower() or "conflict" in npc._locked_system_prompt.lower()
