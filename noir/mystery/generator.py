@@ -4,7 +4,7 @@ import random
 from pathlib import Path
 from noir.llm.base import LLMBackend
 from noir.persistence.repository import (
-    get_player, list_archetypes, get_archetype
+    get_player, list_archetypes, get_archetype, get_world_context as _get_world_context
 )
 
 REQUIRED_FIELDS = {"title", "victim", "killer_name", "motive", "suspects", "clues", "locations"}
@@ -12,12 +12,15 @@ REQUIRED_SUSPECT_FIELDS = {"name", "role", "alibi", "secret", "personality", "sp
 REQUIRED_CLUE_FIELDS = {"description", "is_red_herring", "location"}
 REQUIRED_LOCATION_FIELDS = {"name", "description"}
 
-GENERATOR_SYSTEM_PROMPT = """You are a mystery generator for an absurdist noir detective game set in Noirleans, a city that exists somewhere between New Orleans and a fever dream. The year is 1935. The Great Depression has hollowed out the middle class and left the desperate and the corrupt to sort things out between themselves. Jazz plays from buildings with no electricity. Bread lines stretch past speakeasies. Everyone is either on the take or on the run.
-Generate richly detailed, darkly comic mysteries. Characters should be over-the-top and memorable.
-Causes of death should be absurd. Motives should be simultaneously petty and grandiose.
-The setting is period-accurate 1930s: no phones in pockets, no computers, cash economy, Prohibition recently ended, fedoras mandatory.
-Never use the word 'Negro' or any racial slur in any field. Refer to Black characters as Black.
-Return ONLY valid JSON matching the requested schema. No prose, no markdown, just JSON."""
+GENERATOR_SYSTEM_PROMPT = (
+    _get_world_context() + "\n\n"
+    "You are a mystery generator for this world. "
+    "Generate richly detailed, darkly comic mysteries. Characters should be over-the-top and memorable. "
+    "Causes of death should be absurd. Motives should be simultaneously petty and grandiose. "
+    "The setting is period-accurate 1935: no phones in pockets, no computers, cash economy, Prohibition recently ended, fedoras mandatory. "
+    "Never use the word 'Negro' or any racial slur in any field. Refer to Black characters as Black. "
+    "Return ONLY valid JSON matching the requested schema. No prose, no markdown, just JSON."
+)
 
 DARK_PAST_CASE_SYSTEM_PROMPT = """You are a mystery generator for Noirleans, 1935. Generate a case directly tied to a partner's dark past — a crime they committed or were part of. The player must investigate this case knowing their partner is implicated. The tone is morally complex and personal. The partner should appear as a named NPC in the case (as a suspect or witness). Return ONLY valid JSON matching the case schema."""
 

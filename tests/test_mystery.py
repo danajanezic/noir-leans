@@ -113,3 +113,15 @@ def test_generate_raises_on_missing_required_fields(db, mock_llm):
     gen = MysteryGenerator(llm=mock_llm, conn=db)
     with pytest.raises(SystemExit):
         gen.generate(archetype_name="Agatha Christie")
+
+
+def test_generator_system_prompt_contains_world_context():
+    from noir.mystery.generator import GENERATOR_SYSTEM_PROMPT
+    assert "NOIRLEANS" in GENERATOR_SYSTEM_PROMPT
+    assert "Howie Short" in GENERATOR_SYSTEM_PROMPT
+
+
+def test_generator_system_prompt_does_not_have_hardcoded_fever_dream():
+    from noir.mystery.generator import GENERATOR_SYSTEM_PROMPT
+    # The old hardcoded description used this phrase — it should be gone
+    assert "fever dream" not in GENERATOR_SYSTEM_PROMPT
