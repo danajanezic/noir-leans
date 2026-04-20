@@ -78,6 +78,8 @@ def _validate_case(case: dict) -> bool:
     for suspect in case["suspects"]:
         if not REQUIRED_SUSPECT_FIELDS.issubset(suspect.keys()):
             return False
+        if not isinstance(suspect.get("age"), int):
+            return False
     if not isinstance(case["clues"], list) or len(case["clues"]) < 1:
         return False
     for clue in case["clues"]:

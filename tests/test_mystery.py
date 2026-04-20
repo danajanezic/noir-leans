@@ -144,6 +144,22 @@ def test_required_suspect_fields_includes_age():
     assert "age" in REQUIRED_SUSPECT_FIELDS
 
 
+def test_generate_raises_if_age_is_string(db, mock_llm):
+    from itertools import cycle as _cycle
+    create_player(db)
+    bad_case = {
+        **VALID_CASE,
+        "suspects": [
+            {**VALID_CASE["suspects"][0], "age": "38"},  # string, not int
+            {**VALID_CASE["suspects"][1]},
+        ]
+    }
+    mock_llm._responses = _cycle([json.dumps(bad_case), json.dumps(bad_case)])
+    gen = MysteryGenerator(llm=mock_llm, conn=db)
+    with pytest.raises(SystemExit):
+        gen.generate(archetype_name="Agatha Christie")
+
+
 def test_generate_calls_auditor_and_patches_ghost_name(db, mock_llm):
     from itertools import cycle as _cycle
     create_player(db)
