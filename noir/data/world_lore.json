@@ -86,7 +86,7 @@
       "id": "labor_organizers",
       "name": "The Organizers",
       "summary": "Longshoremen, factory workers, domestic workers. Still bitter about 1932. New CIO organizing is happening quietly. Watching for who'll push back and how hard.",
-      "opposed_by": ["old_money", "port_bosses"],
+      "opposed_by": ["old_money"],
       "fault_lines": ["labor_capital", "race"]
     },
     {
