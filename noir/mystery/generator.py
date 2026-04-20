@@ -6,6 +6,7 @@ from noir.llm.base import LLMBackend
 from noir.persistence.repository import (
     get_player, list_archetypes, get_archetype, get_world_context as _get_world_context
 )
+from noir.mystery.auditor import CaseAuditor
 
 REQUIRED_FIELDS = {"title", "victim", "killer_name", "motive", "suspects", "clues", "locations"}
 REQUIRED_SUSPECT_FIELDS = {"name", "role", "alibi", "secret", "personality", "speech_style", "race", "political_connections", "backstory", "routine", "alignment"}
@@ -219,6 +220,11 @@ class MysteryGenerator:
             if not _validate_case(case):
                 self.llm._fatal()
 
+        auditor = CaseAuditor(llm=self.llm)
+        case = auditor.audit_and_fix(case, GENERATOR_SYSTEM_PROMPT)
+        if not _validate_case(case):
+            self.llm._fatal()
+
         return case
 
     def pick_random_archetype(self) -> str:
@@ -296,6 +302,11 @@ class MysteryGenerator:
             case = self.llm.query_structured(DARK_PAST_CASE_SYSTEM_PROMPT, [], correction)
             if not _validate_case(case) or case.get("killer_name", "").lower() == partner_name.lower():
                 self.llm._fatal()
+
+        auditor = CaseAuditor(llm=self.llm)
+        case = auditor.audit_and_fix(case, DARK_PAST_CASE_SYSTEM_PROMPT)
+        if not _validate_case(case):
+            self.llm._fatal()
 
         return case, archetype_name
 

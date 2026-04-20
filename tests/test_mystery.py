@@ -91,21 +91,24 @@ def test_generate_returns_validated_case_structure(db, mock_llm):
 
 def test_generate_includes_difficulty_calibration_in_prompt(db, mock_llm):
     create_player(db)
-    mock_llm._responses = cycle([json.dumps(VALID_CASE)])
+    mock_llm._responses = cycle([json.dumps(VALID_CASE), '{"issues": []}'])
     gen = MysteryGenerator(llm=mock_llm, conn=db)
     gen.generate(archetype_name="Agatha Christie")
-    last_call = mock_llm.calls[-1]
-    assert "difficulty" in last_call["user_input"].lower() or "player" in last_call["user_input"].lower()
+    # The first call is the generator prompt; subsequent calls are the auditor
+    assert any(
+        "difficulty" in call["user_input"].lower() or "player" in call["user_input"].lower()
+        for call in mock_llm.calls
+    )
 
 
 def test_generate_includes_archetype_seed_in_prompt(db, mock_llm):
     seed_archetypes_to_db(db)
     create_player(db)
-    mock_llm._responses = cycle([json.dumps(VALID_CASE)])
+    mock_llm._responses = cycle([json.dumps(VALID_CASE), '{"issues": []}'])
     gen = MysteryGenerator(llm=mock_llm, conn=db)
     gen.generate(archetype_name="Agatha Christie")
-    last_call = mock_llm.calls[-1]
-    assert "Agatha Christie" in last_call["user_input"]
+    # The first call is the generator prompt; subsequent calls are the auditor
+    assert any("Agatha Christie" in call["user_input"] for call in mock_llm.calls)
 
 
 def test_generate_raises_on_missing_required_fields(db, mock_llm):
@@ -133,3 +136,41 @@ from noir.mystery.generator import REQUIRED_SUSPECT_FIELDS
 
 def test_required_suspect_fields_includes_alignment():
     assert "alignment" in REQUIRED_SUSPECT_FIELDS
+
+
+def test_generate_calls_auditor_and_patches_ghost_name(db, mock_llm):
+    from itertools import cycle as _cycle
+    create_player(db)
+
+    # Case with a ghost name in a clue — Ferdinand Crowe is not a suspect in VALID_CASE
+    case_with_ghost = {
+        **VALID_CASE,
+        "clues": [
+            {"description": "A witness saw Ferdinand Crowe leaving the club", "is_red_herring": False, "location": "The Music Room"},
+            {"description": "A receipt from the flamingo sanctuary", "is_red_herring": False, "location": "The Victim's Desk"},
+        ]
+    }
+    # First call: generator; second: auditor _llm_check (no semantic issues)
+    mock_llm._responses = _cycle([json.dumps(case_with_ghost), '{"issues": []}'])
+    gen = MysteryGenerator(llm=mock_llm, conn=db)
+    result = gen.generate(archetype_name="Agatha Christie")
+
+    clue_texts = [c["description"] for c in result["clues"]]
+    assert not any("Ferdinand Crowe" in t for t in clue_texts)
+
+
+def test_generate_regenerates_on_killer_mismatch(db, mock_llm):
+    from itertools import cycle as _cycle
+    create_player(db)
+
+    broken = {**VALID_CASE, "killer_name": "Ghost Person"}
+    fixed = VALID_CASE  # killer_name = "Dolores Mink", which IS in suspects
+    # calls: generate, llm_check, regenerate
+    mock_llm._responses = _cycle([
+        json.dumps(broken),
+        '{"issues": []}',
+        json.dumps(fixed),
+    ])
+    gen = MysteryGenerator(llm=mock_llm, conn=db)
+    result = gen.generate(archetype_name="Agatha Christie")
+    assert result["killer_name"] == "Dolores Mink"
