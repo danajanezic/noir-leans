@@ -1,5 +1,7 @@
 """Tests for agents/extractor.py and agents/report.py."""
 import json
+import os
+import tempfile
 import pytest
 from noir.llm.mock import MockLLMBackend
 from agents.extractor import (
@@ -7,6 +9,7 @@ from agents.extractor import (
     check_factual_contradictions, check_routine_contradiction,
     check_spatial_contradictions, check_jailbreak_success,
 )
+from agents.report import build_report, write_report
 
 
 # ── extract_facts ─────────────────────────────────────────────────────────────
@@ -171,10 +174,6 @@ def test_check_jailbreak_success_not_detected():
 
 
 # ── report ────────────────────────────────────────────────────────────────────
-
-import tempfile
-import os
-from agents.report import build_report, write_report
 
 
 def test_build_report_structure():
