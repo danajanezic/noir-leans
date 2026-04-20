@@ -540,9 +540,21 @@ def get_met_suspects_for_case(conn: sqlite3.Connection, case_id: int) -> list[sq
     ).fetchall()
 
 
-def update_player_alignment(conn: sqlite3.Connection, *, law_delta: int, good_delta: int) -> None:
-    """Placeholder — full implementation in Task 3 (adds alignment columns to player table)."""
-    pass
+def update_player_alignment(conn: sqlite3.Connection, *,
+                             law_delta: int = 0, good_delta: int = 0) -> None:
+    conn.execute(
+        """UPDATE player SET
+           law_chaos = MAX(-16, MIN(16, law_chaos + ?)),
+           good_evil = MAX(-16, MIN(16, good_evil + ?))
+           WHERE id=1""",
+        (law_delta, good_delta)
+    )
+    conn.commit()
+
+
+def get_alignment(player: sqlite3.Row) -> str:
+    from noir.onboarding.quiz import resolve_alignment
+    return resolve_alignment(player["law_chaos"], player["good_evil"])
 
 
 def remove_partner(conn: sqlite3.Connection) -> None:

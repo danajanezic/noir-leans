@@ -17,6 +17,9 @@ from noir.persistence.repository import (
     get_partner_dark_past_state, set_partner_dark_past_state, set_partner_dark_past,
     get_partner_dark_past,
 )
+from noir.persistence.repository import (
+    update_player_alignment, get_alignment
+)
 
 
 def test_create_schema_creates_all_tables():
@@ -329,3 +332,43 @@ def test_npc_has_alignment_column(db):
                         alignment="Chaotic Evil")
     npc = get_npc(db, npc_id)
     assert npc["alignment"] == "Chaotic Evil"
+
+
+def test_update_player_alignment_sets_scores(db):
+    create_player(db)
+    update_player_alignment(db, law_delta=6, good_delta=-3)
+    player = get_player(db)
+    assert player["law_chaos"] == 6
+    assert player["good_evil"] == -3
+
+def test_update_player_alignment_accumulates(db):
+    create_player(db)
+    update_player_alignment(db, law_delta=3, good_delta=2)
+    update_player_alignment(db, law_delta=2, good_delta=-1)
+    player = get_player(db)
+    assert player["law_chaos"] == 5
+    assert player["good_evil"] == 1
+
+def test_update_player_alignment_clamps_to_bounds(db):
+    create_player(db)
+    update_player_alignment(db, law_delta=20, good_delta=-20)
+    player = get_player(db)
+    assert player["law_chaos"] == 16
+    assert player["good_evil"] == -16
+
+def test_get_alignment_lawful_good(db):
+    create_player(db)
+    update_player_alignment(db, law_delta=5, good_delta=5)
+    player = get_player(db)
+    assert get_alignment(player) == "Lawful Good"
+
+def test_get_alignment_true_neutral(db):
+    create_player(db)
+    player = get_player(db)
+    assert get_alignment(player) == "True Neutral"
+
+def test_get_alignment_chaotic_evil(db):
+    create_player(db)
+    update_player_alignment(db, law_delta=-6, good_delta=-6)
+    player = get_player(db)
+    assert get_alignment(player) == "Chaotic Evil"
