@@ -15,8 +15,8 @@ def test_age_25_excludes_red_light_closure():
     assert not any("1917" in m for m in combined)
 
 
-def test_age_25_remembers_5_events():
-    # born 1910 — remembers crash, short_rise, longshoremen_strike, prohibition_end, short_assassination, great_migration_acceleration
+def test_age_25_remembers_6_events():
+    # born 1910 — remembers crash, short_rise, longshoremen_strike, prohibition_end, short_assassination, great_migration_acceleration (6 total)
     case_hooks, background = lore_memories_for_age(25)
     assert len(case_hooks) == 2   # short_assassination, longshoremen_strike
     assert len(background) == 4   # the_crash, short_rise, prohibition_end, great_migration_acceleration

@@ -1,3 +1,4 @@
+import functools
 import json
 from pathlib import Path
 
@@ -12,6 +13,11 @@ _HISTORY_KEYWORDS = {
 }
 
 
+@functools.lru_cache(maxsize=None)
+def _load_lore() -> dict:
+    return json.loads(_LORE_PATH.read_text())
+
+
 def lore_memories_for_age(age: int) -> tuple[list[str], list[str]]:
     """Return (case_hook_memories, background_memories).
 
@@ -19,7 +25,7 @@ def lore_memories_for_age(age: int) -> tuple[list[str], list[str]]:
     An event is included if the NPC was at least 12 years old when it occurred.
     """
     birth_year = 1935 - age
-    data = json.loads(_LORE_PATH.read_text())
+    data = _load_lore()
     case_hooks: list[str] = []
     background: list[str] = []
     for event in data.get("events", []):
