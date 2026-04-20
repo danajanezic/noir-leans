@@ -23,6 +23,12 @@ class Issue:
 
 class CaseAuditor:
 
+    _COMMON = frozenset({
+        "The", "And", "But", "For", "With", "From", "Into", "Over", "Under",
+        "Near", "Old", "New", "French", "Quarter", "Street", "Avenue",
+        "Governor", "Mayor", "Senator", "Captain", "Mister", "Madame",
+    })
+
     def __init__(self, *, llm: LLMBackend):
         self.llm = llm
 
@@ -35,6 +41,29 @@ class CaseAuditor:
         if fatal:
             case = self._regenerate(case, fatal, system_prompt)
         return case
+
+    def _name_words(self, case: dict) -> set[str]:
+        words: set[str] = set()
+        for s in case.get("suspects", []):
+            words.update(s.get("name", "").split())
+        victim_name = case.get("victim", {}).get("name", "")
+        if victim_name:
+            words.update(victim_name.split())
+        return words
+
+    def _location_names(self, case: dict) -> set[str]:
+        locs = {loc["name"] for loc in case.get("locations", [])}
+        locs.add("home")
+        return locs
+
+    def _location_words(self, case: dict) -> set[str]:
+        words: set[str] = set()
+        for loc in case.get("locations", []):
+            words.update(loc["name"].split())
+        return words
+
+    def _extract_name_candidates(self, text: str) -> list[str]:
+        return re.findall(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b', text)
 
     def _deterministic_check(self, case: dict) -> list[Issue]:
         return []

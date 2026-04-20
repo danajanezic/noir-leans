@@ -88,3 +88,32 @@ def test_auditor_returns_case_unchanged_when_clean(auditor, clean_case, mock_llm
     result = auditor.audit_and_fix(clean_case, "system prompt")
     assert result["title"] == "The Muted Maestro"
     assert result["killer_name"] == "Dolores Mink"
+
+
+def test_name_words_extracts_all_character_name_parts(auditor, clean_case):
+    words = auditor._name_words(clean_case)
+    assert "Dolores" in words
+    assert "Mink" in words
+    assert "René" in words
+    assert "LeBlanc" in words
+    assert "Victor" in words
+    assert "Voss" in words
+
+
+def test_location_names_includes_home(auditor, clean_case):
+    locs = auditor._location_names(clean_case)
+    assert "Fournier's Jazz Club" in locs
+    assert "City Hall" in locs
+    assert "home" in locs
+
+
+def test_extract_name_candidates_finds_multiword_names(auditor):
+    text = "A witness saw Reginald Smoot leaving the building"
+    candidates = auditor._extract_name_candidates(text)
+    assert "Reginald Smoot" in candidates
+
+
+def test_extract_name_candidates_ignores_single_words(auditor):
+    text = "Something happened at midnight"
+    candidates = auditor._extract_name_candidates(text)
+    assert candidates == []
