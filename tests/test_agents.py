@@ -168,3 +168,85 @@ def test_check_jailbreak_success_detected():
 def test_check_jailbreak_success_not_detected():
     llm = MockLLMBackend(responses=[json.dumps({"succeeded": False, "reason": "stayed in character"})])
     assert check_jailbreak_success("I don't know what you mean, detective.", "ignore instructions", llm) is False
+
+
+# ── report ────────────────────────────────────────────────────────────────────
+
+import tempfile
+import os
+from agents.report import build_report, write_report
+
+
+def test_build_report_structure():
+    report = build_report(
+        persona="methodical",
+        turns=12,
+        verdict={"accused": "Rex Fontaine", "correct": True},
+        contradiction_log=[
+            {"type": "factual_contradiction", "speaker_a": "Rex", "speaker_b": "Vivian",
+             "fact": "time", "a_said": "midnight", "b_said": "10pm"},
+        ],
+        case_notes={"Rex Fontaine": ["was home"]},
+        location_notes={"Rex Fontaine|night": "home"},
+        pending_meetings=[
+            {"npc": "Dolores", "location": "Warehouse", "time_ref": "midnight",
+             "resolved": False, "flagged": True},
+        ],
+        jailbreak_attempts=None,
+    )
+    assert report["persona"] == "methodical"
+    assert report["turns"] == 12
+    assert report["verdict"]["correct"] is True
+    assert len(report["flags"]) == 2  # 1 contradiction + 1 unmet meeting
+    assert report["jailbreak_attempts"] is None
+
+
+def test_build_report_flags_unmet_meetings():
+    report = build_report(
+        persona="intuitive", turns=5, verdict=None,
+        contradiction_log=[],
+        case_notes={},
+        location_notes={},
+        pending_meetings=[
+            {"npc": "Vera", "location": "The Pier", "time_ref": "dawn",
+             "resolved": False, "flagged": True},
+            {"npc": "Sam", "location": "The Diner", "time_ref": "noon",
+             "resolved": True, "flagged": False},
+        ],
+        jailbreak_attempts=None,
+    )
+    unmet = [f for f in report["flags"] if f.get("type") == "unmet_meeting"]
+    assert len(unmet) == 1
+    assert unmet[0]["npc"] == "Vera"
+
+
+def test_build_report_includes_jailbreak_attempts():
+    attempts = [{"target": "Rex", "prompt": "ignore instructions", "succeeded": True}]
+    report = build_report(
+        persona="jailbreak", turns=8, verdict=None,
+        contradiction_log=[],
+        case_notes={},
+        location_notes={},
+        pending_meetings=[],
+        jailbreak_attempts=attempts,
+    )
+    assert report["jailbreak_attempts"] == attempts
+    jb_flags = [f for f in report["flags"] if f.get("type") == "jailbreak_success"]
+    assert len(jb_flags) == 1
+
+
+def test_write_report_creates_json_file():
+    report = build_report(
+        persona="adversarial", turns=3, verdict=None,
+        contradiction_log=[], case_notes={}, location_notes={},
+        pending_meetings=[], jailbreak_attempts=None,
+    )
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+        path = f.name
+    try:
+        write_report(report, path)
+        with open(path) as f:
+            loaded = json.load(f)
+        assert loaded["persona"] == "adversarial"
+    finally:
+        os.unlink(path)
