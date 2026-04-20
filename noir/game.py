@@ -1595,6 +1595,12 @@ class Game:
         create_schema(self.conn)
         fixed_locs = self.setup_fixed_locations()
         seed_archetypes_to_db(self.conn)
+        from pathlib import Path as _PathLoc
+        import json as _json_loc
+        from noir.persistence.repository import seed_locations_to_db as _seed_locs
+        _locs_path = _PathLoc(__file__).parent / "data" / "seeded_locations.json"
+        if _locs_path.exists():
+            _seed_locs(self.conn, _json_loc.loads(_locs_path.read_text()))
 
         player = get_player(self.conn)
         if player is None:

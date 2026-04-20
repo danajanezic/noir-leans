@@ -197,6 +197,13 @@ CREATE INDEX IF NOT EXISTS idx_npcs_case ON npcs(case_id);
 CREATE INDEX IF NOT EXISTS idx_evidence_case ON evidence(case_id);
 CREATE INDEX IF NOT EXISTS idx_arrests_case ON arrests(case_id);
 CREATE INDEX IF NOT EXISTS idx_locations_case ON locations(case_id);
+
+CREATE TABLE IF NOT EXISTS seeded_locations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT NOT NULL,
+    type TEXT
+);
 """
 
 

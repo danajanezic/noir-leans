@@ -1,0 +1,502 @@
+[
+  {
+    "name": "The Delta Blues Room",
+    "description": "A dimly lit, smoke-filled joint on Bourbon Street that caters to the Black community with a mix of blues and jazz performers.",
+    "type": "club"
+  },
+  {
+    "name": "Sugar's Sweet Spot",
+    "description": "This cozy bar in the predominantly white Uptown area offers live jazz music nightly, drawing a mixed crowd but remaining largely white patronage.",
+    "type": "bar"
+  },
+  {
+    "name": "The Cotton Club Cabaret",
+    "description": "An upscale venue known for its racially segregated showrooms, with Black performers entertaining primarily white clientele upstairs and a smaller Black audience downstairs.",
+    "type": "club"
+  },
+  {
+    "name": "Whispers of the Crescent",
+    "description": "A secretive jazz club hidden down a narrow alley in the French Quarter, favored by both local artists and curious tourists who can afford it.",
+    "type": "club"
+  },
+  {
+    "name": "Blue Moon Bar",
+    "description": "Located on Chartres Street, this modest bar is popular among Black workers after their shifts end, offering cheap drinks and occasional live music.",
+    "type": "bar"
+  },
+  {
+    "name": "The Silver Serenaders Club",
+    "description": "A posh establishment in the heart of Storyville that was once notorious for its jazz scene but now caters to a white elite looking for nostalgic entertainment.",
+    "type": "club"
+  },
+  {
+    "name": "Harlem Hot Spot",
+    "description": "An underground jazz club known for defying racial barriers, attracting both Black and white artists and an eclectic mix of patrons late into the night.",
+    "type": "club"
+  },
+  {
+    "name": "Bayou Blues Bar",
+    "description": "A rustic bar in the Seventh Ward where local musicians gather to play traditional blues tunes, surrounded by old wooden d\u00e9cor and flickering lantern light.",
+    "type": "bar"
+  },
+  {
+    "name": "The Midnight Lounge",
+    "description": "An elegant speakeasy near Canal Street that operates under a veil of secrecy; entry is restricted to members only, with jazz performances behind closed doors.",
+    "type": "club"
+  },
+  {
+    "name": "Riverside Rhythms",
+    "description": "A riverside bar in Algiers Point where musicians perform while patrons enjoy the Mississippi River views and drinks under twinkling strings of lights.",
+    "type": "bar"
+  },
+  {
+    "name": "The Velvet Veil",
+    "description": "A hidden speakeasy where jazz flows as freely as the illegal liquor, known for its exclusive clientele and dimly lit corners.",
+    "type": "bar"
+  },
+  {
+    "name": "Ruby's Red Carpet Club",
+    "description": "An upscale brothel catering to white businessmen and politicians, offering discreet services in lavish rooms.",
+    "type": "brothel"
+  },
+  {
+    "name": "The Golden Dice Casino",
+    "description": "A notorious gambling den run by the city's underworld figures, featuring rigged games and secret backrooms.",
+    "type": "gambling"
+  },
+  {
+    "name": "Mama Celeste's Paradise",
+    "description": "A popular Black-owned speakeasy in the heart of Trem\u00e9, famous for its live jazz performances and friendly atmosphere.",
+    "type": "bar"
+  },
+  {
+    "name": "The Midnight Flirtation Club",
+    "description": "A mixed-race brothel with a strict dress code, offering luxurious accommodations and discreet services.",
+    "type": "brothel"
+  },
+  {
+    "name": "Snake Eyes Saloon",
+    "description": "A rough-and-tumble gambling den on the edge of Storyville, where card cheats and brawls are commonplace.",
+    "type": "gambling"
+  },
+  {
+    "name": "Sweet Pea's Tea Room",
+    "description": "An elegant brothel catering to white patrons with a sense of style and class, hidden behind an innocent facade.",
+    "type": "brothel"
+  },
+  {
+    "name": "The Crescent Moon Club",
+    "description": "A mixed-race speakeasy known for its innovative jazz bands and underground gambling tables.",
+    "type": "bar"
+  },
+  {
+    "name": "Black Cat Bingo Hall",
+    "description": "An African American-run casino that doubles as a front for illegal activities, with a strict no-white policy.",
+    "type": "gambling"
+  },
+  {
+    "name": "The Whispering Willow Inn",
+    "description": "A high-class brothel in the Garden District, favored by wealthy socialites and politicians, offering discreet and luxurious services.",
+    "type": "brothel"
+  },
+  {
+    "name": "Bourbon Street Wharf",
+    "description": "A bustling dock area teeming with cargo ships and smugglers, notorious for late-night activities under the dim glow of oil lanterns.",
+    "type": "dock"
+  },
+  {
+    "name": "Delta Trading Co. Warehouse",
+    "description": "A vast warehouse filled with crates from all over the world, used by the corrupt Delta Trading Company to hide their illicit goods and shady dealings.",
+    "type": "warehouse"
+  },
+  {
+    "name": "The Cotton Club Office",
+    "description": "An office building run by a powerful white-only club where jazz legends play to the rich elite, but rumors of illegal gambling persist behind closed doors.",
+    "type": "office"
+  },
+  {
+    "name": "St. Charles Warehouse District",
+    "description": "A sprawling complex of warehouses owned and operated by various crime syndicates, each with its own secrets hidden within.",
+    "type": "warehouse"
+  },
+  {
+    "name": "Treme Dockside Diner",
+    "description": "A mixed-race diner known for serving up hearty meals to dock workers and sailors, where news of the city flows like water.",
+    "type": "restaurant"
+  },
+  {
+    "name": "NOLA Import & Export Office",
+    "description": "An office run by a white businessman with ties to both legal trade and black market dealings, often frequented by shady characters after dark.",
+    "type": "office"
+  },
+  {
+    "name": "The Crescent City Dockworkers Union Hall",
+    "description": "A union hall that serves as a haven for Black dock workers, offering them protection against exploitation and violence in the dangerous world of shipping.",
+    "type": "political"
+  },
+  {
+    "name": "Esplanade Warehouse",
+    "description": "An old warehouse near the riverfront, once bustling with trade but now mainly used for storing contraband and illegal goods under cover of darkness.",
+    "type": "warehouse"
+  },
+  {
+    "name": "French Market Pier",
+    "description": "A pier lined with small fishing boats and food stalls where vendors sell fresh catch to the market, often serving as a meeting place for smugglers and criminals.",
+    "type": "dock"
+  },
+  {
+    "name": "Harlem House of Prayer",
+    "description": "A predominantly Black church that doubles as a sanctuary and safe house for those escaping violence or injustice in the city's underworld.",
+    "type": "church"
+  },
+  {
+    "name": "The Crescent City Union Hall",
+    "description": "A bustling center for the city's labor unions, particularly active in organizing dock workers and musicians.",
+    "type": "union hall"
+  },
+  {
+    "name": "Le Journal de la Nouvelle-Orl\u00e9ans",
+    "description": "A predominantly French-language newspaper office that also serves as a meeting place for local politicians and activists.",
+    "type": "newspaper office"
+  },
+  {
+    "name": "The Black Pearl Club",
+    "description": "A vibrant jazz club owned by African American entrepreneurs, featuring performances by some of the city's most talented musicians.",
+    "type": "club"
+  },
+  {
+    "name": "City Hall Annex",
+    "description": "An administrative building that houses various city departments and is often a hub for political deals and backroom meetings.",
+    "type": "political office"
+  },
+  {
+    "name": "The Brassworks Union",
+    "description": "A union hall dedicated to the interests of metal workers, featuring prominent African American leadership in an otherwise white-dominated industry.",
+    "type": "union hall"
+  },
+  {
+    "name": "Courier de Nouvelle-Orl\u00e9ans",
+    "description": "An English-language newspaper office known for its investigative reporting on local politics and corruption.",
+    "type": "newspaper office"
+  },
+  {
+    "name": "The Cotton Club",
+    "description": "A mixed-race establishment that serves as a nightclub during the evenings and a political meeting place during daytime hours.",
+    "type": "club"
+  },
+  {
+    "name": "Delta Democratic Headquarters",
+    "description": "The primary office of the powerful Delta Democratic Party, often visited by both black and white politicians seeking support for their agendas.",
+    "type": "political office"
+  },
+  {
+    "name": "Mechanics Union Hall",
+    "description": "A union hall primarily serving the interests of mechanics and auto workers in a predominantly African American neighborhood.",
+    "type": "union hall"
+  },
+  {
+    "name": "The Evening Star Press",
+    "description": "An office building that houses several small, independent newspapers covering various aspects of city life from different perspectives.",
+    "type": "newspaper office"
+  },
+  {
+    "name": "Saint Mary's Cathedral",
+    "description": "A grand but weather-beaten cathedral on Bourbon Street, Saint Mary's is a stark contrast to the jazz clubs and brothels nearby, serving as both a place of worship and refuge for those seeking solace in Noirleans.",
+    "type": "church"
+  },
+  {
+    "name": "The Cotton Club",
+    "description": "An upscale nightclub with strict segregation policies, The Cotton Club is known for its live jazz bands and glamorous clientele. Its basement is rumored to house a speakeasy frequented by the city's elite.",
+    "type": "club"
+  },
+  {
+    "name": "Le Chat Noir",
+    "description": "A French Quarter hotel with an air of mystery, Le Chat Noir caters to artists and musicians drawn to Noirleans' vibrant nightlife. Its rooms are often filled with smoke and whispers of illicit affairs.",
+    "type": "hotel"
+  },
+  {
+    "name": "The Delta Blues Caf\u00e9",
+    "description": "A soulful restaurant in the Trem\u00e9 neighborhood, The Delta Blues Caf\u00e9 serves up hearty Creole dishes alongside live blues music by local artists. Its clientele is a mix of Black locals and white tourists.",
+    "type": "restaurant"
+  },
+  {
+    "name": "Holy Trinity Baptist Church",
+    "description": "A bustling church in the heart of the Seventh Ward, Holy Trinity Baptist Church serves as a hub for community gatherings and political discussions among the Black population. Its pastor is often consulted by parishioners with troubles.",
+    "type": "church"
+  },
+  {
+    "name": "The Grand Hotel Orleans",
+    "description": "An opulent hotel near Jackson Square, The Grand Hotel Orleans hosts visiting dignitaries and wealthy tourists. Rumor has it that its penthouse suites are the favored hideaways of corrupt officials.",
+    "type": "hotel"
+  },
+  {
+    "name": "The Bourbon Street Brasserie",
+    "description": "A busy French restaurant in the heart of the Quarter, The Bourbon Street Brasserie offers a blend of traditional French cuisine and Creole flavors. Its patrons include both locals and out-of-town visitors.",
+    "type": "restaurant"
+  },
+  {
+    "name": "St. John's Episcopal Church",
+    "description": "A historic white church located in the Garden District, St. John's Episcopal Church is renowned for its elaborate stained-glass windows and grand architecture. It's also a meeting point for the city's upper class.",
+    "type": "church"
+  },
+  {
+    "name": "The Crescent Hotel",
+    "description": "A stately hotel on Canal Street that offers luxurious accommodations to both business travelers and vacationers. The hotel has a secretive side, with rumors of illegal gambling in its private rooms.",
+    "type": "hotel"
+  },
+  {
+    "name": "Creole Kitchen",
+    "description": "A cozy restaurant in the Ninth Ward serving classic Creole dishes like gumbo and jambalaya. It's popular among both locals and tourists looking for authentic flavors, often buzzing with lively conversations.",
+    "type": "restaurant"
+  },
+  {
+    "name": "Ruby's Apothecary",
+    "description": "A small, dimly lit pharmacy tucked away in the heart of Treme, known for its potent tonics and secret remedies.",
+    "type": "pharmacy"
+  },
+  {
+    "name": "The Midnight Diner",
+    "description": "An all-night diner frequented by night workers and shady characters, serving up greasy spoon fare with a side of gossip.",
+    "type": "diner"
+  },
+  {
+    "name": "Belle's Super Market",
+    "description": "A bustling market in the predominantly Black neighborhood, offering fresh produce and rumors under the watchful eye of Belle herself.",
+    "type": "market"
+  },
+  {
+    "name": "Whitewash Pharmacy",
+    "description": "An upscale white-only establishment with a strict demeanor, known for its high-end pharmaceuticals and discreet clientele.",
+    "type": "pharmacy"
+  },
+  {
+    "name": "Sunrise Cafeteria",
+    "description": "A popular mixed-race diner near the French Quarter where jazz musicians grab quick bites before their late-night gigs.",
+    "type": "diner"
+  },
+  {
+    "name": "The Crescent Market",
+    "description": "A vibrant market in a racially diverse neighborhood, offering a mix of groceries and illicit goods.",
+    "type": "market"
+  },
+  {
+    "name": "Soulful Herbs Pharmacy",
+    "description": "A small but popular pharmacy near Congo Square that sells both traditional medicines and spiritual supplies.",
+    "type": "pharmacy"
+  },
+  {
+    "name": "Daybreak Diner",
+    "description": "An early-morning diner where cops and dockworkers meet for breakfast, often exchanging tips on the latest crimes in town.",
+    "type": "diner"
+  },
+  {
+    "name": "Greenleaf Market",
+    "description": "A quiet market in a predominantly white area that caters to upper-class residents with high-quality produce and imported goods.",
+    "type": "market"
+  },
+  {
+    "name": "Mama's Night Owl Pharmacy",
+    "description": "An unusual pharmacy open until the early hours, run by an elderly woman who deals in both legal medications and less savory substances.",
+    "type": "pharmacy"
+  },
+  {
+    "name": "The Rusty Coin",
+    "description": "A dimly lit pawn shop in the heart of the French Quarter, known for its shady dealings and hidden treasures.",
+    "type": "pawn shop"
+  },
+  {
+    "name": "Mourning Glory Funeral Home",
+    "description": "Located on a quiet street in Treme, this funeral home is often bustling with mourners and the occasional mysterious figure.",
+    "type": "funeral home"
+  },
+  {
+    "name": "Pillars of Zion Tenement",
+    "description": "A towering tenement building housing many Black families who have lived through the struggles of 1930s New Orleans, each floor whispering tales of hardship and hope.",
+    "type": "tenement"
+  },
+  {
+    "name": "Whispering Willows Funeral Parlor",
+    "description": "Situated in a predominantly white neighborhood, this funeral parlor is known for its somber yet regal atmosphere.",
+    "type": "funeral home"
+  },
+  {
+    "name": "The Last Chance Pawn & Jewelry",
+    "description": "A small pawn shop in the Ninth Ward with a clientele that includes both locals and out-of-towners looking to turn their troubles into cash.",
+    "type": "pawn shop"
+  },
+  {
+    "name": "Oakwood Tenement Complex",
+    "description": "An old, mixed-race tenement complex on the edge of the city where racial tensions often simmer beneath the surface.",
+    "type": "tenement"
+  },
+  {
+    "name": "Elysium Memorial Parlor",
+    "description": "A grand and modern funeral parlor in Uptown that caters to a more affluent clientele, both Black and white.",
+    "type": "funeral home"
+  },
+  {
+    "name": "Silver Linings Pawn Shop",
+    "description": "Known for its eccentric owner who collects everything from antique guns to rare records, this pawn shop is a favorite among collectors.",
+    "type": "pawn shop"
+  },
+  {
+    "name": "Harbor View Tenement",
+    "description": "A dilapidated tenement near the port where sailors and dock workers often find cheap lodging after nights of revelry and gambling.",
+    "type": "tenement"
+  },
+  {
+    "name": "St. Augustine's Funeral Services",
+    "description": "Located in Algiers, this funeral home is a pillar of the Black community known for its traditional services and vibrant music at wakes.",
+    "type": "funeral home"
+  },
+  {
+    "name": "The Blue Piano Club",
+    "description": "A dimly lit, jazz-infused club in the heart of the Black district, where musicians and patrons alike lose themselves in the rhythm.",
+    "type": "club"
+  },
+  {
+    "name": "Precinct 3 Police Station",
+    "description": "Located near Congo Square, this station is notorious for its corrupt officers and unofficial segregation policies.",
+    "type": "office"
+  },
+  {
+    "name": "River's End Ferry Terminal",
+    "description": "A bustling transport hub where sailors, smugglers, and detectives converge on the banks of the Mississippi River.",
+    "type": "transport"
+  },
+  {
+    "name": "Whispering Willow Church",
+    "description": "An old church with a reputation for hosting secret meetings between local politicians and bootleggers.",
+    "type": "church"
+  },
+  {
+    "name": "The Cotton Seed Hotel",
+    "description": "A rundown establishment catering to transient laborers, known for its dubious clientele and cheap rooms.",
+    "type": "hotel"
+  },
+  {
+    "name": "Papa Joe's Fish Market",
+    "description": "A crowded market filled with the aroma of fresh fish and lively haggling between vendors and buyers.",
+    "type": "market"
+  },
+  {
+    "name": "Crescent City Wharf",
+    "description": "A large dock area where goods are unloaded from ships, often under suspicious circumstances involving local gangs.",
+    "type": "dock"
+  },
+  {
+    "name": "The Silver Dollar Casino",
+    "description": "An upscale gambling den frequented by white elites and politicians, strictly enforcing a whites-only policy.",
+    "type": "gambling"
+  },
+  {
+    "name": "St. Louis Street Station",
+    "description": "A major train station connecting Noirleans to other cities, where passengers come and go amidst the city's political intrigue.",
+    "type": "transport"
+  },
+  {
+    "name": "Bayou House of Cards",
+    "description": "An illegal card game parlor hidden in a bayou shantytown, attracting gamblers from all walks of life seeking quick profits.",
+    "type": "gambling"
+  },
+  {
+    "name": "The Bronze Key",
+    "description": "A swanky nightclub where the city's jazz elite and underground movers meet, often shrouded in secrecy.",
+    "type": "club"
+  },
+  {
+    "name": "Baldwin's Barber Emporium",
+    "description": "Renowned for its impeccable service and tight-knit community of regulars, Baldwin\u2019s is a meeting place for neighborhood gossip and political discussion.",
+    "type": "barbershop"
+  },
+  {
+    "name": "The Holy Trinity Missionary Baptist Church",
+    "description": "A spiritual sanctuary for the Black community, it's also a hub for social advocacy and support networks during tough times.",
+    "type": "church"
+  },
+  {
+    "name": "Euphemia's Funeral Parlor",
+    "description": "Famous among locals for its unique blend of traditional mourning rituals and lively jazz funerals celebrating life\u2019s joys.",
+    "type": "funeral home"
+  },
+  {
+    "name": "The Blue Moon Cafe",
+    "description": "A cozy cafe that doubles as a community center, serving up delicious soul food alongside the latest local news.",
+    "type": "restaurant"
+  },
+  {
+    "name": "Mystic Temple of Honor",
+    "description": "An exclusive social club and burial society providing funerary aid to members, often bustling with political intrigue.",
+    "type": "club"
+  },
+  {
+    "name": "Lincoln Park Baptist Church",
+    "description": "A grand church that serves as both a religious sanctuary and a center for civil rights activities.",
+    "type": "church"
+  },
+  {
+    "name": "The Corner Clip Shop",
+    "description": "A bustling barbershop that's also the nerve center of community news, from job opportunities to police raids.",
+    "type": "barbershop"
+  },
+  {
+    "name": "St. Augustine's Funeral Home & Chapel",
+    "description": "Respected for its traditional and modern funeral services, it\u2019s a place where all walks of life come together in times of mourning.",
+    "type": "funeral home"
+  },
+  {
+    "name": "The Golden Note Music Hall",
+    "description": "A night club dedicated to jazz, swing, and blues, known for its underground gambling scenes and illicit deals.",
+    "type": "club"
+  },
+  {
+    "name": "The Juke Joint",
+    "description": "A cramped, dimly lit bar on Basin Street where jazz flows and cards are dealt under the watchful eye of a mixed-race clientele.",
+    "type": "bar"
+  },
+  {
+    "name": "Whispers Down by the Docks",
+    "description": "A dilapidated dockside tavern frequented by sailors and local gangsters, known for its rough trade and late-night revelry.",
+    "type": "dock"
+  },
+  {
+    "name": "The Blue Moon Brothel",
+    "description": "An upscale brothel on Bourbon Street catering to white clientele, with strict racial segregation enforced at the door.",
+    "type": "brothel"
+  },
+  {
+    "name": "Lucky's Last Chance Hotel",
+    "description": "A run-down flophouse near the riverfront where outcasts and vagrants huddle together for warmth and respite.",
+    "type": "hotel"
+  },
+  {
+    "name": "Voodoo Lady Saloon",
+    "description": "A mysterious bar in the Trem\u00e9 neighborhood, known for its mixed-race patrons who mingle with a backdrop of voodoo artifacts and jazz music.",
+    "type": "bar"
+  },
+  {
+    "name": "The Cotton Club Casino",
+    "description": "An illegal gambling den located in a warehouse near the waterfront, attracting both Black and white gamblers looking for action after dark.",
+    "type": "gambling"
+  },
+  {
+    "name": "The Golden Dollar Nightclub",
+    "description": "A swanky club in the heart of Storyville where jazz greats play to an exclusively white crowd indulging in drinks and vice.",
+    "type": "club"
+  },
+  {
+    "name": "Rusty's Rowdy Room",
+    "description": "An all-night bar on Canal Street with a clientele that ranges from dock workers to bootleggers, where trouble often brews over card games.",
+    "type": "bar"
+  },
+  {
+    "name": "The Red Light Inn",
+    "description": "A brothel located in the heart of Congo Square that caters primarily to Black clients, blending business with cultural significance.",
+    "type": "brothel"
+  },
+  {
+    "name": "Mama Roux's Tea Room",
+    "description": "An intimate cafe on Esplanade Avenue serving as a meeting ground for local political figures and underworld bosses.",
+    "type": "political"
+  }
+]

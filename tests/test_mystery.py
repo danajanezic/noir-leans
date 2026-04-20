@@ -196,3 +196,25 @@ def test_generate_regenerates_on_killer_mismatch(db, mock_llm):
     gen = MysteryGenerator(llm=mock_llm, conn=db)
     result = gen.generate(archetype_name="Agatha Christie")
     assert result["killer_name"] == "Dolores Mink"
+
+
+from noir.persistence.repository import seed_locations_to_db, get_seeded_location_names, get_seeded_location_description
+
+def test_seed_locations_to_db_and_retrieve(db):
+    locations = [
+        {"name": "Fournier's Jazz Club", "description": "Low ceiling, high noise.", "type": "club"},
+        {"name": "The Rusty Anchor", "description": "Smells of brine and broken promises.", "type": "bar"},
+    ]
+    seed_locations_to_db(db, locations)
+    names = get_seeded_location_names(db)
+    assert "Fournier's Jazz Club" in names
+    assert "The Rusty Anchor" in names
+
+def test_get_seeded_location_description(db):
+    locations = [{"name": "Pilot House", "description": "River views, sticky tables.", "type": "bar"}]
+    seed_locations_to_db(db, locations)
+    desc = get_seeded_location_description(db, "Pilot House")
+    assert desc == "River views, sticky tables."
+
+def test_get_seeded_location_description_unknown_returns_none(db):
+    assert get_seeded_location_description(db, "Nonexistent Place") is None

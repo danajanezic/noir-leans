@@ -88,6 +88,17 @@ def _ensure_archetypes(conn: sqlite3.Connection) -> None:
     seed_archetypes_to_db(conn)
 
 
+def _ensure_seeded_locations(conn: sqlite3.Connection) -> None:
+    from pathlib import Path
+    from noir.persistence.repository import seed_locations_to_db, get_seeded_location_names
+    if get_seeded_location_names(conn):
+        return  # already seeded
+    locs_path = Path(__file__).parent / "data" / "seeded_locations.json"
+    if locs_path.exists():
+        import json
+        seed_locations_to_db(conn, json.loads(locs_path.read_text()))
+
+
 # ── public API ────────────────────────────────────────────────────────────────
 
 def run_step(input_data: dict | str, *, conn: sqlite3.Connection,
@@ -112,6 +123,7 @@ def run_step(input_data: dict | str, *, conn: sqlite3.Connection,
     try:
         _ensure_fixed_locations(conn)
         _ensure_archetypes(conn)
+        _ensure_seeded_locations(conn)
 
         step_type = input_data.get("type")
 

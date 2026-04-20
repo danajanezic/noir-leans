@@ -89,6 +89,27 @@ def create_location(conn: sqlite3.Connection, *, name: str, description: str,
     return cur.lastrowid
 
 
+def seed_locations_to_db(conn: sqlite3.Connection, locations: list[dict]) -> None:
+    for loc in locations:
+        conn.execute(
+            "INSERT OR IGNORE INTO seeded_locations (name, description, type) VALUES (?, ?, ?)",
+            (loc["name"], loc["description"], loc.get("type"))
+        )
+    conn.commit()
+
+
+def get_seeded_location_names(conn: sqlite3.Connection) -> list[str]:
+    rows = conn.execute("SELECT name FROM seeded_locations ORDER BY name").fetchall()
+    return [r["name"] for r in rows]
+
+
+def get_seeded_location_description(conn: sqlite3.Connection, name: str) -> str | None:
+    row = conn.execute(
+        "SELECT description FROM seeded_locations WHERE name=?", (name,)
+    ).fetchone()
+    return row["description"] if row else None
+
+
 def get_location(conn: sqlite3.Connection, location_id: int) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM locations WHERE id=?", (location_id,)).fetchone()
 
