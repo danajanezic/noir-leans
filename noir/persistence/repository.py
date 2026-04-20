@@ -184,10 +184,19 @@ def update_case_status(conn: sqlite3.Connection, *, case_id: int, status: str,
 
 def create_npc(conn: sqlite3.Connection, *, case_id: int, name: str, role: str,
                system_prompt: str, current_location_id: int,
-               alignment: str = "True Neutral", age: int = 35) -> int:
+               alignment: str = "True Neutral", age: int = 35,
+               pressure_tolerance: int = 5, kindness_weight: int = 5,
+               empathy: int = 5, starting_guilt: int = 0,
+               revelation_style: str = "staged", revelation_stages: int = 3) -> int:
     cur = conn.execute(
-        "INSERT INTO npcs (case_id, name, role, system_prompt, current_location_id, alignment, age) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (case_id, name, role, system_prompt, current_location_id, alignment, age)
+        """INSERT INTO npcs
+           (case_id, name, role, system_prompt, current_location_id, alignment, age,
+            pressure_tolerance, kindness_weight, empathy, starting_guilt,
+            revelation_style, revelation_stages)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (case_id, name, role, system_prompt, current_location_id, alignment, age,
+         pressure_tolerance, kindness_weight, empathy, starting_guilt,
+         revelation_style, revelation_stages)
     )
     conn.commit()
     return cur.lastrowid
@@ -195,6 +204,85 @@ def create_npc(conn: sqlite3.Connection, *, case_id: int, name: str, role: str,
 
 def get_npc(conn: sqlite3.Connection, npc_id: int) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM npcs WHERE id=?", (npc_id,)).fetchone()
+
+
+def update_npc_system_prompt(conn: sqlite3.Connection, *, npc_id: int, system_prompt: str) -> None:
+    conn.execute("UPDATE npcs SET system_prompt=? WHERE id=?", (system_prompt, npc_id))
+    conn.commit()
+
+
+def update_suspect_backstory(conn: sqlite3.Connection, *, npc_id: int, backstory: str) -> None:
+    conn.execute("UPDATE suspects SET backstory=? WHERE npc_id=?", (backstory, npc_id))
+    conn.commit()
+
+
+def get_npc_psychology(conn: sqlite3.Connection, npc_id: int) -> dict:
+    npc = conn.execute(
+        "SELECT pressure_tolerance, kindness_weight, empathy, starting_guilt, "
+        "revelation_style, revelation_stages FROM npcs WHERE id=?", (npc_id,)
+    ).fetchone()
+    rel = conn.execute(
+        "SELECT guilt, pressure_score, revelation_stage FROM npc_relationships WHERE npc_id=?",
+        (npc_id,)
+    ).fetchone()
+    result = dict(npc) if npc else {}
+    if rel:
+        result.update(dict(rel))
+    else:
+        # No relationship row yet — compute default guilt from starting_guilt
+        result.update({
+            "guilt": (result.get("starting_guilt", 0) * 10),
+            "pressure_score": 0,
+            "revelation_stage": 0,
+        })
+    return result
+
+
+def update_npc_guilt(conn: sqlite3.Connection, *, npc_id: int, delta: int) -> None:
+    conn.execute(
+        """INSERT INTO npc_relationships (npc_id, guilt)
+           VALUES (?, MAX(0, MIN(100, ?)))
+           ON CONFLICT(npc_id) DO UPDATE SET
+           guilt = MAX(0, MIN(100, guilt + excluded.guilt))""",
+        (npc_id, delta)
+    )
+    conn.commit()
+
+
+def update_npc_pressure(conn: sqlite3.Connection, *, npc_id: int, delta: int) -> None:
+    conn.execute(
+        """INSERT INTO npc_relationships (npc_id, pressure_score)
+           VALUES (?, MAX(0, MIN(100, ?)))
+           ON CONFLICT(npc_id) DO UPDATE SET
+           pressure_score = MAX(0, MIN(100, pressure_score + excluded.pressure_score))""",
+        (npc_id, delta)
+    )
+    conn.commit()
+
+
+def decay_npc_pressure(conn: sqlite3.Connection, npc_id: int) -> None:
+    conn.execute(
+        "UPDATE npc_relationships SET pressure_score = MAX(0, pressure_score - 5) WHERE npc_id=?",
+        (npc_id,)
+    )
+    conn.commit()
+
+
+def get_npc_revelation_stage(conn: sqlite3.Connection, npc_id: int) -> int:
+    row = conn.execute(
+        "SELECT revelation_stage FROM npc_relationships WHERE npc_id=?", (npc_id,)
+    ).fetchone()
+    return row["revelation_stage"] if row else 0
+
+
+def increment_npc_revelation_stage(conn: sqlite3.Connection, *, npc_id: int) -> int:
+    conn.execute(
+        """INSERT INTO npc_relationships (npc_id, revelation_stage) VALUES (?, 1)
+           ON CONFLICT(npc_id) DO UPDATE SET revelation_stage = revelation_stage + 1""",
+        (npc_id,)
+    )
+    conn.commit()
+    return get_npc_revelation_stage(conn, npc_id)
 
 
 def get_npcs_for_case(conn: sqlite3.Connection, case_id: int) -> list[sqlite3.Row]:
@@ -530,16 +618,19 @@ def fulfill_past_appointments(conn: sqlite3.Connection, npc_id: int, game_time: 
 
 
 def create_suspect(conn: sqlite3.Connection, *, case_id: int, npc_id: int,
-                   is_killer: bool = False, race: str | None = None,
+                   is_killer: bool = False, met: bool = False,
+                   race: str | None = None,
                    political_connections: str | None = None, alibi: str | None = None,
                    secret: str | None = None, backstory: str | None = None,
-                   relationships: str | None = None) -> None:
+                   relationships: str | None = None,
+                   archetype_id: str | None = None) -> None:
     conn.execute(
         """INSERT OR IGNORE INTO suspects
-           (case_id, npc_id, is_killer, race, political_connections, alibi, secret, backstory, relationships)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (case_id, npc_id, 1 if is_killer else 0,
-         race, political_connections, alibi, secret, backstory, relationships)
+           (case_id, npc_id, is_killer, met, race, political_connections,
+            alibi, secret, backstory, relationships, archetype_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (case_id, npc_id, int(is_killer), int(met), race, political_connections,
+         alibi, secret, backstory, relationships, archetype_id)
     )
     conn.commit()
 

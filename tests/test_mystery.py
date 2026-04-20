@@ -255,3 +255,90 @@ def test_suspects_has_archetype_id_column(db):
     row = db.execute("PRAGMA table_info(suspects)").fetchall()
     col_names = {r["name"] for r in row}
     assert "archetype_id" in col_names
+
+def test_create_npc_with_psychology_fields(db):
+    from noir.persistence.repository import create_npc, get_npc, create_location
+    loc_id = create_location(db, name="The Spot", description="A spot.", is_fixed=False)
+    db.execute("INSERT INTO cases (archetype, title, case_data) VALUES ('t','t','{}')")
+    db.commit()
+    case_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    npc_id = create_npc(
+        db, case_id=case_id, name="Test NPC", role="suspect",
+        system_prompt="You are a suspect.", current_location_id=loc_id,
+        pressure_tolerance=3, kindness_weight=7, empathy=6,
+        starting_guilt=4, revelation_style="staged", revelation_stages=3,
+    )
+    row = get_npc(db, npc_id)
+    assert row["pressure_tolerance"] == 3
+    assert row["starting_guilt"] == 4
+    assert row["revelation_style"] == "staged"
+
+def test_get_npc_psychology(db):
+    from noir.persistence.repository import create_npc, get_npc_psychology, create_location
+    db.execute("INSERT INTO cases (archetype, title, case_data) VALUES ('t','t','{}')")
+    db.commit()
+    case_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    loc_id = create_location(db, name="Spot2", description=".", is_fixed=False)
+    npc_id = create_npc(
+        db, case_id=case_id, name="NPC2", role="witness",
+        system_prompt=".", current_location_id=loc_id,
+        pressure_tolerance=2, kindness_weight=8, empathy=5,
+        starting_guilt=3, revelation_style="sudden", revelation_stages=1,
+    )
+    psych = get_npc_psychology(db, npc_id)
+    assert psych["pressure_tolerance"] == 2
+    assert psych["kindness_weight"] == 8
+    assert psych["revelation_style"] == "sudden"
+    assert psych["guilt"] == 30  # starting_guilt=3 * 10 = initial npc_relationships row
+    assert psych["pressure_score"] == 0
+
+def test_update_npc_guilt_and_pressure(db):
+    from noir.persistence.repository import (
+        create_npc, get_npc_psychology, update_npc_guilt, update_npc_pressure,
+        decay_npc_pressure, create_location
+    )
+    db.execute("INSERT INTO cases (archetype, title, case_data) VALUES ('t','t','{}')")
+    db.commit()
+    case_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    loc_id = create_location(db, name="Spot3", description=".", is_fixed=False)
+    npc_id = create_npc(
+        db, case_id=case_id, name="NPC3", role="suspect",
+        system_prompt=".", current_location_id=loc_id,
+        pressure_tolerance=5, kindness_weight=5, empathy=5,
+        starting_guilt=0, revelation_style="staged", revelation_stages=2,
+    )
+    update_npc_guilt(db, npc_id=npc_id, delta=20)
+    update_npc_pressure(db, npc_id=npc_id, delta=30)
+    psych = get_npc_psychology(db, npc_id)
+    assert psych["guilt"] == 20
+    assert psych["pressure_score"] == 30
+    decay_npc_pressure(db, npc_id)
+    psych = get_npc_psychology(db, npc_id)
+    assert psych["pressure_score"] == 25  # 30 - 5
+
+def test_increment_npc_revelation_stage(db):
+    from noir.persistence.repository import (
+        create_npc, get_npc_revelation_stage, increment_npc_revelation_stage, create_location
+    )
+    db.execute("INSERT INTO cases (archetype, title, case_data) VALUES ('t','t','{}')")
+    db.commit()
+    case_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    loc_id = create_location(db, name="Spot4", description=".", is_fixed=False)
+    npc_id = create_npc(
+        db, case_id=case_id, name="NPC4", role="suspect",
+        system_prompt=".", current_location_id=loc_id,
+    )
+    assert get_npc_revelation_stage(db, npc_id) == 0
+    increment_npc_revelation_stage(db, npc_id=npc_id)
+    assert get_npc_revelation_stage(db, npc_id) == 1
+
+def test_update_npc_system_prompt(db):
+    from noir.persistence.repository import create_npc, get_npc, update_npc_system_prompt, create_location
+    db.execute("INSERT INTO cases (archetype, title, case_data) VALUES ('t','t','{}')")
+    db.commit()
+    case_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    loc_id = create_location(db, name="Spot5", description=".", is_fixed=False)
+    npc_id = create_npc(db, case_id=case_id, name="NPC5", role="suspect",
+                        system_prompt="old prompt", current_location_id=loc_id)
+    update_npc_system_prompt(db, npc_id=npc_id, system_prompt="new prompt with backstory")
+    assert get_npc(db, npc_id)["system_prompt"] == "new prompt with backstory"
