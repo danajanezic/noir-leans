@@ -45,7 +45,8 @@ VALID_CASE = {
             "political_connections": "None",
             "backstory": "Raised flamingos since childhood, turned it into a criminal empire.",
             "routine": [{"time_start": "09:00", "time_end": "17:00", "location": "The Parlour"}],
-            "alignment": "Chaotic Evil"
+            "alignment": "Chaotic Evil",
+            "age": 38
         },
         {
             "name": "Reginald Smoot",
@@ -58,7 +59,8 @@ VALID_CASE = {
             "political_connections": "None",
             "backstory": "Failed accordion salesman turned debtor.",
             "routine": [{"time_start": "09:00", "time_end": "17:00", "location": "The Parlour"}],
-            "alignment": "Lawful Neutral"
+            "alignment": "Lawful Neutral",
+            "age": 44
         }
     ],
     "clues": [
@@ -136,6 +138,10 @@ from noir.mystery.generator import REQUIRED_SUSPECT_FIELDS
 
 def test_required_suspect_fields_includes_alignment():
     assert "alignment" in REQUIRED_SUSPECT_FIELDS
+
+
+def test_required_suspect_fields_includes_age():
+    assert "age" in REQUIRED_SUSPECT_FIELDS
 
 
 def test_generate_calls_auditor_and_patches_ghost_name(db, mock_llm):
