@@ -27,6 +27,8 @@ from noir.persistence.repository import (
     get_fixed_locations, get_locations_for_case, get_npcs_for_case,
     set_character_location, get_location, create_location,
     update_case_status, update_player_stats,
+    get_player_suspects, add_player_suspect,
+    get_history, add_dossier_facts, get_game_time,
 )
 from noir.characters.companion import Companion
 from noir.characters.npc import NPC
@@ -286,6 +288,9 @@ def _talk_npc(target: str, message: str, *, conn: sqlite3.Connection,
 
     response = npc.speak(loc_ctx + message)
     console.print(f"\n{npc_row['name']}: {response}\n")
+
+    _extract_dossier_facts(npc_row["name"], npc_row["id"], conn=conn, llm=llm, case_id=case_id)
+
     return {"ok": True, "state": _game_state(conn, case_id)}
 
 
@@ -301,6 +306,28 @@ def _do_go(target: str, *, conn: sqlite3.Connection, llm: LLMBackend,
         if npcs:
             console.print(f"Present: {', '.join(n['name'] for n in npcs)}")
         console.print()
+
+
+def _extract_dossier_facts(npc_name: str, npc_id: int, *, conn: sqlite3.Connection,
+                           llm: LLMBackend, case_id: int) -> None:
+    history = get_history(conn, character_id=f"npc_{npc_id}", case_id=case_id)
+    if not history:
+        return
+    transcript = "\n".join(
+        f"{'Detective' if m['role'] == 'user' else npc_name}: {m['content']}"
+        for m in history[-20:]
+    )
+    result = llm.query_structured(
+        "Extract specific, concrete facts the detective just learned about this person from the conversation. "
+        "Include: locations they mentioned, times/plans, admissions, contradictions, relationships, anything investigatively useful. "
+        "Skip generic pleasantries. Each fact should be a single sentence. "
+        "Return ONLY valid JSON: {\"facts\": [\"string\", ...]} — empty list if nothing new was learned.",
+        [],
+        f"Person: {npc_name}\n\nConversation:\n{transcript}"
+    )
+    facts = result.get("facts", [])
+    if facts:
+        add_dossier_facts(conn, case_id=case_id, npc_name=npc_name, facts=facts)
 
 
 def _dispatch(raw: str, *, conn: sqlite3.Connection, llm: LLMBackend,
@@ -374,6 +401,55 @@ def _dispatch(raw: str, *, conn: sqlite3.Connection, llm: LLMBackend,
             target = target[3:].strip()
         if case_id:
             _do_go(target, conn=conn, llm=llm, console=console, case_id=case_id)
+
+    elif slug in ("/look", "/look around"):
+        from noir.display import show_location
+        loc_id = get_character_location(conn, "player")
+        if loc_id:
+            loc = get_location(conn, loc_id)
+            world = World(conn=conn, active_case_id=case_id)
+            npcs = world.get_npcs_at(loc_id) if case_id else []
+            if loc:
+                show_location(loc["name"], loc["description"],
+                              [n["name"] for n in npcs],
+                              game_time=get_game_time(conn))
+        else:
+            console.print("You're not sure where you are.")
+
+    elif slug.startswith("/add "):
+        if case_id is None:
+            console.print("No active case to add suspects to.")
+            return
+        result = llm.query_structured(
+            "Extract the suspect name and optional reason from this detective's note. "
+            "Return ONLY valid JSON: {\"name\": \"string\", \"note\": \"string or null\"}",
+            [],
+            raw
+        )
+        name = result.get("name", "").strip()
+        note = result.get("note") or None
+        if not name:
+            console.print("Couldn't work out who you meant.")
+            return
+        # Check against known case NPCs (fuzzy)
+        needle = name.lower()
+        npcs = get_npcs_for_case(conn, case_id)
+        for npc in npcs:
+            npc_lower = npc["name"].lower()
+            needle_words = {w for w in needle.split() if len(w) > 2}
+            npc_words = {w for w in npc_lower.split() if len(w) > 2}
+            if needle in npc_lower or npc_lower in needle or (needle_words & npc_words):
+                console.print(f"{npc['name']} is already on the case file.")
+                return
+        existing = get_player_suspects(conn, case_id)
+        for s in existing:
+            s_lower = s["name"].lower()
+            if needle in s_lower or s_lower in needle:
+                console.print(f"{s['name']} is already on your list.")
+                return
+        add_player_suspect(conn, case_id=case_id, name=name, note=note)
+        note_str = f" — {note}" if note else ""
+        console.print(f"Added {name} to your suspect list{note_str}.")
 
     else:
         console.print(f"Unknown command: {raw}")

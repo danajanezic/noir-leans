@@ -148,7 +148,10 @@ def test_command_go_moves_player(db_with_case):
 def test_command_talk_npc_single_exchange(db_with_case):
     db, case_id, loc_id, npc_id = db_with_case
     mark_suspect_met(db, npc_id=npc_id)
-    llm = MockLLMBackend(responses=["I was home all night. Ask anybody."])
+    llm = MockLLMBackend(responses=[
+        "I was home all night. Ask anybody.",
+        '{"facts": []}',
+    ])
     out = StringIO()
     result = run_step(
         {"type": "command", "input": "talk Rex Fontaine: Where were you?"},
