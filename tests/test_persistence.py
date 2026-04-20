@@ -306,3 +306,26 @@ def test_get_world_context_contains_howie_short():
     from noir.persistence.repository import get_world_context
     result = get_world_context()
     assert "Howie Short" in result
+
+
+def test_player_has_alignment_columns(db):
+    create_player(db)
+    player = get_player(db)
+    assert player["law_chaos"] == 0
+    assert player["good_evil"] == 0
+
+def test_partner_has_alignment_column(db):
+    save_partner(db, name="Vera", sex="female", personality_archetype="cynic",
+                 speech_style="terse", relationship_stance="exasperated",
+                 system_prompt="You are Vera.", alignment="True Neutral")
+    partner = get_partner(db)
+    assert partner["alignment"] == "True Neutral"
+
+def test_npc_has_alignment_column(db):
+    case_id = create_case(db, archetype="test", title="T", case_data={})
+    loc_id = create_location(db, name="Bar", description="A bar.", is_fixed=True)
+    npc_id = create_npc(db, case_id=case_id, name="Rex", role="suspect",
+                        system_prompt="You are Rex.", current_location_id=loc_id,
+                        alignment="Chaotic Evil")
+    npc = get_npc(db, npc_id)
+    assert npc["alignment"] == "Chaotic Evil"

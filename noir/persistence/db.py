@@ -218,6 +218,10 @@ _MIGRATIONS = [
     "ALTER TABLE evidence ADD COLUMN clue_id INTEGER REFERENCES clues(id)",
     "ALTER TABLE player ADD COLUMN game_time INTEGER DEFAULT 480",
     "ALTER TABLE evidence ADD COLUMN accused_npc_id INTEGER REFERENCES npcs(id)",
+    "ALTER TABLE player ADD COLUMN law_chaos INTEGER DEFAULT 0",
+    "ALTER TABLE player ADD COLUMN good_evil INTEGER DEFAULT 0",
+    "ALTER TABLE partner ADD COLUMN alignment TEXT DEFAULT 'True Neutral'",
+    "ALTER TABLE npcs ADD COLUMN alignment TEXT DEFAULT 'True Neutral'",
 ]
 
 

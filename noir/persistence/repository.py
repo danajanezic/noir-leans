@@ -40,12 +40,13 @@ def update_player_stats(conn: sqlite3.Connection, *,
 
 def save_partner(conn: sqlite3.Connection, *, name: str, sex: str,
                  personality_archetype: str, speech_style: str,
-                 relationship_stance: str, system_prompt: str) -> None:
+                 relationship_stance: str, system_prompt: str,
+                 alignment: str = "True Neutral") -> None:
     conn.execute(
         """INSERT OR REPLACE INTO partner
-           (id, name, sex, personality_archetype, speech_style, relationship_stance, system_prompt)
-           VALUES (1, ?, ?, ?, ?, ?, ?)""",
-        (name, sex, personality_archetype, speech_style, relationship_stance, system_prompt)
+           (id, name, sex, personality_archetype, speech_style, relationship_stance, system_prompt, alignment)
+           VALUES (1, ?, ?, ?, ?, ?, ?, ?)""",
+        (name, sex, personality_archetype, speech_style, relationship_stance, system_prompt, alignment)
     )
     conn.commit()
 
@@ -161,10 +162,11 @@ def update_case_status(conn: sqlite3.Connection, *, case_id: int, status: str,
 
 
 def create_npc(conn: sqlite3.Connection, *, case_id: int, name: str, role: str,
-               system_prompt: str, current_location_id: int) -> int:
+               system_prompt: str, current_location_id: int,
+               alignment: str = "True Neutral") -> int:
     cur = conn.execute(
-        "INSERT INTO npcs (case_id, name, role, system_prompt, current_location_id) VALUES (?, ?, ?, ?, ?)",
-        (case_id, name, role, system_prompt, current_location_id)
+        "INSERT INTO npcs (case_id, name, role, system_prompt, current_location_id, alignment) VALUES (?, ?, ?, ?, ?, ?)",
+        (case_id, name, role, system_prompt, current_location_id, alignment)
     )
     conn.commit()
     return cur.lastrowid
