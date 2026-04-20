@@ -3,7 +3,7 @@ from noir.llm.base import LLMBackend
 from noir.persistence.repository import (
     update_npc_guilt, update_npc_pressure, decay_npc_pressure,
     get_npc_revelation_stage, increment_npc_revelation_stage,
-    get_npc_relationship_flags, set_npc_secret_revealed,
+    get_npc_relationship_flags, set_npc_secret_revealed, get_npc,
 )
 
 _CLASSIFY_SYSTEM = (
@@ -130,7 +130,6 @@ def check_revelation(conn: sqlite3.Connection, llm: LLMBackend,
             "Speak naturally, as the moment demands.]"
         )
 
-    from noir.persistence.repository import get_npc
     npc_row = get_npc(conn, npc_id)
     if npc_row is None:
         return None
