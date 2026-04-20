@@ -43,6 +43,8 @@ from noir.persistence.repository import (
 from noir.persistence.db import create_schema
 from noir.characters.companion import Companion
 from noir.characters.npc import NPC
+from noir.characters.psychology import classify_events, update_npc_state, check_revelation as _check_npc_revelation
+from noir.persistence.repository import get_npc_psychology
 from noir.mystery.generator import MysteryGenerator, _build_npc_system_prompt
 from noir.mystery.archetype_loader import seed_archetypes_to_db
 from noir.cases.manager import CaseManager
@@ -618,6 +620,16 @@ class Game:
             show_dialogue(npc_row["name"], response)
             self._check_npc_appointment(npc_row["id"], npc_row["name"], player_input, response)
             self._check_npc_romance_milestone(npc_row["id"], npc)
+            psychology = get_npc_psychology(self.conn, npc_row["id"])
+            events = classify_events(self.llm, player_input, response)
+            update_npc_state(self.conn, npc_row["id"], events, psychology)
+            psychology = get_npc_psychology(self.conn, npc_row["id"])  # re-fetch for accurate combined score
+            revelation = _check_npc_revelation(
+                self.conn, self.llm, npc_row["id"], self.active_case_id,
+                npc_row["name"], events, psychology
+            )
+            if revelation:
+                show_dialogue(npc_row["name"], revelation)
         show_conversation_footer(npc_row["name"])
         if self.current_location_id is not None:
             self._observations.setdefault(self.current_location_id, []).append(

@@ -35,6 +35,8 @@ from noir.characters.companion import Companion
 from noir.characters.npc import NPC
 from noir.world import World
 from noir.cases.manager import CaseManager
+from noir.characters.psychology import classify_events, update_npc_state, check_revelation as _check_revelation
+from noir.persistence.repository import get_npc_psychology as _get_npc_psychology
 
 
 _TALK_RE = re.compile(r'^talk\s+(.+?):\s*(.+)$', re.IGNORECASE)
@@ -301,6 +303,14 @@ def _talk_npc(target: str, message: str, *, conn: sqlite3.Connection,
     console.print(f"\n{npc_row['name']}: {response}\n")
 
     _extract_dossier_facts(npc_row["name"], npc_row["id"], conn=conn, llm=llm, case_id=case_id)
+
+    psychology = _get_npc_psychology(conn, npc_row["id"])
+    events = classify_events(llm, message, response)
+    update_npc_state(conn, npc_row["id"], events, psychology)
+    psychology = _get_npc_psychology(conn, npc_row["id"])  # re-fetch after state update
+    revelation = _check_revelation(conn, llm, npc_row["id"], case_id, npc_row["name"], events, psychology)
+    if revelation:
+        console.print(f"\n{npc_row['name']}: {revelation}\n")
 
     return {"ok": True, "state": _game_state(conn, case_id)}
 

@@ -151,6 +151,7 @@ def test_command_talk_npc_single_exchange(db_with_case):
     llm = MockLLMBackend(responses=[
         "I was home all night. Ask anybody.",
         '{"facts": []}',
+        '{"pressure_applied": false, "threat_made": false, "kindness_shown": false, "guilt_trigger": false, "evidence_confronted": false}',
     ])
     out = StringIO()
     result = run_step(
