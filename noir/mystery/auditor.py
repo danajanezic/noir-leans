@@ -194,6 +194,8 @@ class CaseAuditor:
             if issue.severity != "patchable":
                 continue
 
+            # ghost_name is processed first; if the same clue also has bad_clue_location,
+            # the location fix won't match after description rewrite (rare edge case)
             if issue.type == "ghost_name":
                 m = re.search(r"references '([^']+)'", issue.detail)
                 ghost = m.group(1) if m else None

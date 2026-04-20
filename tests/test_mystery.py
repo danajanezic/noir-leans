@@ -44,7 +44,7 @@ VALID_CASE = {
             "race": "White",
             "political_connections": "None",
             "backstory": "Raised flamingos since childhood, turned it into a criminal empire.",
-            "routine": "Opens the sanctuary at dawn, counts flamingos at dusk.",
+            "routine": [{"time_start": "09:00", "time_end": "17:00", "location": "The Parlour"}],
             "alignment": "Chaotic Evil"
         },
         {
@@ -57,7 +57,7 @@ VALID_CASE = {
             "race": "White",
             "political_connections": "None",
             "backstory": "Failed accordion salesman turned debtor.",
-            "routine": "Drinks at the Rusty Anchor every evening.",
+            "routine": [{"time_start": "09:00", "time_end": "17:00", "location": "The Parlour"}],
             "alignment": "Lawful Neutral"
         }
     ],
@@ -76,7 +76,7 @@ VALID_CASE = {
 
 def test_generate_returns_validated_case_structure(db, mock_llm):
     create_player(db)
-    mock_llm._responses = cycle([json.dumps(VALID_CASE)])
+    mock_llm._responses = cycle([json.dumps(VALID_CASE), '{"issues": []}'])
     gen = MysteryGenerator(llm=mock_llm, conn=db)
     case = gen.generate(archetype_name="Agatha Christie")
     assert "title" in case
