@@ -1,6 +1,8 @@
+import copy
 import json
 import sqlite3
 import random
+import threading
 
 from noir.log import save_feedback
 from rich.panel import Panel
@@ -213,6 +215,8 @@ class Game:
         self.world: World | None = None
         self.case_manager: CaseManager | None = None
         self._observations: dict[int, list[str]] = {}
+        self._pending_case: tuple[str, dict] | None = None
+        self._pending_gen_thread: threading.Thread | None = None
 
     def setup_fixed_locations(self) -> dict[str, int]:
         existing = {loc["name"]: loc["id"] for loc in get_fixed_locations(self.conn)}
@@ -240,6 +244,7 @@ class Game:
             f"[italic]\"Wake up. We have a case. "
             f"And before you ask — last night you {incident}\"[/italic]\n"
         )
+        self._start_background_generation()
         console.print("[dim]Press ENTER to continue...[/dim]")
         input()
 
@@ -346,13 +351,46 @@ class Game:
         self.world = World(conn=self.conn, active_case_id=case_id)
         self.case_manager = CaseManager(conn=self.conn, case_id=case_id, llm=self.llm)
 
+    def _start_background_generation(self) -> None:
+        if self._pending_gen_thread and self._pending_gen_thread.is_alive():
+            return
+        self._pending_case = None
+        bg_llm = copy.copy(self.llm)
+        bg_llm.suppress_status = True
+
+        def _run() -> None:
+            from noir.persistence.db import get_connection as _get_conn
+            bg_conn = _get_conn()
+            try:
+                gen = MysteryGenerator(llm=bg_llm, conn=bg_conn)
+                archetype = gen.pick_random_archetype()
+                theme = gen.pick_random_theme()
+                case_data = gen.generate(archetype_name=archetype, theme=theme)
+                self._pending_case = (archetype, case_data)
+            except Exception:
+                self._pending_case = None
+            finally:
+                bg_conn.close()
+
+        self._pending_gen_thread = threading.Thread(target=_run, daemon=True)
+        self._pending_gen_thread.start()
+
     def start_new_case(self) -> None:
-        gen = MysteryGenerator(llm=self.llm, conn=self.conn)
-        archetype = gen.pick_random_archetype()
-        theme = gen.pick_random_theme()
-        self.llm.status_message = "Under estimating your intelligence..."
-        case_data = gen.generate(archetype_name=archetype, theme=theme)
-        self.llm.status_message = "Thinking..."
+        if self._pending_gen_thread and self._pending_gen_thread.is_alive():
+            console.print("[dim]Reviewing the file...[/dim]")
+            self._pending_gen_thread.join()
+
+        if self._pending_case:
+            archetype, case_data = self._pending_case
+            self._pending_case = None
+            self._pending_gen_thread = None
+        else:
+            gen = MysteryGenerator(llm=self.llm, conn=self.conn)
+            archetype = gen.pick_random_archetype()
+            theme = gen.pick_random_theme()
+            self.llm.status_message = "Under estimating your intelligence..."
+            case_data = gen.generate(archetype_name=archetype, theme=theme)
+            self.llm.status_message = "Thinking..."
 
         fixed = {loc["name"]: loc["id"] for loc in get_fixed_locations(self.conn)}
 
@@ -1332,6 +1370,7 @@ class Game:
         show_dialogue("District Attorney", result.get("dialogue", "..."))
         if result.get("verdict") == "accepted":
             console.print("[green]Case accepted. It goes to trial.[/green]")
+            self._start_background_generation()
         else:
             console.print("[yellow]Case rejected. Gather more evidence.[/yellow]")
 
@@ -1353,6 +1392,7 @@ class Game:
             self.active_case_id = None
             self.world = None
             self.case_manager = None
+            self._start_background_generation()
             console.print("[dim]The case is behind you now. Head to the DA's office for a new one.[/dim]")
         else:
             console.print("[dim]Nothing here yet. Take a case to the DA first.[/dim]")
