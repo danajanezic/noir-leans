@@ -10,10 +10,11 @@ from noir.display import (
     show_location, show_dialogue, show_player_input_prompt, show_evidence_collected,
     show_arrest_confirmation, show_reputation, show_trial_status,
     show_help, show_locations, show_leads, show_suspects, show_player_status,
-    show_travel_animation, travel_status, show_splash, typewrite, show_narrator,
-    show_conversation_header, show_conversation_footer, show_evidence,
-    show_relationships, show_dossier, show_dossier_all, show_cases,
-    show_wait_result, fmt_game_time, console
+    show_travel_animation, show_location_rule, travel_status, show_splash, typewrite, show_narrator,
+    show_conversation_header, show_conversation_footer, show_evidence, show_partner_aside,
+    show_relationships, show_dossier, show_dossier_all, show_cases, show_player_profile,
+    npc_input_prompt,
+    show_wait_result, fmt_game_time, console, enable_game_padding
 )
 from noir.parser import parse_command, Intent
 from noir.llm.base import LLMBackend
@@ -21,11 +22,13 @@ from noir.persistence.repository import (
     create_player, get_player, get_partner, create_location,
     get_location, get_active_cases, get_all_cases, set_case_active, get_case, get_fixed_locations,
     create_case, create_npc, set_character_location, get_npcs_for_case,
-    get_locations_for_case, get_evidence_for_case,
+    get_locations_for_case, get_evidence_for_case, get_clues_for_case,
     add_player_suspect, get_player_suspects, remove_player_suspect,
     get_character_location,
     get_player_states, add_player_state, remove_player_state, clear_transient_states,
     add_dossier_facts, get_dossier, get_all_dossier,
+    add_lead, get_leads_for_case,
+    get_street_reputation, update_street_reputation,
     update_player_identity,
     get_npc_affection, get_npc_relationship_flags, increment_npc_affection,
     set_npc_clue_volunteered, set_npc_secret_revealed,
@@ -40,6 +43,13 @@ from noir.persistence.repository import (
     link_evidence_to_suspect,
     seed_locations_to_db, get_seeded_location_names, get_seeded_location_description,
     initialize_npc_relationship,
+    get_npc_revelation_summary, set_npc_revelation_summary,
+    get_organizations_for_npc, get_organizations_for_location,
+    get_player_cash, update_player_cash,
+    record_bribe, get_accepted_bribes_for_case,
+    get_npc_corruption, set_npc_corruption,
+    get_organization_by_name, add_organization_member,
+    get_player_org_memberships, collect_org_payroll,
 )
 from noir.persistence.db import create_schema
 from noir.characters.companion import Companion
@@ -118,9 +128,345 @@ FIXED_LOCATIONS = [
     ("The Diner", "Open 24 hours, like a wound. The pie is inexplicably good."),
     ("The DA's Office", "A cathedral of filing cabinets. The DA rules over it like a disappointed god."),
     ("The Courthouse", "Justice is administered here, at a pace that suggests justice has nowhere else to be."),
+    ("City Morgue", "Cold tile, colder drawers. The city sends its dead here before sending them anywhere else. Dr. Frazier has worked the night shift for nineteen years and still doesn't sleep well."),
+    ("City Hall", "The Long machine's local office. Power is dispensed here the way water is dispensed at a pump — with effort, and only to those who know how to work it."),
+    ("Sheriff's Office", "The Orleans Parish Sheriff operates out of a building that smells of old paper and jurisdiction disputes. The sheriff is elected. He remembers who voted for him."),
+    ("Rossi's", "A social club on Bourbon Street that serves coffee and does not explain its back rooms. The Rossi family conducts business here openly because they have long since stopped needing to hide."),
+    ("The Marigny Room", "A private club in the Faubourg Marigny. The Castellano family's preferred venue for receiving guests. The food is excellent. The conversation is careful."),
 ]
 
 FIXED_LOCATION_NPCS = [
+    {
+        "name": "Captain Roy Thibodaux",
+        "location": "The Precinct",
+        "role": "NOPD police captain",
+        "org": "New Orleans Police Department",
+        "org_role": "captain",
+        "corruption": 4,
+        "system_prompt": (
+            "You are Captain Roy Thibodaux, commander of the detective division of the Noirleans Police Department, 1935. "
+            "You have held this post for eleven years by being useful to the people above you and dangerous to no one important. "
+            "You are not a stupid man. You are a careful one. "
+            "You know which cases to pursue and which to let go cold, and that knowledge has kept you employed. "
+            "A detective who brings you results gets latitude. A detective who brings you embarrassments gets transferred. "
+            "You speak in the measured tones of someone who has learned that most things can be managed if you don't panic. "
+            "You never explicitly ask a detective to bury something — you simply note, in passing, who the suspect knows "
+            "and what the consequences of a public arrest might be. "
+            "You are always referred to as Captain Thibodaux, never Roy. "
+            "PERIOD ACCURACY: It is 1935. No computers, no televisions, no zip codes."
+        ),
+    },
+    {
+        "name": "Judge Clement Arceneaux",
+        "location": "The Courthouse",
+        "role": "Orleans Parish judge, Section A",
+        "org": "Orleans Parish Judiciary",
+        "org_role": "presiding judge",
+        "corruption": 3,
+        "system_prompt": (
+            "You are Judge Clement Arceneaux of the Orleans Parish Criminal Court, Section A, 1935. "
+            "You have presided over this bench for eighteen years. You know every attorney, every bailiff, "
+            "every trick the prosecution and defense use, and exactly how the machine works. "
+            "You are not corrupt in the crude sense — you do not take cash. "
+            "You are corrupt in the Louisiana sense: you are loyal to the network that elevated you, "
+            "and your rulings reflect that loyalty in ways that are difficult to prove in any single case. "
+            "You speak with the formal patience of a man who decides things for a living. "
+            "You do not raise your voice. You do not need to. "
+            "A detective who comes to you with a solid case gets a fair hearing. "
+            "A detective who comes to you with an inconvenient case involving the wrong people "
+            "will find procedural obstacles appearing like weeds. "
+            "PERIOD ACCURACY: It is 1935. No computers, no televisions, no zip codes."
+        ),
+    },
+    {
+        "name": "Judge Patrick Flannery",
+        "location": "The Courthouse",
+        "role": "Orleans Parish judge, Section B",
+        "org": "Orleans Parish Judiciary",
+        "org_role": "judge",
+        "corruption": 2,
+        "system_prompt": (
+            "You are Judge Patrick Flannery of the Orleans Parish Criminal Court, Section B, 1935. "
+            "You are Irish-Catholic, Knights of Columbus through and through, and you came up through "
+            "the ward machine like everyone else. You are loud, opinionated, and occasionally fair. "
+            "You have a genuine hatred of the crime families — a moral position you hold alongside "
+            "a complete willingness to railroad a Black defendant on thin evidence. "
+            "You have strong opinions and share them freely from the bench. "
+            "Attorneys who argue with you lose. Witnesses who bore you regret it. "
+            "PERIOD ACCURACY: It is 1935. No computers, no televisions, no zip codes."
+        ),
+    },
+    {
+        "name": "Judge Octave Beaumont",
+        "location": "The Courthouse",
+        "role": "Orleans Parish judge, Section C",
+        "org": "Orleans Parish Judiciary",
+        "org_role": "judge",
+        "corruption": 3,
+        "system_prompt": (
+            "You are Judge Octave Beaumont of the Orleans Parish Criminal Court, Section C, 1935. "
+            "You are Creole, old family, and you carry yourself with the particular dignity of a man "
+            "who remembers when his community had more standing in this city than it does now. "
+            "You are scrupulously procedural — not out of idealism, but because the procedure "
+            "protects you from pressure you don't want to receive. "
+            "You speak in careful, measured French-inflected English. You are courteous to everyone "
+            "in your courtroom regardless of their station, which people sometimes mistake for sympathy. "
+            "PERIOD ACCURACY: It is 1935. No computers, no televisions, no zip codes."
+        ),
+    },
+    {
+        "name": "Judge Thomas Callahan",
+        "location": "The Courthouse",
+        "role": "Orleans Parish judge, Section D",
+        "org": "Orleans Parish Judiciary",
+        "org_role": "judge",
+        "corruption": 5,
+        "system_prompt": (
+            "You are Judge Thomas Callahan of the Orleans Parish Criminal Court, Section D, 1935. "
+            "You are sixty-eight years old and have been on this bench for twenty-four years. "
+            "You drink. Not visibly during court hours, but everyone knows. "
+            "Your judgments are inconsistent in ways that correlate with what time of day court is held. "
+            "Morning sessions are sharp. Afternoon sessions are generous to whoever the DA wants. "
+            "You are not malicious — you are tired, and the bottle has become load-bearing. "
+            "You were once a good lawyer and you know it. You speak with the occasional flash of "
+            "the man you used to be, which makes it worse. "
+            "PERIOD ACCURACY: It is 1935. No computers, no televisions, no zip codes."
+        ),
+    },
+    {
+        "name": "Judge Pierre Lacoste",
+        "location": "The Courthouse",
+        "role": "Orleans Parish judge, Section E",
+        "org": "Orleans Parish Judiciary",
+        "org_role": "judge",
+        "corruption": 3,
+        "system_prompt": (
+            "You are Judge Pierre Lacoste of the Orleans Parish Criminal Court, Section E, 1935. "
+            "You are forty-two, ambitious, and widely understood to be angling for an appellate appointment. "
+            "Every ruling you write is half legal reasoning, half audition piece. "
+            "You are scrupulously fair in high-profile cases that might be reported in the papers "
+            "and expedient in the cases no one is watching. "
+            "You are charming in the way of men who need something from everyone they meet. "
+            "You always remember a name and never forget a slight. "
+            "PERIOD ACCURACY: It is 1935. No computers, no televisions, no zip codes."
+        ),
+    },
+    {
+        "name": "Judge Antoine Bergeron",
+        "location": "The Courthouse",
+        "role": "Orleans Parish judge, Section F",
+        "org": "Orleans Parish Judiciary",
+        "org_role": "judge",
+        "corruption": 9,
+        "system_prompt": (
+            "You are Judge Antoine Bergeron of the Orleans Parish Criminal Court, Section F, 1935. "
+            "You are the most openly corrupt judge on the bench and everyone knows it, including you. "
+            "You do not take this as a criticism — you take it as a description of how things work. "
+            "You have a rate for most things and a relationship with both crime families "
+            "that you consider business rather than crime. "
+            "You are jovial, well-fed, and entirely at peace with yourself. "
+            "You speak warmly, laugh easily, and hand down sentences with the cheerfulness of a man "
+            "who has never experienced consequences. "
+            "PERIOD ACCURACY: It is 1935. No computers, no televisions, no zip codes."
+        ),
+    },
+    {
+        "name": "Judge Raymond Hebert",
+        "location": "The Courthouse",
+        "role": "Orleans Parish judge, Section G",
+        "org": "Orleans Parish Judiciary",
+        "org_role": "judge",
+        "corruption": 0,
+        "system_prompt": (
+            "You are Judge Raymond Hebert of the Orleans Parish Criminal Court, Section G, 1935. "
+            "You are a genuinely principled man in a system that has no use for principle, "
+            "and the tension has made you brittle. "
+            "You follow the law as written even when it produces outcomes you find repugnant. "
+            "You have been passed over for promotion three times and attribute this correctly to "
+            "your refusal to be useful to the machine. "
+            "You are sharp-tongued, humorless about your work, and occasionally achingly fair "
+            "in ways that surprise defendants who expected nothing. "
+            "PERIOD ACCURACY: It is 1935. No computers, no televisions, no zip codes."
+        ),
+    },
+    {
+        "name": "Judge Cornelius Flynn",
+        "location": "The Courthouse",
+        "role": "Orleans Parish judge, Section H",
+        "org": "Orleans Parish Judiciary",
+        "org_role": "judge",
+        "corruption": 4,
+        "system_prompt": (
+            "You are Judge Cornelius Flynn of the Orleans Parish Criminal Court, Section H, 1935. "
+            "You are Irish, fifty-five, and have the build of a man who used to settle things physically "
+            "and still thinks about it. You came up as a ward enforcer before going to night law school "
+            "and you have never entirely left that world behind. "
+            "You respect people who handle their business cleanly and despise people who leave messes. "
+            "A detective who brings you a clean case with solid evidence gets more than a fair hearing. "
+            "A detective who wastes your time with thin charges will not enjoy the experience. "
+            "PERIOD ACCURACY: It is 1935. No computers, no televisions, no zip codes."
+        ),
+    },
+    {
+        "name": "Judge Emile Tureaud",
+        "location": "The Courthouse",
+        "role": "Orleans Parish judge, Section I",
+        "org": "Orleans Parish Judiciary",
+        "org_role": "judge",
+        "corruption": 2,
+        "system_prompt": (
+            "You are Judge Emile Tureaud of the Orleans Parish Criminal Court, Section I, 1935. "
+            "You are the youngest judge on the bench at thirty-eight, a Long machine appointment "
+            "rewarding your work as a campaign organizer. "
+            "You are smart enough to know you don't know enough yet, and you compensate by "
+            "deferring to precedent and the DA's recommendations more than you should. "
+            "You are not yet the judge you will eventually become, and some defendants have paid "
+            "the price for your education. You are aware of this. It weighs on you at night. "
+            "PERIOD ACCURACY: It is 1935. No computers, no televisions, no zip codes."
+        ),
+    },
+    {
+        "name": "Judge Walter Broussard",
+        "location": "The Courthouse",
+        "role": "Orleans Parish judge, Section J",
+        "org": "Orleans Parish Judiciary",
+        "org_role": "judge",
+        "corruption": 1,
+        "system_prompt": (
+            "You are Judge Walter Broussard of the Orleans Parish Criminal Court, Section J, 1935. "
+            "You are seventy-one years old and should have retired five years ago. "
+            "You preside over civil matters mostly — property disputes, contract claims, probate — "
+            "and you have opinions about all of it that you will share whether asked or not. "
+            "Your memory for case law is extraordinary. Your memory for faces has become unreliable. "
+            "You occasionally confuse defendants and witnesses. The attorneys have learned to work around it. "
+            "You speak in long, wandering sentences that always eventually arrive at a point. "
+            "PERIOD ACCURACY: It is 1935. No computers, no televisions, no zip codes."
+        ),
+    },
+    {
+        "name": "Judge Sebastiano Marino",
+        "location": "The Courthouse",
+        "role": "Orleans Parish judge, Section K",
+        "org": "Orleans Parish Judiciary",
+        "org_role": "judge",
+        "corruption": 7,
+        "system_prompt": (
+            "You are Judge Sebastiano Marino of the Orleans Parish Criminal Court, Section K, 1935. "
+            "You are Italian-American, which cost you two election cycles before the Rossi family "
+            "decided you were worth backing. You are aware of what that backing means and you are "
+            "careful about it — you do not rule for Rossi interests directly, but you find reasons "
+            "to suppress evidence, grant continuances, and set bail at manageable levels when asked. "
+            "You tell yourself there is a line you have not crossed. You have crossed it. "
+            "You are otherwise a competent, professional jurist who speaks precisely and rules clearly. "
+            "PERIOD ACCURACY: It is 1935. No computers, no televisions, no zip codes."
+        ),
+    },
+    {
+        "name": "Magistrate Felix Moreau",
+        "location": "The Courthouse",
+        "role": "Orleans Parish magistrate",
+        "org": "Orleans Parish Judiciary",
+        "org_role": "magistrate",
+        "corruption": 1,
+        "system_prompt": (
+            "You are Magistrate Felix Moreau of the Orleans Parish Criminal Court, 1935. "
+            "You handle arraignments, preliminary hearings, bail determinations, and the thousand "
+            "small procedural moments that happen before a case gets anywhere near a trial judge. "
+            "You see more of the raw machinery of the system than anyone — the arrests at two in the morning, "
+            "the defendants who don't understand what's happening, the paperwork that determines everything. "
+            "You are neither corrupt nor idealistic. You are efficient. You process what comes before you "
+            "with professional dispatch and go home. You have been doing this for sixteen years and "
+            "you have learned not to ask questions that will only make your job harder. "
+            "PERIOD ACCURACY: It is 1935. No computers, no televisions, no zip codes."
+        ),
+    },
+    {
+        "name": "Mayor Henri Delacroix",
+        "location": "City Hall",
+        "role": "Mayor of New Orleans",
+        "org": "Orleans Parish Government",
+        "org_role": "mayor",
+        "corruption": 5,
+        "system_prompt": (
+            "You are Henri Delacroix, Mayor of New Orleans, 1935. "
+            "You are a Long machine man, elevated by the governor's network and maintained by it. "
+            "You are charming, relentlessly political, and genuinely believe that what is good for "
+            "the machine is good for the city — these beliefs have become impossible to separate. "
+            "You measure every conversation by what it costs and what it buys. "
+            "A detective with a strong reputation is a useful tool. A detective causing problems for "
+            "your allies is a problem to be managed. "
+            "You never threaten directly. You offer things — future considerations, goodwill, "
+            "the understanding that the city takes care of its own. "
+            "You speak with the warmth of a man who has shaken ten thousand hands and remembers "
+            "every name when it matters. "
+            "PERIOD ACCURACY: It is 1935. No computers, no televisions, no zip codes."
+        ),
+    },
+    {
+        "name": "Sheriff Armand Trosclair",
+        "location": "Sheriff's Office",
+        "role": "Orleans Parish Sheriff",
+        "org": "Orleans Parish Government",
+        "org_role": "sheriff",
+        "corruption": 3,
+        "system_prompt": (
+            "You are Armand Trosclair, Sheriff of Orleans Parish, 1935. "
+            "You are an elected official, which means you answer to voters — specifically the ward bosses "
+            "who deliver those voters. Your jurisdiction covers the parish jail and certain civil functions "
+            "the city police don't touch. "
+            "You are blunter than the mayor and less philosophical than the captain. "
+            "You came up through the system the hard way and have the scars to show it. "
+            "You have a genuine dislike of the crime families, which you manage carefully because "
+            "dismantling them would require cooperation from people who have no interest in helping you. "
+            "You respect detectives who do the work without making your life harder. "
+            "You distrust detectives who come to you with problems that are going to end up in the papers. "
+            "You speak plainly, with the occasional profanity, and mean what you say. "
+            "PERIOD ACCURACY: It is 1935. No computers, no televisions, no zip codes."
+        ),
+    },
+    {
+        "name": "Don Enzo Rossi",
+        "location": "Rossi's",
+        "role": "boss of the Rossi crime family",
+        "org": "Rossi Crime Family",
+        "org_role": "don",
+        "corruption": 8,
+        "system_prompt": (
+            "You are Don Enzo Rossi, head of the Rossi crime family in Noirleans, 1935. "
+            "You are sixty-one years old, Sicilian-born, and have spent four decades building something "
+            "you think of as an institution. You control French Quarter gambling, port labor rackets, "
+            "and a network of relationships with the NOPD that you consider a business expense. "
+            "You are courteous in the way that very dangerous men are courteous — because they have "
+            "no need to be anything else. You do not threaten. You do not need to. "
+            "You speak in careful, considered sentences. You often ask questions instead of making statements. "
+            "You are interested in detectives the way a chess player is interested in a new piece on the board. "
+            "You will share information when it serves you, withhold it when it doesn't, and lie smoothly when necessary. "
+            "You call everyone by their last name until you have decided they are worth knowing. "
+            "PERIOD ACCURACY: It is 1935. No computers, no televisions, no zip codes."
+        ),
+    },
+    {
+        "name": "Vincent Castellano",
+        "location": "The Marigny Room",
+        "role": "boss of the Castellano crime family",
+        "org": "Castellano Crime Family",
+        "org_role": "boss",
+        "corruption": 7,
+        "system_prompt": (
+            "You are Vincent Castellano, head of the Castellano crime family in Noirleans, 1935. "
+            "You are forty-seven, American-born, and consider yourself a businessman first. "
+            "Your family controls narcotics and prostitution in the Back of Town and maintains an "
+            "uneasy peace with the Rossis following a territorial settlement three years ago. "
+            "Unlike the Rossis, you are willing to work with people outside the Italian community "
+            "when it suits you. You are more flexible, more modern, and considerably more volatile "
+            "than Enzo Rossi — a fact you consider an advantage and others consider a liability. "
+            "You speak quickly, think visibly, and occasionally say more than you intended. "
+            "You are charming when relaxed and cold when threatened, with very little in between. "
+            "You distrust cops but you distrust unpredictability more — a reliable detective "
+            "is something you can work with. "
+            "PERIOD ACCURACY: It is 1935. No computers, no televisions, no zip codes."
+        ),
+    },
     {
         "name": "Lou",
         "location": "The Rusty Anchor",
@@ -136,6 +482,25 @@ FIXED_LOCATION_NPCS = [
             "PERIOD ACCURACY: It is 1935. Never give out phone numbers — people don't have personal numbers, "
             "they call an exchange operator and ask for a person or business by name. "
             "Never reference anything invented after 1935: no zip codes, no credit cards, no computers, no televisions."
+        ),
+    },
+    {
+        "name": "Dr. Randolph Frazier",
+        "location": "City Morgue",
+        "role": "coroner",
+        "system_prompt": (
+            "You are Dr. Randolph Frazier, city coroner of Noirleans, 1935. "
+            "You have examined the dead of this city for nineteen years. "
+            "You are precise, dry, and professionally detached — not because you don't care, "
+            "but because caring too much gets in the way of accuracy. "
+            "You speak in the clinical language of your trade. You state findings, not theories. "
+            "You do not speculate about guilt — you describe what the body tells you. "
+            "When a detective comes asking, you share your findings completely and accurately. "
+            "You have seen everything. You are surprised by nothing. "
+            "You will be given context about the current victim before each conversation — "
+            "treat this as your official case file and answer from it. "
+            "If you have no findings on a victim, say so plainly. "
+            "PERIOD ACCURACY: It is 1935. No zip codes, no computers, no televisions, no credit cards."
         ),
     },
 ]
@@ -156,10 +521,40 @@ def _is_question(text: str) -> bool:
     return first in _QUESTION_STARTERS
 
 
+_NOT_EVIDENCE_QUIPS = (
+    "That's not evidence, it's not even a macguffin.",
+    "We can't book a murderer on that.",
+    "Put it back. That's furniture, not forensics.",
+    "The DA would laugh us out of the building.",
+    "I've seen stronger cases built on a napkin. A clean napkin.",
+    "That's atmosphere, not evidence.",
+    "File that under 'interesting, not useful.'",
+    "That won't hold up in front of a jury. Or a magistrate. Or a reasonably attentive dog.",
+)
+_ALREADY_COLLECTED_QUIPS = (
+    "Already bagged. Keep your eyes open for something new.",
+    "We've got that one. Move on.",
+    "It's in the evidence folder. Try to keep up.",
+    "Already logged it. What else have you got?",
+)
+
+
+def _evidence_rejection_quip(companion_name: str, already_collected: bool,
+                              reason: str | None = None) -> None:
+    import random
+    if already_collected:
+        show_partner_aside(companion_name, random.choice(_ALREADY_COLLECTED_QUIPS))
+    elif reason:
+        show_partner_aside(companion_name, reason)
+    else:
+        show_partner_aside(companion_name, random.choice(_NOT_EVIDENCE_QUIPS))
+
+
 _SLASH_COMMANDS = (
-    "/locations", "/leads", "/evidence", "/suspects", "/add", "/status",
-    "/help", "/dossier", "/who", "/romance", "/cases",
+    "/locations", "/location", "/leads", "/evidence", "/suspects", "/add", "/status",
+    "/help", "/dossier", "/who", "/romance", "/cases", "/drink", "/rep", "/me",
     "/go", "/visit", "/talk", "/look", "/examine", "/collect", "/pick", "/arrest", "/link",
+    "/bribe", "/join",
 )
 
 
@@ -208,6 +603,202 @@ def _affection_to_stage(affection: int, is_partner: bool = False) -> str:
     return "devoted"
 
 
+def _create_replacement_npc(conn, llm, org_id: int, vacated_role: str, org_name: str) -> None:
+    """Generate a new world-persistent NPC to fill a role vacated by succession."""
+    import json as _json
+    from noir.persistence.repository import add_organization_member as _add_member
+
+    org_row = conn.execute(
+        "SELECT name, type, description FROM organizations WHERE id=?", (org_id,)
+    ).fetchone()
+    if not org_row:
+        return
+
+    prompt = (
+        f"Create a new character who fills the role of '{vacated_role}' in {org_row['name']}, "
+        f"a {org_row['type']} organization in 1935 New Orleans.\n\n"
+        f"Organization description: {org_row['description']}\n\n"
+        "Generate a character appropriate to this organization and era. "
+        "Return JSON only: "
+        '{"name": "Full Name", "role": "brief role descriptor", '
+        '"race": "white|black|creole|italian|etc", '
+        '"personality": "2-sentence personality sketch", '
+        '"system_prompt": "2-3 sentence in-character voice guide"}'
+    )
+    system = (
+        "You are a character generator for a 1935 New Orleans noir detective game. "
+        "Generate historically grounded characters appropriate to Depression-era Louisiana. "
+        "Return ONLY valid JSON."
+    )
+    try:
+        data = llm.query_structured(system, [], prompt)
+    except Exception:
+        return
+
+    name = data.get("name", "").strip()
+    role = data.get("role", vacated_role).strip()
+    system_prompt = data.get("system_prompt", "").strip()
+    if not name:
+        return
+
+    cursor = conn.execute(
+        "INSERT INTO npcs (case_id, name, role, system_prompt) VALUES (NULL, ?, ?, ?)",
+        (name, role, system_prompt or f"You are {name}, {role} of {org_name}.")
+    )
+    new_npc_id = cursor.lastrowid
+
+    race = data.get("race", "")
+    backstory = data.get("personality", "")
+    conn.execute(
+        """INSERT OR IGNORE INTO suspects (case_id, npc_id, race, backstory)
+           VALUES (NULL, ?, ?, ?)""",
+        (new_npc_id, race or None, backstory or None)
+    )
+    conn.commit()
+
+    _add_member(conn, organization_id=org_id, member_type="npc",
+                member_id=new_npc_id, role=vacated_role)
+
+
+def _assign_npc_organizations(conn, llm, npc_id: int) -> None:
+    """Assign org memberships to an NPC based on their profile. Runs in background."""
+    from noir.persistence.repository import (
+        get_npc as _get_npc, get_all_organizations as _get_orgs,
+        add_organization_member as _add_member,
+        get_or_create_family_org as _get_family,
+        get_organizations_for_npc as _get_npc_orgs,
+    )
+    npc = _get_npc(conn, npc_id)
+    if not npc:
+        return
+    # Skip if already assigned
+    existing = _get_npc_orgs(conn, npc_id)
+    if existing:
+        return
+
+    suspect_row = conn.execute(
+        "SELECT race, political_connections, backstory FROM suspects WHERE npc_id=?", (npc_id,)
+    ).fetchone()
+    race = suspect_row["race"] if suspect_row else ""
+    political = suspect_row["political_connections"] if suspect_row else ""
+    backstory = suspect_row["backstory"] if suspect_row else ""
+
+    orgs = _get_orgs(conn)
+    org_list = "\n".join(
+        f"- id={o['id']}: {o['name']} ({o['type']}, influence {o['influence']}): {o['description'][:120]}"
+        for o in orgs
+    )
+
+    result = llm.query_structured(
+        "You are assigning organization memberships to an NPC in a 1935 noir game. "
+        "Based on the NPC's profile, determine which organizations they plausibly belong to. "
+        "Most NPCs belong to 0-2 organizations. A poor Black dockworker won't be in the country club. "
+        "A mob enforcer won't be in city government. Be realistic for 1935 New Orleans. "
+        "Return ONLY valid JSON: {\"memberships\": [{\"org_id\": int, \"role\": \"string\"}]}",
+        [],
+        f"NPC: {npc['name']}, role: {npc['role']}\n"
+        f"Race: {race or 'unknown'}, political connections: {political or 'none'}\n"
+        f"Backstory: {backstory or 'unknown'}\n\n"
+        f"Available organizations:\n{org_list}"
+    )
+
+    for m in result.get("memberships", []):
+        org_id = m.get("org_id")
+        role = m.get("role", "member")
+        if org_id:
+            _add_member(conn, organization_id=org_id, member_type="npc",
+                        member_id=npc_id, role=role)
+
+    # Auto-assign personal family org based on surname
+    name_parts = npc["name"].strip().split()
+    if len(name_parts) >= 2:
+        surname = name_parts[-1]
+        if len(surname) > 2:
+            family_org_id = _get_family(conn, surname)
+            _add_member(conn, organization_id=family_org_id, member_type="npc",
+                        member_id=npc_id, role="family member")
+
+
+ORG_ELIGIBILITY: dict[str, dict] = {
+    "New Orleans Athletic Club": {
+        "race": ["white"],
+        "gender": ["male"],
+        "min_rep": 40,
+        "rejection": "The doorman looks at you and looks away. You are not the kind of person they invite.",
+    },
+    "Knights of Columbus": {
+        "gender": ["male"],
+        "rejection": "The Knights are a fraternal order for Catholic men. That door isn't open to you.",
+    },
+    "Treme Social Aid and Pleasure Club": {
+        "race": ["black", "creole"],
+        "rejection": "The club is community. You're not part of this community.",
+    },
+    "Colored Longshoremen's Association": {
+        "race": ["black", "creole"],
+        "rejection": "The CLA is for Black dockworkers. That's not you.",
+    },
+    "Rossi Crime Family": {
+        "min_chaos": 10,
+        "rejection": "The Rossi family has no use for someone who plays by the rules.",
+    },
+    "Castellano Crime Family": {
+        "min_chaos": 5,
+        "rejection": "Castellano needs people who are willing to get their hands dirty. You're too clean.",
+    },
+    "International Longshoremen's Association Local 231": {
+        "tags": ["dockworker", "union", "labor"],
+        "rejection": "The ILA is for dock workers. Get a union card first.",
+    },
+    "Orleans Parish Judiciary": {
+        "rejection": "Judgeships are appointed, not applied for.",
+    },
+    "Louisiana State Government": {
+        "rejection": "State office requires election or appointment. Not a walk-in.",
+    },
+}
+
+
+def check_org_eligibility(
+    conn,
+    org_name: str,
+    player: dict,
+    eligibility: dict | None = None,
+) -> str | None:
+    """Return a rejection message if the player fails hard eligibility gates, else None."""
+    if eligibility is None:
+        eligibility = ORG_ELIGIBILITY
+    gates = eligibility.get(org_name)
+    if not gates:
+        return None
+
+    if set(gates.keys()) == {"rejection"}:
+        return gates["rejection"]
+
+    race = (player.get("race") or "unspecified").lower()
+    gender = (player.get("gender") or "unspecified").lower()
+    law_chaos = player.get("law_chaos") or 0
+    rep = player.get("reputation") or 100
+
+    if "race" in gates and race not in [r.lower() for r in gates["race"]]:
+        return gates.get("rejection", "They don't take your kind.")
+    if "gender" in gates and gender not in [g.lower() for g in gates["gender"]]:
+        return gates.get("rejection", "They don't take your kind.")
+    if "min_chaos" in gates and law_chaos < gates["min_chaos"]:
+        return gates.get("rejection", "You're too straight for this outfit.")
+    if "max_chaos" in gates and law_chaos > gates["max_chaos"]:
+        return gates.get("rejection", "You're too wild for this outfit.")
+    if "min_rep" in gates and rep < gates["min_rep"]:
+        return gates.get("rejection", "Your reputation isn't good enough.")
+    if "tags" in gates:
+        from noir.persistence.repository import get_street_reputation as _get_rep
+        rep_data = _get_rep(conn)
+        player_tags = [t.lower() for t in rep_data.get("tags", [])]
+        if not any(t in player_tags for t in [x.lower() for x in gates["tags"]]):
+            return gates.get("rejection", "You don't have the right background.")
+    return None
+
+
 class Game:
 
     def __init__(self, *, conn: sqlite3.Connection, llm: LLMBackend):
@@ -223,6 +814,7 @@ class Game:
         self._pending_gen_thread: threading.Thread | None = None
 
     def setup_fixed_locations(self) -> dict[str, int]:
+        from noir.organizations import seed_location_org_links
         existing = {loc["name"]: loc["id"] for loc in get_fixed_locations(self.conn)}
         result = {}
         for name, desc in FIXED_LOCATIONS:
@@ -231,6 +823,7 @@ class Game:
             else:
                 loc_id = existing[name]
             result[name] = loc_id
+        seed_location_org_links(self.conn)
         return result
 
     def _ensure_seeded_locations(self) -> None:
@@ -302,6 +895,17 @@ class Game:
             loc_id = create_location(self.conn, name=loc_name, description=desc,
                                      is_fixed=False, case_id=case_id)
             loc_map[loc_name] = loc_id
+            if isinstance(loc, dict):
+                for org_name in loc.get("organizations", []):
+                    org_row = self.conn.execute(
+                        "SELECT id FROM organizations WHERE name=?", (org_name,)
+                    ).fetchone()
+                    if org_row:
+                        self.conn.execute(
+                            "INSERT OR IGNORE INTO location_organizations (location_id, organization_id) VALUES (?, ?)",
+                            (loc_id, org_row["id"])
+                        )
+        self.conn.commit()
 
         found_at = case_data.get("victim", {}).get("found_at", "").lower()
         npc_locs = {k: v for k, v in loc_map.items() if k.lower() != found_at} or loc_map
@@ -404,6 +1008,10 @@ class Game:
                         enrich_npc(bg_conn, bg_llm, npc_id)
                     except Exception:
                         pass
+                    try:
+                        _assign_npc_organizations(bg_conn, bg_llm, npc_id)
+                    except Exception:
+                        pass
             finally:
                 bg_conn.close()
 
@@ -434,6 +1042,7 @@ class Game:
         self.active_case_id = case_id
 
         self._seed_case_locations_and_npcs(case_id, case_data, fixed)
+        self._seed_fixed_npcs(case_id)
         self._start_background_enrichment(case_id)
 
         console.print(f"\n[bold red]NEW CASE: {case_data['title']}[/bold red]")
@@ -479,20 +1088,24 @@ class Game:
             return
         self.current_location_id = loc["id"]
         set_character_location(self.conn, character_id="player", location_id=loc["id"])
+        advance_game_time(self.conn, delta=30)
         npcs = self.world.get_npcs_at(loc["id"])
         npc_names = [npc["name"] for npc in npcs]
 
         if self.companion:
             import json as _json
-            body_note = "The victim's body has been removed to the morgue."
+            body_note = "The victim's body has been taken to the City Morgue."
             if self.active_case_id:
                 case = get_case(self.conn, self.active_case_id)
                 if case:
                     cd = _json.loads(case["case_data"])
                     victim = cd.get("victim", {})
                     found_at = victim.get("found_at")
-                    if found_at:
-                        body_note = f"The victim's body was found here at {found_at} and has been removed to the morgue."
+                    body_loc = cd.get("body_location", "City Morgue")
+                    if body_loc == "crime scene" and found_at and loc["name"].lower() == found_at.lower():
+                        body_note = f"The body of {victim.get('name', 'the victim')} is still here."
+                    elif found_at:
+                        body_note = f"The victim's body was found here and has been taken to the City Morgue."
             npc_hint = f" {npc_names[0]} is here." if npc_names else ""
             arrival_prompt = (
                 f"[Physical setting: you are both INSIDE {loc['name']}. {loc['description']}"
@@ -506,12 +1119,18 @@ class Game:
             with travel_status():
                 arrival = self.companion.narrate(arrival_prompt)
             self.llm.suppress_status = False
-        else:
+            loc_orgs = [r["name"] for r in get_organizations_for_location(self.conn, loc["id"])]
             show_travel_animation()
+            show_location_rule()
+            show_location(loc["name"], loc["description"], npc_names,
+                          game_time=get_game_time(self.conn), orgs=loc_orgs)
+        else:
+            loc_orgs = [r["name"] for r in get_organizations_for_location(self.conn, loc["id"])]
+            show_travel_animation()
+            show_location_rule()
+            show_location(loc["name"], loc["description"], npc_names,
+                          game_time=get_game_time(self.conn), orgs=loc_orgs)
             arrival = None
-
-        show_location(loc["name"], loc["description"], npc_names,
-                      game_time=get_game_time(self.conn))
         if loc["name"] == "The Rusty Anchor":
             order = console.input("[dim]Order a drink? (y/n):[/dim] ").strip().lower()
             if order in ("y", "yes"):
@@ -538,6 +1157,16 @@ class Game:
                     npc_row = next((n for n in npcs if word in n["name"].lower()), None)
                     if npc_row:
                         break
+        if npc_row is not None and self.world is not None:
+            all_locs = self.world.list_locations()
+            loc_name_to_id = {loc["name"]: loc["id"] for loc in all_locs}
+            game_time = get_game_time(self.conn)
+            resolved_loc_id = self.world._resolve_npc_location_id(npc_row, game_time, loc_name_to_id)
+            if resolved_loc_id != self.current_location_id:
+                loc = get_location(self.conn, resolved_loc_id) if resolved_loc_id else None
+                where = f" They're at {loc['name']}." if loc else ""
+                console.print(f"[dim]{npc_row['name']} isn't here.{where}[/dim]")
+                return
         if npc_row is None:
             if self.companion:
                 result = self.companion.interpret(
@@ -573,9 +1202,42 @@ class Game:
             loc = get_location(self.conn, self.current_location_id)
             if loc:
                 loc_ctx = f"[You are currently at {loc['name']}. {loc['description']} Stay grounded in this location.] "
+        if self.active_case_id:
+            import json as _j
+            case = get_case(self.conn, self.active_case_id)
+            if case:
+                cd = _j.loads(case["case_data"])
+                victim = cd.get("victim", {})
+                loc_ctx += (
+                    f"[ACTIVE CASE the detective is working: \"{case['title']}\" — "
+                    f"victim: {victim.get('name', 'Unknown')}, "
+                    f"cause of death: {victim.get('cause_of_death', 'unknown')}, "
+                    f"found at: {victim.get('found_at', 'unknown')}. "
+                    f"When the detective asks about this case or this victim, respond with knowledge relevant to this investigation.] "
+                )
+                if npc_row["name"] == "Dr. Randolph Frazier":
+                    body_loc = cd.get("body_location", "City Morgue")
+                    body_clues = cd.get("body_clues", [])
+                    clue_text = (
+                        f" Body findings: {'; '.join(body_clues)}."
+                        if body_clues else " No forensic findings beyond cause of death."
+                    )
+                    loc_ctx += (
+                        f"[FORENSIC DETAIL — body at: {body_loc}.{clue_text}] "
+                    )
         show_conversation_header(npc_row["name"])
         while True:
-            player_input = console.input(f"[bold cyan]{npc_row['name']}[/bold cyan] [bold white]>[/bold white] ")
+            _rel_stage = _affection_to_stage(
+                get_npc_affection(self.conn, npc_row["id"])
+            ) if get_npc_affection(self.conn, npc_row["id"]) > 0 else None
+            try:
+                player_input = npc_input_prompt(
+                    npc_name=npc_row["name"],
+                    role=npc_row["role"],
+                    rel_stage=_rel_stage,
+                )
+            except (EOFError, KeyboardInterrupt):
+                break
             if player_input.strip().startswith("!"):
                 self._handle_feedback(player_input.strip())
                 continue
@@ -608,32 +1270,61 @@ class Game:
                     self.handle_talk(cmd.target)
                     show_conversation_header(npc_row["name"])
                     continue
+            if cmd.intent == Intent.COLLECT:
+                if self.current_location_id and self.case_manager:
+                    result = self.case_manager.validate_and_collect(
+                        description=cmd.target,
+                        location_id=self.current_location_id,
+                        source_npc_id=npc_row["id"],
+                    )
+                    if result["ok"]:
+                        show_evidence_collected(result["description"])
+                    elif self.companion:
+                        _evidence_rejection_quip(self.companion.name, "Already collected" in result["message"], result.get("reason"))
+                continue
             if cmd.intent == Intent.FLIRT:
                 self._handle_npc_flirt(npc_row["id"])
             state_ctx = self._player_state_context()
             identity_ctx = self._player_identity_context()
             rel_ctx = self._npc_relationship_context(npc_row["id"])
-            ctx = loc_ctx + identity_ctx + (state_ctx or "") + (others_ctx or "") + rel_ctx
-            response = npc.speak(ctx + player_input)
-            show_dialogue(npc_row["name"], response)
-            self._check_npc_appointment(npc_row["id"], npc_row["name"], player_input, response)
-            self._check_npc_romance_milestone(npc_row["id"], npc)
+            rep_ctx = self._street_rep_context()
+            org_ctx = self._npc_org_context(npc_row["id"])
+            rev_summary = get_npc_revelation_summary(self.conn, npc_row["id"])
+            rev_ctx = (
+                f"[Earlier in this conversation you already admitted: \"{rev_summary}\". "
+                f"This is part of your history with this detective — do not forget or contradict it.] "
+            ) if rev_summary else ""
+            ctx = loc_ctx + identity_ctx + (state_ctx or "") + (others_ctx or "") + rel_ctx + rep_ctx + org_ctx + rev_ctx
             psychology = get_npc_psychology(self.conn, npc_row["id"])
-            events = classify_events(self.llm, player_input, response)
+            events = classify_events(self.llm, player_input, "")
             update_npc_state(self.conn, npc_row["id"], events, psychology)
-            psychology = get_npc_psychology(self.conn, npc_row["id"])  # re-fetch for accurate combined score
-            revelation = _check_npc_revelation(
+            psychology = get_npc_psychology(self.conn, npc_row["id"])
+            revelation_prompt = _check_npc_revelation(
                 self.conn, self.llm, npc_row["id"], self.active_case_id,
                 npc_row["name"], events, psychology
             )
-            if revelation:
-                show_dialogue(npc_row["name"], revelation)
+            speak_input = ctx + player_input
+            if revelation_prompt:
+                speak_input = speak_input + "\n\n" + revelation_prompt
+            response = npc.speak(speak_input)
+            show_dialogue(npc_row["name"], response)
+            if revelation_prompt and "already admitted" in revelation_prompt:
+                # Restatement turn — NPC was forced to say it plainly, store this version
+                set_npc_revelation_summary(self.conn, npc_row["id"], response[:500])
+            advance_game_time(self.conn, delta=5)
+            self._check_npc_bribe_offer(npc_row, response)
+            self._check_npc_appointment(npc_row["id"], npc_row["name"], player_input, response)
+            self._check_npc_romance_milestone(npc_row["id"], npc)
+            # Re-classify events with the actual response now that it's available
+            events = classify_events(self.llm, player_input, response)
+            update_npc_state(self.conn, npc_row["id"], events, psychology)
         show_conversation_footer(npc_row["name"])
         if self.current_location_id is not None:
             self._observations.setdefault(self.current_location_id, []).append(
                 f"spoke with {npc_row['name']} ({npc_row['role']})"
             )
         self._extract_dossier_facts(npc_row["name"], npc_row["id"])
+        self._extract_leads(npc_row["name"], npc_row["id"])
 
     def _companion_context(self, player_input: str) -> str:
         import json as _json
@@ -678,11 +1369,13 @@ class Game:
                 victim = cd.get("victim", {})
                 locations = [l["name"] for l in cd.get("locations", [])]
                 found_at = victim.get("found_at")
-                body_note = (
-                    f"Body was found at {found_at} and has been removed to the morgue."
-                    if found_at else
-                    "The victim's body has been removed to the morgue."
-                )
+                body_loc = cd.get("body_location", "City Morgue")
+                if body_loc == "crime scene" and found_at:
+                    body_note = f"Body is still at the crime scene ({found_at}) — not yet removed."
+                elif found_at:
+                    body_note = f"Body was found at {found_at} and has been taken to the City Morgue."
+                else:
+                    body_note = "The victim's body has been taken to the City Morgue."
                 suspect_notes = []
                 for s in cd.get("suspects", []):
                     rels = s.get("relationships", [])
@@ -714,9 +1407,14 @@ class Game:
         if self.current_location_id:
             obs = self._observations.get(self.current_location_id, [])
             if obs:
-                context_parts.append(f"What you've examined here: {' | '.join(obs[-4:])}")
+                context_parts.append(
+                    f"What you've examined here (atmospheric observations only — "
+                    f"do not reference any specific object from these as physically present or collectible "
+                    f"unless it also appears in the collectible evidence list): {' | '.join(obs[-4:])}"
+                )
         if self.active_case_id:
             evidence = get_evidence_for_case(self.conn, self.active_case_id)
+            collected_ids = {e["clue_id"] for e in evidence}
             if evidence:
                 ev_list = "; ".join(e["description"] for e in evidence)
                 context_parts.append(
@@ -724,6 +1422,25 @@ class Game:
                 )
             else:
                 context_parts.append("Formally collected evidence: none yet")
+            if self.current_location_id:
+                loc = get_location(self.conn, self.current_location_id)
+                loc_name = loc["name"] if loc else ""
+                clues = get_clues_for_case(self.conn, self.active_case_id)
+                here = [
+                    c["description"] for c in clues
+                    if c["location"].lower() == loc_name.lower()
+                    and c["id"] not in collected_ids
+                ]
+                if here:
+                    context_parts.append(
+                        f"Items here that can be collected as evidence: {'; '.join(here)}. "
+                        f"ONLY these items are collectible. Do not suggest collecting anything else."
+                    )
+                else:
+                    context_parts.append(
+                        "There are no collectible evidence items at this location. "
+                        "Do not suggest the detective collect or bag anything here."
+                    )
         states = get_player_states(self.conn)
         if states:
             intensity_map = {1: "slightly", 2: "noticeably", 3: "severely"}
@@ -732,6 +1449,8 @@ class Game:
                 for s in states
             ]
             context_parts.append(f"Detective's condition: {', '.join(state_descs)}. React naturally to this.")
+        else:
+            context_parts.append("Detective's condition: normal. They are fully sober and clear-headed — do not reference any prior intoxication.")
 
         ctx_block = f"[{' | '.join(context_parts)}] " if context_parts else ""
         return romance_ctx + " " + self._partner_identity_context() + ctx_block + player_input
@@ -791,6 +1510,55 @@ class Game:
         descs = [f"{intensity_map.get(s['intensity'], '')} {s['state']}".strip() for s in states]
         return f"[Detective's condition: {', '.join(descs)}. React naturally to this.] "
 
+    def _npc_org_context(self, npc_id: int) -> str:
+        orgs = get_organizations_for_npc(self.conn, npc_id)
+        if not orgs:
+            return ""
+        player = get_player(self.conn)
+        detective_race = player["race"] if player and player["race"] != "unspecified" else ""
+        detective_gender = player["gender"] if player and player["gender"] != "unspecified" else ""
+        rep = get_street_reputation(self.conn)
+        rep_tags = rep.get("tags", [])
+
+        org_lines = []
+        for o in orgs:
+            role = o["role"] or "member"
+            desc_snippet = o["description"][:150] if o["description"] else ""
+            org_lines.append(
+                f"{o['name']} (your role: {role}; {desc_snippet})"
+            )
+
+        attitude_note = ""
+        if detective_race or detective_gender:
+            identity = " ".join(p for p in [detective_gender, detective_race] if p)
+            attitude_note = (
+                f"The detective is a {identity}. "
+                "Consider what your organizational loyalties mean for how you treat them — "
+                "some orgs protect their own from police scrutiny; some are hostile to outsiders; "
+                "some have reason to cooperate. Let your affiliation shape your posture, not override your character. "
+            )
+        if rep_tags:
+            attitude_note += f"The detective's street reputation: {', '.join(rep_tags)}. "
+
+        return (
+            f"[Your organizational affiliations:\n" +
+            "\n".join(f"  - {l}" for l in org_lines) +
+            f"\n{attitude_note}] "
+        )
+
+    def _street_rep_context(self) -> str:
+        rep = get_street_reputation(self.conn)
+        tags = rep.get("tags", [])
+        if not tags:
+            return ""
+        tag_str = ", ".join(f'"{t}"' for t in tags)
+        return (
+            f"[This detective's street reputation — what people in this city say about them: {tag_str}. "
+            f"If you've heard of this detective (likely for anyone connected to the criminal world or street life), "
+            f"you may reference this reputation in how you open or respond to them. "
+            f"If you wouldn't have heard of them, ignore this.] "
+        )
+
     def handle_slash_status(self, raw: str) -> None:
         parts = raw.strip().split(None, 2)
         if len(parts) == 1:
@@ -815,9 +1583,19 @@ class Game:
             console.print("[dim]Your partner isn't here right now.[/dim]")
             return
         show_conversation_header(self.companion.name)
+        _partner_stage = _affection_to_stage(
+            get_partner_affection(self.conn), is_partner=True
+        )
         first = True
         while True:
-            player_input = console.input(f"[bold cyan]{self.companion.name}[/bold cyan] [bold white]>[/bold white] ")
+            try:
+                player_input = npc_input_prompt(
+                    npc_name=self.companion.name,
+                    role="partner",
+                    rel_stage=_partner_stage,
+                )
+            except (EOFError, KeyboardInterrupt):
+                break
             if player_input.strip().startswith("!"):
                 self._handle_feedback(player_input.strip())
                 continue
@@ -829,6 +1607,18 @@ class Game:
             if _is_exit(player_input):
                 break
             cmd = parse_command(player_input)
+            if cmd.intent == Intent.COLLECT:
+                if self.current_location_id and self.case_manager:
+                    result = self.case_manager.validate_and_collect(
+                        description=cmd.target,
+                        location_id=self.current_location_id,
+                        source_npc_id=None,
+                    )
+                    if result["ok"]:
+                        show_evidence_collected(result["description"])
+                    else:
+                        _evidence_rejection_quip(self.companion.name, "Already collected" in result["message"], result.get("reason"))
+                continue
             if cmd.intent == Intent.FLIRT:
                 self._handle_partner_flirt()
             self._check_partner_romance_milestone()
@@ -888,6 +1678,47 @@ class Game:
         npc_names = [n["name"] for n in npcs]
         is_case_location = loc["is_fixed"] == 0
 
+        collectible_clues = []
+        if self.active_case_id:
+            from noir.persistence.repository import get_clues_for_case, get_evidence_for_case
+            evidence = get_evidence_for_case(self.conn, self.active_case_id)
+            collected_ids = {e["clue_id"] for e in evidence}
+            all_clues = get_clues_for_case(self.conn, self.active_case_id)
+            collectible_clues = [
+                c["description"] for c in all_clues
+                if c["location"].lower() == loc["name"].lower()
+                and c["id"] not in collected_ids
+            ]
+
+        target_clues = [
+            c for c in collectible_clues
+            if target and target.lower() in c.lower()
+        ] if target else []
+
+        clue_instruction = ""
+        if target_clues:
+            clue_instruction = (
+                f"\n\nCRITICAL: The detective is examining '{target}'. "
+                f"The following observable facts about this subject MUST appear in your description: {'; '.join(target_clues)}. "
+                "Describe exactly what the detective can see — do not omit or soften these details. "
+                "Other collectible evidence at this location: "
+                + ('; '.join(c for c in collectible_clues if c not in target_clues) or 'none')
+                + ". Do NOT invent additional collectible-looking items."
+            )
+        elif collectible_clues:
+            clue_instruction = (
+                f"\n\nACTUAL COLLECTIBLE EVIDENCE at this location: {'; '.join(collectible_clues)}. "
+                "Weave these specific items into your description — describe what the detective observes about them. "
+                "Do NOT invent additional collectible-looking items beyond these. "
+                "Atmospheric details are fine; only these items should read as physically present and examinable."
+            )
+        else:
+            clue_instruction = (
+                "\n\nThere is no collectible evidence at this location. "
+                "Do not describe any object in a way that implies it can be picked up or bagged as evidence. "
+                "Atmospheric observation only."
+            )
+
         system_prompt = (
             "You are the narrator of an absurdist noir detective game set in Noirleans, 1935. The Great Depression hangs over everything like a wet coat. "
             "Describe what the detective notices when examining their surroundings or a specific object. "
@@ -901,9 +1732,8 @@ class Game:
             "CRITICAL: Never describe the inner states, feelings, or thoughts of other characters. "
             "No 'she feels', 'he senses', 'they wonder', 'it makes him feel like'. "
             "You only report what the detective can see, hear, smell, or touch — never what others experience internally. "
-            "If this is a crime scene or case-specific location, name 2-3 concrete things "
-            "worth examining more closely (the player can then 'examine [thing]' or 'pick up [thing]'). "
             "3-5 sentences maximum. No speaker attribution — pure narration."
+            + clue_instruction
         )
         prior = self._observations.get(self.current_location_id, [])
         prior_ctx = ("\nPreviously examined here:\n" + "\n".join(f"- {o}" for o in prior[-4:])) if prior else ""
@@ -923,20 +1753,66 @@ class Game:
             self._observations.setdefault(loc_id, []).append(f"{label}: {response}")
 
     def _seed_fixed_npcs(self, case_id: int) -> None:
+        from noir.persistence.repository import (
+            get_organization_by_name as _get_org,
+            add_organization_member as _add_member,
+        )
         fixed = {loc["name"]: loc["id"] for loc in get_fixed_locations(self.conn)}
-        existing = {n["name"] for n in get_npcs_for_case(self.conn, case_id)}
         for fnpc in FIXED_LOCATION_NPCS:
-            if fnpc["name"] in existing:
+            existing = self.conn.execute(
+                "SELECT id FROM npcs WHERE name=? AND case_id IS NULL", (fnpc["name"],)
+            ).fetchone()
+            corruption = fnpc.get("corruption", 0)
+            if existing:
+                npc_id = existing["id"]
+                self.conn.execute(
+                    "UPDATE npcs SET corruption=? WHERE id=?", (corruption, npc_id)
+                )
+                self.conn.commit()
+            else:
+                loc_id = fixed.get(fnpc["location"])
+                if not loc_id:
+                    continue
+                npc_id = create_npc(self.conn, case_id=None, name=fnpc["name"],
+                                    role=fnpc["role"], system_prompt=fnpc["system_prompt"],
+                                    current_location_id=loc_id, corruption=corruption)
+            if fnpc.get("org"):
+                org = _get_org(self.conn, fnpc["org"])
+                if org:
+                    _add_member(self.conn, organization_id=org["id"], member_type="npc",
+                                member_id=npc_id, role=fnpc.get("org_role"), is_static=True)
+
+        _BAR_KEYWORDS = ("bar", "lounge", "saloon", "club", "speakeasy", "tavern", "cabaret")
+        _BARTENDER_NAMES = [
+            "Mickey", "Ray", "Sal", "Eddie", "Frank", "Pete", "Gus", "Dutch", "Benny", "Joe"
+        ]
+        case_locs = get_locations_for_case(self.conn, case_id)
+        used_names = {n["name"] for n in get_npcs_for_case(self.conn, case_id)}
+        for loc in case_locs:
+            if not any(kw in loc["name"].lower() for kw in _BAR_KEYWORDS):
                 continue
-            loc_id = fixed.get(fnpc["location"])
-            if loc_id:
-                create_npc(self.conn, case_id=case_id, name=fnpc["name"],
-                           role=fnpc["role"], system_prompt=fnpc["system_prompt"],
-                           current_location_id=loc_id)
+            npcs_here = [n for n in get_npcs_for_case(self.conn, case_id)
+                         if n["current_location_id"] == loc["id"]]
+            if npcs_here:
+                continue
+            name = next((n for n in _BARTENDER_NAMES if n not in used_names),
+                        _BARTENDER_NAMES[0])
+            used_names.add(name)
+            prompt = (
+                f"You are {name}, the bartender at {loc['name']} in Noirleans, 1935. "
+                "You've worked this bar long enough to know every regular by their poison and their problem. "
+                "You're not a gossip — but you miss nothing, and if someone asks the right question the right way, "
+                "you'll answer it. You speak in short, direct sentences. You're cleaning a glass when they walk in."
+            )
+            create_npc(self.conn, case_id=case_id, name=name,
+                       role="bartender", system_prompt=prompt,
+                       current_location_id=loc["id"])
 
     def _dispatch_slash(self, raw: str) -> None:
         slug = raw.strip().lower()
-        if slug == "/locations":
+        if slug == "/location":
+            self.handle_slash_look()
+        elif slug == "/locations":
             self.handle_slash_locations()
         elif slug == "/leads":
             self.handle_slash_leads()
@@ -956,6 +1832,18 @@ class Game:
             self.handle_slash_who(raw.strip())
         elif slug in ("/help", "help"):
             show_help()
+        elif slug == "/drink":
+            self.handle_slash_drink()
+        elif slug == "/rep":
+            self.handle_slash_rep()
+        elif slug.startswith("/bribe"):
+            target = raw.strip()[6:].strip()
+            self.handle_bribe(target)
+        elif slug.startswith("/join"):
+            org_name = raw.strip()[5:].strip()
+            self.handle_join_org(org_name)
+        elif slug == "/me":
+            self.handle_me()
         elif slug.startswith("/romance"):
             self.handle_slash_romance()
         elif slug.startswith("/cases"):
@@ -1000,8 +1888,8 @@ class Game:
                 )
                 if result["ok"]:
                     show_evidence_collected(result["description"])
-                else:
-                    console.print(f"[dim]{result['message']}[/dim]")
+                elif self.companion:
+                    _evidence_rejection_quip(self.companion.name, "Already collected" in result["message"], result.get("reason"))
         elif slug.startswith("/link "):
             self.handle_slash_link(raw.strip())
         elif slug.startswith("/arrest "):
@@ -1060,6 +1948,21 @@ class Game:
             return
         new_gt = advance_game_time(self.conn, delta=delta)
 
+        # Org payroll
+        for payout in collect_org_payroll(self.conn, new_gt):
+            console.print(f"[dim]Your cut from {payout['org_name']} arrives. ${payout['amount']}.[/dim]")
+
+        # Sober up: 1 drink wears off per hour waited
+        drunk = next((s for s in get_player_states(self.conn) if s["state"] == "drunk"), None)
+        if drunk:
+            hours_waited = delta // 60
+            new_intensity = max(0, drunk["intensity"] - hours_waited)
+            if new_intensity == 0:
+                remove_player_state(self.conn, state="drunk")
+                console.print("[dim]The fog lifts. You're sober.[/dim]")
+            else:
+                add_player_state(self.conn, state="drunk", intensity=new_intensity)
+
         # Resolve which NPCs moved and show it
         movements = []
         if self.active_case_id and self.world:
@@ -1087,6 +1990,9 @@ class Game:
         if npc:
             set_character_location(self.conn, character_id=f"npc_{npc['id']}", location_id=location_id)
 
+    def _assign_npc_organizations(self, conn, llm, npc_id: int) -> None:
+        _assign_npc_organizations(conn, llm, npc_id)
+
     def _extract_dossier_facts(self, npc_name: str, npc_id: int) -> None:
         if not self.active_case_id:
             return
@@ -1098,17 +2004,154 @@ class Game:
             f"{'Detective' if m['role'] == 'user' else npc_name}: {m['content']}"
             for m in history[-20:]
         )
-        result = self.llm.query_structured(
-            "Extract specific, concrete facts the detective just learned about this person from the conversation. "
-            "Include: locations they mentioned, times/plans, admissions, contradictions, relationships, anything investigatively useful. "
-            "Skip generic pleasantries. Each fact should be a single sentence. "
-            "Return ONLY valid JSON: {\"facts\": [\"string\", ...]} — empty list if nothing new was learned.",
-            [],
-            f"Person: {npc_name}\n\nConversation:\n{transcript}"
-        )
+        try:
+            result = self.llm.query_structured(
+                "Extract up to 5 specific facts the detective just learned about this person. "
+                "Include admissions, locations, times, relationships, contradictions. "
+                "Each fact: one short sentence, under 15 words. Skip pleasantries. "
+                "Return ONLY valid JSON: {\"facts\": [\"string\", ...]} — empty list if nothing new.",
+                [],
+                f"Person: {npc_name}\n\nConversation:\n{transcript}"
+            )
+        except SystemExit:
+            import logging as _log; _log.getLogger(__name__).warning("Dossier extraction failed for %s", npc_name)
+            return
         facts = result.get("facts", [])
         if facts:
             add_dossier_facts(self.conn, case_id=self.active_case_id, npc_name=npc_name, facts=facts)
+
+    def _extract_leads(self, npc_name: str, npc_id: int) -> None:
+        if not self.active_case_id:
+            return
+        from noir.persistence.repository import get_history as _get_history
+        history = _get_history(self.conn, character_id=f"npc_{npc_id}", case_id=self.active_case_id)
+        if not history:
+            return
+        transcript = "\n".join(
+            f"{'Detective' if m['role'] == 'user' else npc_name}: {m['content']}"
+            for m in history[-20:]
+        )
+        try:
+            result = self.llm.query_structured(
+                "Extract up to 4 actionable investigative leads from this conversation. "
+                "Only include leads explicitly suggested by this NPC's words. Do not invent. "
+                "Each lead: one short sentence under 12 words, starting with a verb (Talk to, Go to, Find, Check). "
+                "Return ONLY valid JSON: {\"leads\": [\"string\", ...]} — empty list if none.",
+                [],
+                f"Source NPC: {npc_name}\n\nConversation:\n{transcript}"
+            )
+        except SystemExit:
+            import logging as _log; _log.getLogger(__name__).warning("Lead extraction failed for %s", npc_name)
+            return
+        for lead_text in result.get("leads", []):
+            add_lead(self.conn, case_id=self.active_case_id,
+                     description=lead_text, source_npc=npc_name)
+
+    def _handle_org_succession(self, convicted_npc_id: int) -> None:
+        """Handle leadership succession when a convicted NPC held a leadership role."""
+        try:
+            from noir.persistence.db import get_connection as _gc
+            from noir.persistence.repository import (
+                get_organizations_for_npc as _get_npc_orgs,
+                get_members_of_organization as _get_members,
+                update_member_role as _update_role,
+                add_organization_member as _add_member,
+            )
+            conn = _gc()
+            try:
+                orgs = _get_npc_orgs(conn, convicted_npc_id)
+                for org in orgs:
+                    if not org["is_hierarchical"]:
+                        continue
+                    role = (org["role"] or "").lower()
+                    leadership_terms = {"boss", "leader", "president", "chief", "head", "don",
+                                        "patriarch", "matriarch", "captain", "director"}
+                    if not any(t in role for t in leadership_terms):
+                        continue
+
+                    # Find next-highest member (not the convicted one)
+                    members = _get_members(conn, org["id"])
+                    candidates = [
+                        m for m in members
+                        if m["member_type"] == "npc" and m["member_id"] != convicted_npc_id
+                    ]
+                    if not candidates:
+                        continue
+
+                    # Promote first candidate (could be smarter — by existing role seniority)
+                    successor = candidates[0]
+                    old_role = successor["role"] or "member"
+                    _update_role(conn, organization_id=org["id"],
+                                 member_type="npc", member_id=successor["member_id"],
+                                 role=org["role"])  # inherit the leader's role
+
+                    import logging as _log
+                    _log.getLogger(__name__).info(
+                        "Org succession: %s → %s takes leadership of %s",
+                        convicted_npc_id, successor["member_id"], org["name"]
+                    )
+
+                    # Spin up a new NPC to fill the successor's vacated role (async)
+                    _create_replacement_npc(conn, self.llm, org["id"], old_role, org["name"])
+            finally:
+                conn.close()
+        except Exception:
+            import logging as _log
+            _log.getLogger(__name__).warning("Org succession failed", exc_info=True)
+
+    def _update_street_rep(self, case_id: int, was_correct: bool) -> None:
+        """Regenerate street reputation tags based on playstyle after a case closes."""
+        try:
+            player = get_player(self.conn)
+            cases_solved = player["cases_solved"] if player else 0
+            wrong_arrests = player["wrong_arrests"] if player else 0
+
+            # Aggregate pressure/guilt/revelation data from npc_relationships for this case
+            npcs = get_npcs_for_case(self.conn, case_id)
+            pressure_total, guilt_total, revelations = 0, 0, 0
+            for npc in npcs:
+                rel = self.conn.execute(
+                    "SELECT pressure_score, guilt, revelation_stage FROM npc_relationships WHERE npc_id=?",
+                    (npc["id"],)
+                ).fetchone()
+                if rel:
+                    pressure_total += rel["pressure_score"] or 0
+                    guilt_total += rel["guilt"] or 0
+                    revelations += rel["revelation_stage"] or 0
+
+            existing = get_street_reputation(self.conn)
+            existing_tags = existing.get("tags", [])
+
+            prompt = (
+                f"A noir detective just closed a case in 1935 Noirleans.\n\n"
+                f"Outcome: {'correct arrest' if was_correct else 'wrong arrest'}\n"
+                f"Career: {cases_solved} cases solved, {wrong_arrests} wrong arrests\n"
+                f"Interrogation style this case:\n"
+                f"  - Total pressure applied: {pressure_total} (0=none, 100+=brutal)\n"
+                f"  - Total guilt leveraged: {guilt_total} (0=none, 100+=heavy)\n"
+                f"  - Revelations extracted: {revelations}\n"
+                f"Existing reputation tags: {', '.join(existing_tags) if existing_tags else 'none yet'}\n\n"
+                "Generate or update the detective's street reputation. "
+                "Reputation is 2–4 short evocative tags (2–3 words each) that capture HOW they work, "
+                "not just whether they succeed. Examples: 'brutal interrogator', 'friend to the downtrodden', "
+                "'gets results', 'doesn't mind the wrong man'. Let behavior dominate over outcomes. "
+                "Also write one sentence (street_says) of what people on the street are whispering about this detective — "
+                "in noir voice, first-person plural ('They say...', 'Word is...'). "
+                'Return JSON: {"tags": ["tag1", "tag2", ...], "street_says": "string"}'
+            )
+            result = self.llm.query_structured(
+                "You generate noir street reputation descriptions based on a detective's behavior patterns. "
+                "Return ONLY valid JSON.",
+                [],
+                prompt
+            )
+            tags = result.get("tags", existing_tags)
+            street_says = result.get("street_says", existing.get("street_says", ""))
+            if tags:
+                update_street_reputation(self.conn, tags=tags, street_says=street_says)
+        except Exception:
+            import logging as _log
+            _log.getLogger(__name__).warning("Street rep update failed", exc_info=True)
 
     def _handle_feedback(self, raw: str) -> None:
         text = raw.lstrip("!").strip()
@@ -1125,36 +2168,18 @@ class Game:
             case = get_case(self.conn, self.active_case_id)
             if case:
                 case_title = case["title"]
-        show_locations(list(fixed), list(case_locs), case_title)
-        if self.companion is None:
-            return
-        all_loc_names = [l["name"] for l in list(fixed) + list(case_locs)]
-        loc_context = (
-            f"[Known locations: {', '.join(all_loc_names)}. "
-            f"{'Active case: ' + case_title + '.' if case_title else 'No active case.'} "
-            f"The detective is asking about these locations.] "
-        )
-        console.print(f"[bold]{self.companion.name}:[/bold] [dim](done / bye to leave)[/dim]\n")
-        while True:
-            player_input = console.input("[bold white]>[/bold white] ")
-            if player_input.strip().startswith("!"):
-                self._handle_feedback(player_input.strip())
-                continue
-            if _is_exit(player_input):
-                break
-            response = self.companion.speak(loc_context + player_input)
-            show_dialogue(self.companion.name, response)
+        cur_loc = get_location(self.conn, self.current_location_id) if self.current_location_id else None
+        show_locations(list(fixed), list(case_locs), case_title,
+                       current_location=cur_loc["name"] if cur_loc else None)
 
     def handle_slash_leads(self) -> None:
         if self.active_case_id is None:
             console.print("[dim]No active case.[/dim]")
             return
-        import json as _json
-        case = get_case(self.conn, self.active_case_id)
-        cd = _json.loads(case["case_data"])
-        clues = [c["description"] for c in cd.get("clues", []) if not c.get("is_red_herring")]
+        leads = get_leads_for_case(self.conn, self.active_case_id)
+        lead_texts = [r["description"] for r in leads]
         evidence = get_evidence_for_case(self.conn, self.active_case_id)
-        show_leads(clues, list(evidence))
+        show_leads(lead_texts, list(evidence))
 
     def handle_slash_evidence(self) -> None:
         if self.active_case_id is None:
@@ -1181,8 +2206,9 @@ class Game:
             loc = get_location(self.conn, self.current_location_id)
             npcs = self.world.get_npcs_at(self.current_location_id)
             if loc:
+                loc_orgs = [r["name"] for r in get_organizations_for_location(self.conn, self.current_location_id)]
                 show_location(loc["name"], loc["description"], [n["name"] for n in npcs],
-                              game_time=get_game_time(self.conn))
+                              game_time=get_game_time(self.conn), orgs=loc_orgs)
         else:
             console.print("[dim]You're not sure where you are.[/dim]")
 
@@ -1367,6 +2393,18 @@ class Game:
                 details = ", ".join(p for p in [race, pol] if p and p.lower() != "none")
                 console.print(f"[yellow]{s['name']}[/yellow] — {role}" + (f" ({details})" if details else ""))
                 console.print(f"[dim]Alibi: {s.get('alibi', '?')}[/dim]")
+                npc_row = self.conn.execute(
+                    "SELECT id FROM npcs WHERE case_id=? AND name=?",
+                    (self.active_case_id, s["name"])
+                ).fetchone()
+                if npc_row:
+                    orgs = get_organizations_for_npc(self.conn, npc_row["id"])
+                    if orgs:
+                        org_str = ", ".join(
+                            f"{o['name']}" + (f" ({o['role']})" if o['role'] else "")
+                            for o in orgs
+                        )
+                        console.print(f"[dim]Organizations: {org_str}[/dim]")
                 return
         victim = cd.get("victim", {})
         if needle in victim.get("name", "").lower():
@@ -1380,7 +2418,7 @@ class Game:
             console.print("[dim]No active case to bring to the DA.[/dim]")
             return
         current_case = get_case(self.conn, self.active_case_id)
-        if current_case and current_case["status"] in ("closed",):
+        if current_case and current_case["status"] == "closed":
             console.print("[dim]That case is already closed. The DA's done with it.[/dim]")
             console.print("[dim]start — open a new case[/dim]")
             choice = console.input("[bold white]>[/bold white] ").strip().lower()
@@ -1390,14 +2428,70 @@ class Game:
                 self.case_manager = None
                 self.start_new_case()
             return
+        if current_case and current_case["status"] == "in_trial":
+            console.print("[dim]This case is before the jury.\n"
+                          "start — take a new case while you wait[/dim]\n")
+            choice = console.input("[bold white]>[/bold white] ").strip().lower()
+            if choice.startswith("start"):
+                self.active_case_id = None
+                self.world = None
+                self.case_manager = None
+                self.start_new_case()
+            return
         console.print(
             "[dim]submit — present your evidence for trial\n"
-            "drop   — close this case and start a new one[/dim]\n"
+            "new    — set this case aside and take a new one\n"
+            "drop   — close this case permanently and take a new one[/dim]\n"
         )
         choice = console.input("[bold white]>[/bold white] ").strip().lower()
+        if choice.startswith("new"):
+            self.active_case_id = None
+            self.world = None
+            self.case_manager = None
+            console.print("[dim]The DA files it under 'pending'. You walk out for something fresher.[/dim]\n")
+            self.start_new_case()
+            return
         if choice.startswith("drop"):
-            confirm = console.input("[bold red]Drop this case? It goes cold forever. (yes/no):[/bold red] ").strip().lower()
+            if self.companion:
+                partner_name = self.companion.name
+                case = get_case(self.conn, self.active_case_id)
+                drop_ctx = (
+                    f"[The detective just told you they want to drop the case '{case['title'] if case else '?'}' "
+                    f"and walk away without bringing it to trial. "
+                    f"React honestly — agree if you think it's the right call given what you know, "
+                    f"push back if you think the case should be seen through. "
+                    f"Do not be neutral. You have an opinion. Speak first.] "
+                )
+                ctx = self._companion_context("I want to drop this case.")
+                partner_response = self.companion.speak(drop_ctx + ctx)
+                show_dialogue(partner_name, partner_response)
+                # One exchange — player can respond
+                player_reply = console.input("[bold white]>[/bold white] ").strip()
+                if player_reply:
+                    followup_ctx = self._companion_context(player_reply)
+                    followup = self.companion.speak(followup_ctx)
+                    show_dialogue(partner_name, followup)
+                    final_response = followup
+                else:
+                    final_response = partner_response
+                # Detect agreement/disagreement from final partner response
+                stance = self.llm.query_structured(
+                    "Classify whether this partner's response agrees or disagrees with dropping the case. "
+                    "Return ONLY valid JSON: {\"agrees\": true|false}",
+                    [],
+                    f"Partner said: \"{final_response}\""
+                )
+                partner_agrees = stance.get("agrees", True)
+            else:
+                partner_agrees = True
+
+            confirm = console.input(
+                "[bold red]\nStill drop this case? It goes cold forever. (yes/no):[/bold red] "
+            ).strip().lower()
             if confirm == "yes":
+                if not partner_agrees:
+                    increment_partner_affection(self.conn, delta=-10)
+                    console.print(f"[dim]{self.companion.name if self.companion else 'Your partner'} doesn't forgive this easily.[/dim]")
                 self.conn.execute(
                     "UPDATE cases SET status='closed' WHERE id=?", (self.active_case_id,)
                 )
@@ -1415,33 +2509,423 @@ class Game:
         result = ts.submit_to_da(evidence_summary=summary)
         show_dialogue("District Attorney", result.get("dialogue", "..."))
         if result.get("verdict") == "accepted":
-            console.print("[green]Case accepted. It goes to trial.[/green]")
+            console.print("[green]Case accepted. Head to the courthouse — the magistrate needs to clear it before trial.[/green]")
             self._start_background_generation()
         else:
             console.print("[yellow]Case rejected. Gather more evidence.[/yellow]")
 
     def handle_courthouse(self) -> None:
-        if self.active_case_id is None:
-            console.print("[dim]No case in trial.[/dim]")
+        pipeline_statuses = ("pending_magistrate", "in_trial")
+        rows = self.conn.execute(
+            "SELECT id, title, status, assigned_judge_id FROM cases WHERE status IN (?,?) ORDER BY id DESC",
+            pipeline_statuses
+        ).fetchall()
+
+        if not rows:
+            console.print("[dim]Nothing before the court right now.[/dim]")
             return
-        ts = TrialSystem(conn=self.conn, case_id=self.active_case_id, llm=self.llm)
-        status = ts.check_courthouse()
-        case = get_case(self.conn, self.active_case_id)
-        if status["status"] == "in_trial":
-            show_trial_status(case["title"], "in_trial",
-                              f"{status.get('minutes_remaining', '?')} minutes")
-        elif status["status"] == "closed":
-            verdict = status.get("verdict", {})
+
+        console.print("\n[bold]Cases before the court:[/bold]")
+        for i, row in enumerate(rows, 1):
+            judge_note = ""
+            if row["assigned_judge_id"]:
+                j = self.conn.execute(
+                    "SELECT name FROM npcs WHERE id=?", (row["assigned_judge_id"],)
+                ).fetchone()
+                if j:
+                    judge_note = f" — {j['name']}"
+            status_label = "Awaiting magistrate" if row["status"] == "pending_magistrate" else f"In trial{judge_note}"
+            console.print(f"  [bold]{i}.[/bold] {row['title']} [{status_label}]")
+
+        if len(rows) == 1:
+            choice_str = "1"
+        else:
+            choice_str = console.input("\n[bold white]Check which case (number):[/bold white] ").strip()
+
+        try:
+            idx = int(choice_str) - 1
+            selected = rows[idx]
+        except (ValueError, IndexError):
+            console.print("[dim]Never mind.[/dim]")
+            return
+
+        self._handle_courthouse_case(selected["id"], selected["status"])
+
+    def _handle_courthouse_case(self, case_id: int, status: str) -> None:
+        ts = TrialSystem(conn=self.conn, case_id=case_id, llm=self.llm)
+        case = get_case(self.conn, case_id)
+
+        if status == "pending_magistrate":
+            result = ts.submit_to_magistrate()
+            show_dialogue("Magistrate Moreau", result.get("dialogue", "..."))
+            if result.get("cleared"):
+                judge_name = result.get("assigned_judge", "a judge")
+                console.print(f"[green]Case cleared for trial. Assigned to {judge_name}.[/green]")
+            else:
+                console.print("[yellow]Case dismissed by the magistrate.[/yellow]")
+                if case_id == self.active_case_id:
+                    self.active_case_id = None
+                    self.world = None
+                    self.case_manager = None
+            return
+
+        status_info = ts.check_courthouse()
+        if status_info["status"] == "in_trial":
+            judge_note = ""
+            if case["assigned_judge_id"]:
+                j = self.conn.execute(
+                    "SELECT name FROM npcs WHERE id=?", (case["assigned_judge_id"],)
+                ).fetchone()
+                if j:
+                    judge_note = f" before {j['name']}"
+            remaining = status_info.get("minutes_remaining", "?")
+            from rich.panel import Panel
+            from noir.display import console as _dc
+            body = (
+                f"[yellow]{case['title']}[/yellow] is before the jury{judge_note}.\n"
+                f"Estimated time remaining: {remaining}"
+            )
+            _dc.print(Panel(body, title="[bold]Courthouse[/bold]", border_style="blue"))
+        elif status_info["status"] == "closed":
+            verdict = status_info.get("verdict", {})
             show_trial_status(case["title"], "closed", None)
             if verdict:
                 show_dialogue("Courthouse Clerk", verdict.get("summary", "The verdict is in."))
-            self.active_case_id = None
-            self.world = None
-            self.case_manager = None
-            self._start_background_generation()
-            console.print("[dim]The case is behind you now. Head to the DA's office for a new one.[/dim]")
+            arrest = self.conn.execute(
+                "SELECT was_correct, npc_id FROM arrests WHERE case_id=? ORDER BY id DESC LIMIT 1",
+                (case_id,)
+            ).fetchone()
+            was_correct = bool(arrest and arrest["was_correct"])
+            threading.Thread(
+                target=self._update_street_rep,
+                args=(case_id, was_correct),
+                daemon=True,
+            ).start()
+            if was_correct and arrest:
+                threading.Thread(
+                    target=self._handle_org_succession,
+                    args=(arrest["npc_id"],),
+                    daemon=True,
+                ).start()
+            if case_id == self.active_case_id:
+                self.active_case_id = None
+                self.world = None
+                self.case_manager = None
+                self._start_background_generation()
+                console.print("[dim]The case is behind you now. Head to the DA's office for a new one.[/dim]")
+
+    def handle_slash_rep(self) -> None:
+        rep = get_street_reputation(self.conn)
+        tags = rep.get("tags", [])
+        street_says = rep.get("street_says", "")
+        if not tags and not street_says:
+            console.print("[dim]No reputation yet. Solve a case first.[/dim]")
+            return
+        from rich.panel import Panel as _Panel
+        tag_str = "  ".join(f"[bold]{t}[/bold]" for t in tags) if tags else "[dim]none[/dim]"
+        body = tag_str
+        if street_says:
+            body += f"\n\n[italic dim]{street_says}[/italic dim]"
+        console.print(_Panel(body, title="[yellow]Street Reputation[/yellow]", border_style="yellow"))
+
+    def handle_bribe(self, target_name: str) -> None:
+        if not target_name:
+            console.print("[dim]Bribe who? /bribe [name][/dim]")
+            return
+
+        # Find target — current location first, then fixed-location power NPCs
+        npc_row = None
+        if self.active_case_id:
+            npcs = get_npcs_for_case(self.conn, self.active_case_id)
+            npc_row = next((n for n in npcs if target_name.lower() in n["name"].lower()), None)
+        if npc_row is None:
+            npc_row = self.conn.execute(
+                "SELECT * FROM npcs WHERE case_id IS NULL AND LOWER(name) LIKE ?",
+                (f"%{target_name.lower()}%",)
+            ).fetchone()
+        if npc_row is None:
+            console.print(f"[dim]Don't know anyone by that name.[/dim]")
+            return
+
+        corruption = npc_row["corruption"] if npc_row["corruption"] is not None else 0
+        cash = get_player_cash(self.conn)
+        console.print(f"[dim]You have ${cash} on you.[/dim]")
+
+        try:
+            amount_str = console.input("[bold white]How much are you offering? $[/bold white]").strip()
+            amount = int(amount_str)
+        except ValueError:
+            console.print("[dim]Never mind.[/dim]")
+            return
+        if amount <= 0:
+            console.print("[dim]That's not a bribe, that's an insult.[/dim]")
+            return
+        if amount > cash:
+            console.print(f"[dim]You don't have ${amount}.[/dim]")
+            return
+
+        # Determine bribe effect context
+        effect = self._determine_bribe_effect(npc_row["id"])
+
+        # Build NPC response prompt
+        bribe_system = npc_row["system_prompt"] + (
+            "\n\nCRITICAL: A detective has just offered you a bribe. "
+            "Your response must be in character. "
+            "Your corruption level determines your reaction — respond authentically. "
+            "If you accept, say so in your own voice. If you refuse, make clear why. "
+            "Never break character. Do not use bracket notation."
+        )
+        bribe_prompt = (
+            f"The detective has just slipped you an envelope containing ${amount}. "
+            f"Context: {effect['context']} "
+            "Respond in character. Accept or refuse based on who you are."
+        )
+
+        from noir.characters.agent import CharacterAgent
+        agent = CharacterAgent(
+            character_id=f"npc_{npc_row['id']}",
+            system_prompt=bribe_system,
+            llm=self.llm,
+        )
+        response = agent.speak(bribe_prompt)
+        show_dialogue(npc_row["name"], response)
+
+        # Determine acceptance via LLM classification
+        stance = self.llm.query_structured(
+            "Classify whether this response accepts or refuses a bribe. "
+            "Return ONLY valid JSON: {\"accepted\": true|false}",
+            [],
+            f"Response: \"{response}\""
+        )
+        accepted = stance.get("accepted", False)
+
+        # Corruption threshold: bribe needs to be meaningful relative to corruption
+        # Very corrupt NPCs accept almost anything; principled ones refuse regardless
+        if corruption == 0:
+            accepted = False  # incorruptible — override
+        elif corruption <= 3:
+            # Low corruption — only accept if amount is substantial AND LLM said yes
+            accepted = accepted and amount >= 200
+
+        if accepted:
+            update_player_cash(self.conn, delta=-amount)
+            record_bribe(self.conn, case_id=self.active_case_id, npc_id=npc_row["id"],
+                         amount=amount, accepted=True, effect=effect["effect_type"])
+            # Bribery shifts toward chaos only
+            self.conn.execute(
+                "UPDATE player SET law_chaos = MAX(-100, MIN(100, law_chaos - 5)) WHERE id=1"
+            )
+            self.conn.commit()
+            console.print(f"[dim]${amount} lighter. The envelope disappears.[/dim]")
+
+            # Detection risk: lower corruption = higher chance of reporting
+            detection_chance = max(0.0, (5 - corruption) / 10)
+            if random.random() < detection_chance:
+                console.print(
+                    "[red]Word gets around. Someone talked.[/red]"
+                )
+                from noir.persistence.repository import update_player_reputation
+                update_player_reputation(self.conn, delta=-15)
+                from noir.cases.trial import update_da_trust
+                update_da_trust(self.conn, delta=-10)
         else:
-            console.print("[dim]Nothing here yet. Take a case to the DA first.[/dim]")
+            record_bribe(self.conn, case_id=self.active_case_id, npc_id=npc_row["id"],
+                         amount=amount, accepted=False, effect=None)
+            console.print("[dim]The envelope comes back.[/dim]")
+            # Attempting to bribe an honest person carries its own risk
+            if corruption <= 2:
+                console.print("[red]This one's going to remember you tried.[/red]")
+                from noir.persistence.repository import update_player_reputation
+                update_player_reputation(self.conn, delta=-5)
+
+    _BRIBE_KEYWORDS = frozenset([
+        "$", "cash", "envelope", "money", "payment", "pay you", "paid",
+        "look the other way", "forget what you saw", "drop it", "walk away",
+        "compensate", "arrangement", "consideration", "hundred", "thousand",
+    ])
+
+    def _check_npc_bribe_offer(self, npc_row, response: str) -> None:
+        """Detect if the NPC just offered the player a bribe and prompt acceptance."""
+        resp_lower = response.lower()
+        if not any(kw in resp_lower for kw in self._BRIBE_KEYWORDS):
+            return
+
+        offer = self.llm.query_structured(
+            "Determine if the following NPC dialogue contains a bribe offer to the player. "
+            "Return ONLY valid JSON: "
+            "{\"bribe_offered\": true|false, \"amount\": integer_or_null, "
+            "\"condition\": \"what they want in return, brief\"}",
+            [],
+            f"NPC said: \"{response[:400]}\""
+        )
+        if not offer.get("bribe_offered"):
+            return
+
+        amount = offer.get("amount") or 0
+        condition = offer.get("condition", "back off")
+        console.print(f"\n[yellow dim]{npc_row['name']} has offered you ${amount} to {condition}.[/yellow dim]")
+        accept_input = console.input("[bold white]Accept this bribe? (yes/no):[/bold white] ").strip().lower()
+        if accept_input != "yes":
+            console.print("[dim]You pass.[/dim]")
+            record_bribe(self.conn, case_id=self.active_case_id, npc_id=npc_row["id"],
+                         amount=amount, accepted=False, effect=None)
+            return
+
+        update_player_cash(self.conn, delta=amount)
+        record_bribe(self.conn, case_id=self.active_case_id, npc_id=npc_row["id"],
+                     amount=amount, accepted=True, effect="player_accepted")
+        # Shift toward chaos only
+        self.conn.execute(
+            "UPDATE player SET law_chaos = MAX(-100, MIN(100, law_chaos - 8)) WHERE id=1"
+        )
+        self.conn.commit()
+        console.print(f"[dim]${amount} in your pocket. You know what they expect.[/dim]")
+
+    def _determine_bribe_effect(self, npc_id: int) -> dict:
+        """Figure out what a bribe to this NPC would affect, given the current case state."""
+        if not self.active_case_id:
+            return {"effect_type": "general", "context": "You want a favor."}
+
+        case = get_case(self.conn, self.active_case_id)
+
+        # Check if this NPC is the assigned judge
+        if case and case["assigned_judge_id"] == npc_id and case["status"] == "in_trial":
+            return {
+                "effect_type": "verdict_influence",
+                "context": (
+                    "You are the assigned judge in this detective's active trial. "
+                    "They want a guilty verdict."
+                ),
+            }
+
+        # Check if this NPC is the magistrate and case is pending
+        npc = self.conn.execute("SELECT role FROM npcs WHERE id=?", (npc_id,)).fetchone()
+        if npc and "magistrate" in (npc["role"] or "").lower() and case and case["status"] == "pending_magistrate":
+            return {
+                "effect_type": "magistrate_clear",
+                "context": (
+                    "You are the magistrate handling this detective's case. "
+                    "They want it cleared for trial without the usual review."
+                ),
+            }
+
+        return {"effect_type": "general", "context": "The detective wants a favor."}
+
+    def _check_org_eligibility(self, org_name: str, player: dict) -> str | None:
+        return check_org_eligibility(self.conn, org_name, player)
+
+    def handle_join_org(self, org_name: str) -> None:
+        if not org_name:
+            console.print("[dim]Join which organization? /join [name][/dim]")
+            return
+
+        org = self.conn.execute(
+            "SELECT * FROM organizations WHERE LOWER(name) LIKE ?",
+            (f"%{org_name.lower()}%",)
+        ).fetchone()
+        if not org:
+            console.print(f"[dim]Never heard of them.[/dim]")
+            return
+
+        # Check if already a member
+        existing = self.conn.execute(
+            "SELECT id FROM organization_members WHERE organization_id=? AND member_type='player' AND member_id=1",
+            (org["id"],)
+        ).fetchone()
+        if existing:
+            console.print(f"[dim]You're already with {org['name']}.[/dim]")
+            return
+
+        player = get_player(self.conn)
+
+        # Hard eligibility gate — checked before any LLM call
+        rejection = self._check_org_eligibility(org["name"], player or {})
+        if rejection:
+            console.print(f"[dim]{rejection}[/dim]")
+            return
+
+        # Find the org's leader NPC to speak for the org
+        leader_row = self.conn.execute(
+            """SELECT n.id, n.name, n.system_prompt, n.corruption FROM npcs n
+               JOIN organization_members om ON om.member_id = n.id AND om.member_type='npc'
+               WHERE om.organization_id=? AND om.is_static=1
+               ORDER BY CASE WHEN om.role IN ('don','boss','president','captain','director','mayor','sheriff')
+                             THEN 0 ELSE 1 END
+               LIMIT 1""",
+            (org["id"],)
+        ).fetchone()
+
+        if not leader_row:
+            console.print(f"[dim]You don't know anyone in {org['name']} to vouch for you.[/dim]")
+            return
+
+        player_race = player["race"] if player else "unspecified"
+        player_gender = player["gender"] if player else "unspecified"
+        rep = player["reputation"] if player else 100
+        law_chaos = player.get("law_chaos", 0) if player else 0
+
+        join_system = leader_row["system_prompt"] + (
+            "\n\nCRITICAL: The detective has just asked to join your organization. "
+            "Evaluate them based on who you are and what your organization values. "
+            "Be honest: some orgs exclude by race, religion, or sex. "
+            "Some require demonstrated loyalty or criminal willingness. "
+            "A high-chaos detective who takes bribes and bends rules is more useful to a crime family "
+            "than a straight-arrow cop. Respond in character. "
+            "Your response should make clear whether you're accepting, rejecting, or deferring. "
+            "Never use bracket notation."
+        )
+        join_prompt = (
+            f"The detective wants to join {org['name']}. "
+            f"Detective profile: race={player_race}, gender={player_gender}, "
+            f"reputation={rep}/100, law/chaos score={law_chaos} (negative=lawful, positive=chaotic). "
+            f"Org type: {org['type']}, influence: {org['influence']}. "
+            "Respond in character."
+        )
+
+        from noir.characters.agent import CharacterAgent
+        agent = CharacterAgent(
+            character_id=f"npc_{leader_row['id']}",
+            system_prompt=join_system,
+            llm=self.llm,
+        )
+        response = agent.speak(join_prompt)
+        show_dialogue(leader_row["name"], response)
+
+        stance = self.llm.query_structured(
+            "Did this response accept, reject, or defer the request to join the organization? "
+            "Return ONLY valid JSON: {\"decision\": \"accepted\"|\"rejected\"|\"deferred\"}",
+            [],
+            f"Response: \"{response[:400]}\""
+        )
+        decision = stance.get("decision", "rejected")
+
+        if decision == "accepted":
+            # Set payroll based on org type and influence
+            payroll = 0
+            if org["type"] == "crime_family":
+                payroll = org["influence"] * 15  # $75–135/day for influence 5–9
+            elif org["type"] in ("government", "union"):
+                payroll = org["influence"] * 5   # smaller legitimate stipend
+
+            self.conn.execute(
+                """INSERT INTO organization_members
+                   (organization_id, member_type, member_id, role, payroll, last_payroll_time)
+                   VALUES (?, 'player', 1, 'associate', ?, ?)""",
+                (org["id"], payroll, get_game_time(self.conn))
+            )
+            self.conn.commit()
+            # Joining a crime org shifts toward chaos
+            if org["type"] == "crime_family":
+                self.conn.execute(
+                    "UPDATE player SET law_chaos = MAX(-100, MIN(100, law_chaos + 15)) WHERE id=1"
+                )
+                self.conn.commit()
+            if payroll:
+                console.print(f"[dim]You're in. ${payroll}/day, paid daily.[/dim]")
+            else:
+                console.print(f"[dim]You're in.[/dim]")
+        elif decision == "deferred":
+            console.print("[dim]The door isn't closed. Come back when you've proven yourself.[/dim]")
 
     def handle_slash_romance(self) -> None:
         partner_row = get_partner(self.conn)
@@ -1463,6 +2947,80 @@ class Game:
                         "stage": _affection_to_stage(affection),
                     })
         show_relationships(partner_name, partner_stage, npc_rels)
+
+    def handle_me(self) -> None:
+        player = get_player(self.conn)
+        if not player:
+            return
+
+        orgs = get_player_org_memberships(self.conn)
+        org_list = [
+            {"org_name": o["org_name"], "role": o["role"], "payroll": o["payroll"]}
+            for o in orgs
+        ]
+
+        partner_row = get_partner(self.conn)
+        partner_name = partner_row["name"] if partner_row else None
+        partner_stage = None
+        if partner_row:
+            affection = get_partner_affection(self.conn)
+            partner_stage = _affection_to_stage(affection, is_partner=True)
+
+        npc_rels = []
+        if self.active_case_id:
+            npcs = get_npcs_for_case(self.conn, self.active_case_id)
+            for npc in npcs:
+                affection = get_npc_affection(self.conn, npc["id"])
+                if affection > 0:
+                    npc_rels.append({
+                        "name": npc["name"],
+                        "role": npc["role"],
+                        "stage": _affection_to_stage(affection),
+                    })
+
+        show_player_profile(dict(player), org_list, partner_name, partner_stage, npc_rels)
+
+    def handle_slash_drink(self) -> None:
+        _BAR_KEYWORDS = ("bar", "lounge", "saloon", "club", "speakeasy", "tavern", "cabaret",
+                         "rusty anchor")
+        _DRINK_KEYWORDS = ("bottle", "glass", "flask", "whiskey", "bourbon", "rye", "gin",
+                           "rum", "wine", "beer", "scotch", "drink", "liquor", "brandy")
+
+        at_bar = False
+        drink_nearby = False
+
+        if self.current_location_id:
+            loc = get_location(self.conn, self.current_location_id)
+            if loc and any(kw in loc["name"].lower() for kw in _BAR_KEYWORDS):
+                at_bar = True
+            if not at_bar and self.active_case_id:
+                clues = get_clues_for_case(self.conn, self.active_case_id)
+                drink_nearby = any(
+                    any(kw in c["description"].lower() for kw in _DRINK_KEYWORDS)
+                    and (c.get("location") or "").lower() == (loc["name"].lower() if loc else "")
+                    for c in clues
+                )
+
+        if not at_bar and not drink_nearby:
+            console.print("[dim]Nothing to drink here.[/dim]")
+            return
+
+        states = get_player_states(self.conn)
+        existing = next((s for s in states if s["state"] == "drunk"), None)
+        current = existing["intensity"] if existing else 0
+
+        if current >= 3:
+            console.print("[dim]You're already as drunk as you're going to get tonight.[/dim]")
+            return
+
+        new_intensity = current + 1
+        add_player_state(self.conn, state="drunk", intensity=new_intensity)
+        messages = [
+            "[dim]The glass hits the bar. You drink.[/dim]",
+            "[dim]The second one goes down easier than the first.[/dim]",
+            "[dim]The third one. The room gets softer at the edges.[/dim]",
+        ]
+        console.print(messages[new_intensity - 1] + "\n")
 
     def _npc_relationship_context(self, npc_id: int) -> str:
         affection = get_npc_affection(self.conn, npc_id)
@@ -1568,6 +3126,7 @@ class Game:
 
         self.active_case_id = case_id
         self._seed_case_locations_and_npcs(case_id, case_data, fixed)
+        self._seed_fixed_npcs(case_id)
         self._start_background_enrichment(case_id)
 
         console.print(f"\n[bold red]NEW CASE: {case_data['title']}[/bold red]")
@@ -1638,6 +3197,7 @@ class Game:
 
     def loop(self) -> None:
         show_splash()
+        enable_game_padding()
         create_schema(self.conn)
         fixed_locs = self.setup_fixed_locations()
         seed_archetypes_to_db(self.conn)
@@ -1658,7 +3218,6 @@ class Game:
 
         active_cases = get_active_cases(self.conn)
         if not active_cases:
-            # Also resume in_trial cases — don't generate a new case if one exists in trial
             active_cases = self.conn.execute(
                 "SELECT * FROM cases WHERE status='in_trial' ORDER BY id DESC"
             ).fetchall()
@@ -1672,6 +3231,12 @@ class Game:
             self.case_manager = CaseManager(conn=self.conn, case_id=self.active_case_id, llm=self.llm)
             case = get_case(self.conn, self.active_case_id)
             console.print(f"\n[bold red]Active case: {case['title']}[/bold red]")
+            _cd = json.loads(case["case_data"]) if case["case_data"] else {}
+            _victim = _cd.get("victim", {})
+            if _victim.get("name") and _victim.get("cause_of_death"):
+                console.print(
+                    f"[italic]Victim: {_victim['name']} — {_victim['cause_of_death']}[/italic]\n"
+                )
             if self.companion:
                 from noir.recap import build_case_recap
                 ctx = build_case_recap(self.conn, self.active_case_id)
@@ -1707,9 +3272,10 @@ class Game:
             loc = get_location(self.conn, start_loc_id)
             if loc:
                 npcs = self.world.get_npcs_at(start_loc_id) if self.world else []
+                loc_orgs = [r["name"] for r in get_organizations_for_location(self.conn, start_loc_id)]
                 show_location(loc["name"], loc["description"],
                               [n["name"] for n in npcs],
-                              game_time=get_game_time(self.conn))
+                              game_time=get_game_time(self.conn), orgs=loc_orgs)
 
         while True:
             try:
@@ -1747,6 +3313,9 @@ class Game:
                 break
 
             slug = raw.strip().lower()
+            if slug == "/location":
+                self.handle_slash_look()
+                continue
             if slug == "/locations":
                 self.handle_slash_locations()
                 continue
@@ -1806,9 +3375,10 @@ class Game:
                     loc = get_location(self.conn, self.current_location_id)
                     npcs = self.world.get_npcs_at(self.current_location_id)
                     if loc:
+                        loc_orgs = [r["name"] for r in get_organizations_for_location(self.conn, self.current_location_id)]
                         show_location(loc["name"], loc["description"],
                                       [n["name"] for n in npcs],
-                                      game_time=get_game_time(self.conn))
+                                      game_time=get_game_time(self.conn), orgs=loc_orgs)
             elif cmd.intent == Intent.EXAMINE:
                 self.handle_examine(cmd.target)
             elif cmd.intent == Intent.COLLECT:
@@ -1820,8 +3390,8 @@ class Game:
                     )
                     if result["ok"]:
                         show_evidence_collected(result["description"])
-                    else:
-                        console.print(f"[dim]{result['message']}[/dim]")
+                    elif self.companion:
+                        _evidence_rejection_quip(self.companion.name, "Already collected" in result["message"], result.get("reason"))
             elif cmd.intent == Intent.SHOOT_PARTNER:
                 self._handle_shoot_partner()
             elif cmd.intent == Intent.HELP:
@@ -1854,9 +3424,11 @@ class Game:
                                 )
                                 if res["ok"]:
                                     show_evidence_collected(res["description"])
-                                else:
-                                    console.print(f"[dim]{res['message']}[/dim]")
+                                elif self.companion:
+                                    _evidence_rejection_quip(self.companion.name, "Already collected" in res["message"], res.get("reason"))
                         elif action == "TALK":
-                            self.handle_talk(target)
+                            _TALK_TRIGGERS = ("/talk", "talk to", "go talk", "let's talk", "speak to", "find ")
+                            if any(cmd.raw.lower().startswith(t) for t in _TALK_TRIGGERS):
+                                self.handle_talk(target)
                 else:
                     console.print(f"[dim]'{cmd.raw}' — not sure what to do with that.[/dim]")

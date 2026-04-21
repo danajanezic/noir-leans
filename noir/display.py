@@ -13,37 +13,133 @@ from rich.table import Table
 from rich import box
 
 console = Console()
+_game_inner_width: int = 0
+
+
+class _PaddedWriter:
+    """Wraps a text stream, inserting a left-margin prefix at the start of each line."""
+
+    def __init__(self, wrapped, prefix: str) -> None:
+        self._wrapped = wrapped
+        self._prefix = prefix
+        self._at_sol = True
+
+    def write(self, s: str) -> int:
+        if not s:
+            return 0
+        out = []
+        for ch in s:
+            if ch == '\r':
+                self._at_sol = False
+                out.append(ch)
+            elif ch == '\n':
+                out.append(ch)
+                self._at_sol = True
+            else:
+                if self._at_sol:
+                    out.append(self._prefix)
+                    self._at_sol = False
+                out.append(ch)
+        self._wrapped.write(''.join(out))
+        return len(s)
+
+    def flush(self) -> None:
+        self._wrapped.flush()
+
+    def fileno(self) -> int:
+        return self._wrapped.fileno()
+
+    @property
+    def encoding(self) -> str:
+        return getattr(self._wrapped, 'encoding', 'utf-8')
+
+    @property
+    def errors(self) -> str:
+        return getattr(self._wrapped, 'errors', 'replace')
+
+    def isatty(self) -> bool:
+        return hasattr(self._wrapped, 'isatty') and self._wrapped.isatty()
+
+    def mark_new_line(self) -> None:
+        self._at_sol = True
+
+
+def enable_game_padding() -> None:
+    global _game_inner_width
+    term_width = shutil.get_terminal_size().columns
+    left_pad = max(int(term_width * 0.05), 2)
+    right_pad = max(int(term_width * 0.05), 2)
+    _game_inner_width = max(term_width - left_pad - right_pad, 40)
+    padded = _PaddedWriter(sys.stdout, " " * left_pad)
+    sys.stdout = padded  # type: ignore[assignment]
+    console._file = padded  # type: ignore[attr-defined]
+    console._width = _game_inner_width  # type: ignore[attr-defined]
 
 
 def show_splash() -> None:
+    term = shutil.get_terminal_size()
+    term_width = max(term.columns, 40)
+    term_height = max(term.lines, 24)
+
+    # top rule + blank + blank + 3 border + blank + 1935 + blank + 3 flavor + blank + bottom rule + blank
+    content_lines = 15
+    top_pad = max((term_height - content_lines) // 2, 0)
+    sys.stdout.write("\n" * top_pad)
+    sys.stdout.flush()
+
+    console.print(Rule(style="yellow dim"))
     console.print()
-    lines = [
-        ("", 0),
-        ("N  O  I  R  L  E  A  N  S", 0.07),
-        ("", 0),
-        ("1  9  3  5", 0.09),
-        ("", 0),
-        ("The Depression is on.", 0.04),
-        ("Everyone is broke.", 0.04),
-        ("Someone is always dead.", 0.04),
-        ("", 0),
-    ]
-    for text, delay in lines:
-        if not text:
-            console.print()
-            continue
+
+    def _typewrite_centered(text: str, delay: float, ansi: str = "") -> None:
+        indent = " " * max((term_width - len(text)) // 2, 0)
+        sys.stdout.write(indent)
+        if ansi:
+            sys.stdout.write(ansi)
         for char in text:
             sys.stdout.write(char)
             sys.stdout.flush()
             time.sleep(delay)
-        console.print()
+        if ansi:
+            sys.stdout.write("\033[0m")
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+
+    _DIM_YELLOW = "\033[2;33m"
+    lines = [
+        ("", 0, "", 0),
+        ("N  O  I  R  L  E  A  N  S", 0.07, "", 0),
+        ("", 0, "", 0),
+        ("1  9  3  5", 0.04, "", 0),
+        ("", 0, "", 0),
+        ("The Depression is on.", 0.04, _DIM_YELLOW, 0.65),
+        ("Everyone is broke.", 0.04, _DIM_YELLOW, 0.65),
+        ("Someone is always dead.", 0.04, _DIM_YELLOW, 0),
+        ("", 0, "", 0),
+    ]
+    for text, delay, ansi, pause in lines:
+        if not text:
+            console.print()
+            continue
+        if text == "N  O  I  R  L  E  A  N  S":
+            pad = "  "
+            inner = pad + text + pad
+            bar = "═" * len(inner)
+            top = "╔" + bar + "╗"
+            mid = "║" + inner + "║"
+            bot = "╚" + bar + "╝"
+            for line in (top, mid, bot):
+                _typewrite_centered(line, 0.04, "\033[1;38;2;139;0;0m")
+            continue
+        _typewrite_centered(text, delay, ansi)
+        if pause:
+            time.sleep(pause)
     time.sleep(0.4)
     console.print(Rule(style="yellow dim"))
     console.print()
 
 
 def typewrite(text: str, delay: float = 0.025) -> None:
-    width = max(shutil.get_terminal_size().columns - 2, 40)
+    width = _game_inner_width if _game_inner_width else max(shutil.get_terminal_size().columns - 2, 40)
     wrapped = textwrap.fill(text, width=width)
     for char in wrapped:
         sys.stdout.write(char)
@@ -59,12 +155,96 @@ def show_narrator(text: str) -> None:
 
 
 def show_conversation_header(name: str) -> None:
-    console.print(Rule(f"[bold cyan]talking to {escape(name)}[/bold cyan]", style="cyan"))
-    console.print(f"[dim]done / bye / leave to end · /go /talk /examine /look still work here[/dim]\n")
+    raw = sys.stdout._wrapped if isinstance(sys.stdout, _PaddedWriter) else sys.stdout
+    width = shutil.get_terminal_size().columns
+    rule = "\u2500" * width
+    label = f" talking to {name} "
+    pad = max((width - len(label)) // 2, 0)
+    line = "\033[36m" + "\u2500" * pad + label + "\u2500" * (width - pad - len(label)) + "\033[0m"
+    raw.write("\n" + line + "\n")
+    raw.flush()
 
 
 def show_conversation_footer(name: str) -> None:
-    console.print(Rule(style="dim"))
+    raw = sys.stdout._wrapped if isinstance(sys.stdout, _PaddedWriter) else sys.stdout
+    width = shutil.get_terminal_size().columns
+    raw.write("\033[36m" + "\u2500" * width + "\033[0m\n")
+    raw.flush()
+
+
+_REL_STAGE_ICON = {
+    "cold": "❄",
+    "curious": "·",
+    "warm": "~",
+    "smitten": "♥",
+    "devoted": "♥♥",
+    "professional": "·",
+    "tension": "~",
+    "complicated": "≈",
+    "committed": "♥♥",
+}
+
+
+def npc_input_prompt(npc_name: str, role: str, rel_stage: str | None) -> str:
+    """Prompt for a single line of input during NPC conversation."""
+    from prompt_toolkit.shortcuts import PromptSession
+    from prompt_toolkit.formatted_text import FormattedText
+    from prompt_toolkit.styles import Style
+    from prompt_toolkit.output import create_output
+
+    raw = sys.stdout._wrapped if isinstance(sys.stdout, _PaddedWriter) else sys.stdout
+    width = shutil.get_terminal_size().columns
+
+    pt_style = Style.from_dict({
+        "bottom-toolbar": "noreverse fg:ansibrightblack bg:default",
+        "tb-rule": "noreverse fg:ansicyan dim bg:default",
+        "tb-rel": "noreverse fg:ansicyan bg:default",
+    })
+
+    hint = "done · bye to end  \u00b7  /go /talk /examine /look /collect /arrest still work"
+
+    def bottom_toolbar():
+        rel_part = ""
+        if rel_stage:
+            icon = _REL_STAGE_ICON.get(rel_stage, "·")
+            rel_part = f"  {icon} {rel_stage}"
+        rule = "\u2500" * width
+        return FormattedText([
+            ("class:tb-rule", rule + "\n"),
+            ("class:bottom-toolbar", hint),
+            ("class:tb-rel", rel_part),
+        ])
+
+    def rprompt():
+        if rel_stage:
+            icon = _REL_STAGE_ICON.get(rel_stage, "·")
+            return FormattedText([("class:tb-rel", f"{icon} {rel_stage}  ")])
+        return FormattedText([("class:bottom-toolbar", f"{role}  ")])
+
+    import math
+    hint_text = "done · bye to end  \u00b7  /go /talk /examine /look /collect /arrest still work"
+    hint_rows = max(1, math.ceil(len(hint_text) / width))
+
+    pt_output = create_output(stdout=raw)
+    try:
+        session = PromptSession(
+            bottom_toolbar=bottom_toolbar,
+            rprompt=rprompt,
+            style=pt_style,
+            output=pt_output,
+            multiline=False,
+        )
+        result = session.prompt(f"{npc_name} > ")
+    except (EOFError, KeyboardInterrupt):
+        raise
+    finally:
+        # Erase the toolbar rows (rule + hint) from the scrollback.
+        for _ in range(1 + hint_rows):
+            raw.write("\033[1A\033[2K")
+        raw.flush()
+        if isinstance(sys.stdout, _PaddedWriter):
+            sys.stdout.mark_new_line()
+    return result
 
 
 def _car_loop(stop: threading.Event) -> None:
@@ -97,6 +277,17 @@ def travel_status():
     finally:
         stop.set()
         t.join()
+
+
+def show_location_rule() -> None:
+    raw_out = sys.stdout._wrapped if isinstance(sys.stdout, _PaddedWriter) else sys.stdout
+    width = shutil.get_terminal_size().columns
+    tmp = Console(file=raw_out, width=width, force_terminal=True, highlight=False)
+    tmp.print()
+    tmp.print(Rule(style="dim yellow"))
+    tmp.print()
+    if isinstance(sys.stdout, _PaddedWriter):
+        sys.stdout.mark_new_line()
 
 
 def show_travel_animation() -> None:
@@ -134,13 +325,13 @@ def show_wait_result(new_time: int, npc_movements: list[tuple[str, str]]) -> Non
 
 
 def show_location(name: str, description: str, npcs_present: list[str],
-                  game_time: int | None = None) -> None:
-    npc_text = ""
-    if npcs_present:
-        npc_text = f"\n\n[dim]Present: {', '.join(npcs_present)}[/dim]"
+                  game_time: int | None = None,
+                  orgs: list[str] | None = None) -> None:
+    npc_text = f"\n\n[dim]Present: {', '.join(npcs_present)}[/dim]" if npcs_present else ""
+    org_text = f"\n[dim]Controlled by: {', '.join(orgs)}[/dim]" if orgs else ""
     time_text = f"  [dim]{fmt_game_time(game_time)}[/dim]" if game_time is not None else ""
     console.print(Panel(
-        f"[italic]{description}[/italic]{npc_text}",
+        f"[italic]{description}[/italic]{npc_text}{org_text}",
         title=f"[bold yellow]{name}[/bold yellow]{time_text}",
         border_style="yellow",
         box=box.DOUBLE_EDGE,
@@ -158,8 +349,69 @@ def show_dialogue(speaker: str, text: str, delay: float = 0.02) -> None:
     console.print()
 
 
+def show_partner_aside(speaker: str, text: str) -> None:
+    console.print(f"\n[dim cyan]{escape(speaker)}:[/dim cyan] [italic]{escape(text)}[/italic]")
+
+
+_PROMPT_HINT_PLAIN = (
+    "/go <place>  \u00b7  /talk <name>  \u00b7  /look  \u00b7  /evidence"
+    "  \u00b7  /leads  \u00b7  /suspects  \u00b7  /status  \u00b7  /me  \u00b7  /help"
+)
+
+
 def show_player_input_prompt() -> str:
-    return console.input("\n[bold white]>[/bold white] ")
+    from prompt_toolkit.shortcuts import PromptSession
+    from prompt_toolkit.formatted_text import FormattedText
+    from prompt_toolkit.styles import Style
+    from prompt_toolkit.output import create_output
+
+    raw = sys.stdout._wrapped if isinstance(sys.stdout, _PaddedWriter) else sys.stdout
+    width = shutil.get_terminal_size().columns
+    rule = "\u2500" * width
+
+    # Print top rule directly (bypasses _PaddedWriter indent)
+    raw.write("\n\033[2;33m" + rule + "\033[0m\n")
+    raw.flush()
+
+    # Route prompt_toolkit output to the raw stream so cursor escape codes
+    # are not offset by _PaddedWriter's left-margin prefix.
+    pt_output = create_output(stdout=raw)
+
+    pt_style = Style.from_dict({
+        # noreverse removes the default inverted-video background on the toolbar
+        "bottom-toolbar": "noreverse fg:ansibrightblack bg:default",
+        "tb-rule": "noreverse fg:ansiyellow dim bg:default",
+    })
+
+    def bottom_toolbar():
+        return FormattedText([
+            ("class:tb-rule", rule + "\n"),
+            ("class:bottom-toolbar", _PROMPT_HINT_PLAIN),
+        ])
+
+    try:
+        session = PromptSession(
+            bottom_toolbar=bottom_toolbar,
+            style=pt_style,
+            output=pt_output,
+            multiline=False,
+        )
+        result = session.prompt("> ")
+    except (EOFError, KeyboardInterrupt):
+        raise
+
+    # Erase the toolbar rows (rule + hint) that prompt_toolkit left in the scrollback.
+    # \033[1A moves up one line; \033[2K clears it. Repeat for rule line + hint line(s).
+    import math
+    hint_rows = max(1, math.ceil(len(_PROMPT_HINT_PLAIN) / width))
+    for _ in range(1 + hint_rows):
+        raw.write("\033[1A\033[2K")
+    raw.flush()
+
+    if isinstance(sys.stdout, _PaddedWriter):
+        sys.stdout.mark_new_line()
+
+    return result
 
 
 def show_evidence_collected(description: str) -> None:
@@ -214,17 +466,20 @@ def show_player_status(states: list) -> None:
                         border_style="yellow"))
 
 
-def show_locations(fixed: list, case_locs: list, case_title: str | None = None) -> None:
+def show_locations(fixed: list, case_locs: list, case_title: str | None = None,
+                   current_location: str | None = None) -> None:
     t = Table(box=box.SIMPLE, show_header=True, header_style="bold yellow")
     t.add_column("Location", style="white")
     t.add_column("Case", style="dim")
     for loc in fixed:
-        t.add_row(loc["name"], "—")
+        name = f"{loc['name']} *" if current_location and loc["name"] == current_location else loc["name"]
+        t.add_row(name, "—")
     for loc in case_locs:
-        t.add_row(loc["name"], case_title or "current case")
+        name = f"{loc['name']} *" if current_location and loc["name"] == current_location else loc["name"]
+        t.add_row(name, case_title or "current case")
     console.print(Panel(t, title="[bold yellow]Known Locations[/bold yellow]",
                         border_style="yellow"))
-    console.print("[dim]Ask your partner about any of them.[/dim]\n")
+    console.print("[dim]* you are here  ·  Ask your partner about any of them.[/dim]\n")
 
 
 def show_evidence(evidence: list) -> None:
@@ -305,6 +560,58 @@ def show_dossier_all(entries: dict[str, list[str]]) -> None:
                         title="[bold yellow]Dossier[/bold yellow]", border_style="yellow"))
 
 
+def show_player_profile(player: dict, orgs: list[dict], partner_name: str | None,
+                        partner_stage: str | None, npc_relationships: list[dict]) -> None:
+    lines = []
+
+    # Identity
+    race = player.get("race") or "unspecified"
+    gender = player.get("gender") or "unspecified"
+    lines.append(f"[bold white]{escape(race.title())} / {escape(gender.title())}[/bold white]")
+
+    # Alignment
+    lc = player.get("law_chaos", 0)
+    ge = player.get("good_evil", 0)
+    lc_label = "Lawful" if lc <= -5 else "Chaotic" if lc >= 5 else "Neutral"
+    ge_label = "Good" if ge <= -5 else "Evil" if ge >= 5 else "Neutral"
+    lines.append(f"[dim]Alignment: {lc_label} {ge_label} (law/chaos {lc:+d}, good/evil {ge:+d})[/dim]")
+    lines.append("")
+
+    # Case stats
+    rep = player.get("reputation", 100)
+    rep_label = "Respected" if rep >= 80 else "Tolerated" if rep >= 50 else "Notorious"
+    cash = player.get("cash", 0)
+    lines.append(f"[cyan]Reputation:[/cyan] {rep} ({rep_label})   "
+                 f"[cyan]Cash:[/cyan] ${cash}   "
+                 f"[cyan]Cases solved:[/cyan] {player.get('cases_solved', 0)}   "
+                 f"[cyan]Wrong arrests:[/cyan] {player.get('wrong_arrests', 0)}   "
+                 f"[cyan]DA trust:[/cyan] {player.get('da_trust', 100)}")
+
+    # Organizations
+    if orgs:
+        lines.append("")
+        lines.append("[bold yellow]Organizations[/bold yellow]")
+        for o in orgs:
+            payroll_note = f"  [dim](payroll ${o['payroll']}/day)[/dim]" if o.get("payroll") else ""
+            lines.append(f"  [yellow]·[/yellow] {escape(o['org_name'])} — {escape(o['role'] or 'member')}{payroll_note}")
+
+    # Romantic relationships
+    has_romance = partner_name or npc_relationships
+    if has_romance:
+        lines.append("")
+        lines.append("[bold magenta]Relationships[/bold magenta]")
+        if partner_name and partner_stage:
+            lines.append(f"  [magenta]♥ {escape(partner_name)} (partner — {escape(partner_stage)})[/magenta]")
+        for rel in npc_relationships:
+            stage = rel["stage"]
+            color = {"cold": "dim", "curious": "white", "warm": "yellow",
+                     "smitten": "magenta", "devoted": "red"}.get(stage, "white")
+            lines.append(f"  [{color}]· {escape(rel['name'])} ({escape(rel['role'])}) — {stage}[/{color}]")
+
+    console.print(Panel("\n".join(lines), title="[bold white]Detective File[/bold white]",
+                        border_style="white"))
+
+
 def show_cases(cases: list, active_case_id: int | None) -> None:
     if not cases:
         console.print(Panel("[dim]No cases on file.[/dim]",
@@ -323,7 +630,14 @@ def show_cases(cases: list, active_case_id: int | None) -> None:
 
 
 def show_help() -> None:
-    console.print(Panel(
+    from io import StringIO
+    from rich.console import Console as _Console
+
+    # Render help to a string first
+    buf = StringIO()
+    tmp = _Console(file=buf, width=shutil.get_terminal_size().columns - 4,
+                   force_terminal=True, highlight=False)
+    tmp.print(Panel(
         "[bold]Movement & Time:[/bold]\n"
         "  /go [location] · /visit [location]\n"
         "  /wait — wait 1 hour\n"
@@ -333,6 +647,7 @@ def show_help() -> None:
         "  /talk [character] · /talk to [character]\n"
         "  /talk partner — talk to your partner\n\n"
         "[bold]Investigation:[/bold]\n"
+        "  /location — describe current location\n"
         "  /look · /look around — survey the area\n"
         "  /examine [object] · /look at [object]\n"
         "  /collect [item] · /pick up [item]\n"
@@ -357,7 +672,10 @@ def show_help() -> None:
         "  /dossier <name> — what you know about a specific person\n"
         "  /who <name> — check if someone is in the case file\n"
         "  /add <name> as suspect — add someone to your list\n"
-        "  /romance — relationship status\n\n"
+        "  /drink — have a drink (at a bar or near one)\n"
+        "  /rep — your street reputation\n"
+        "  /romance — relationship status\n"
+        "  /me — your detective profile\n\n"
         "[bold]Other:[/bold]\n"
         "  /help — show this\n"
         "  done / bye / leave — end a conversation\n"
@@ -365,3 +683,27 @@ def show_help() -> None:
         title="[bold yellow]Detective's Handbook[/bold yellow]",
         border_style="yellow",
     ))
+    rendered = buf.getvalue()
+
+    import tty
+    import termios
+
+    raw = sys.stdout._wrapped if isinstance(sys.stdout, _PaddedWriter) else sys.stdout
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+
+    # Enter alternate screen, clear it, render help, wait for keypress, restore.
+    raw.write("\033[?1049h\033[H\033[2J")
+    raw.write(rendered)
+    raw.write("\n\033[2m  press any key to continue\033[0m\n")
+    raw.flush()
+    try:
+        tty.setraw(fd)
+        sys.stdin.read(1)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        raw.write("\033[2J\033[H")   # blank the alt screen before saving to scrollback
+        raw.write("\033[?1049l")
+        raw.flush()
+        if isinstance(sys.stdout, _PaddedWriter):
+            sys.stdout.mark_new_line()

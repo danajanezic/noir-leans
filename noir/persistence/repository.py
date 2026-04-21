@@ -29,6 +29,14 @@ def update_player_reputation(conn: sqlite3.Connection, *, delta: int) -> None:
     conn.commit()
 
 
+def update_da_trust(conn: sqlite3.Connection, *, delta: int) -> None:
+    conn.execute(
+        "UPDATE player SET da_trust = MAX(0, MIN(100, COALESCE(da_trust, 100) + ?)) WHERE id=1",
+        (delta,)
+    )
+    conn.commit()
+
+
 def update_player_stats(conn: sqlite3.Connection, *,
                         cases_solved_delta: int = 0, wrong_arrests_delta: int = 0) -> None:
     conn.execute(
@@ -151,6 +159,13 @@ def create_case(conn: sqlite3.Connection, *, archetype: str, title: str,
             (case_id, clue["description"],
              clue.get("location"), 1 if clue.get("is_red_herring") else 0)
         )
+    body_loc = case_data.get("body_location", "City Morgue")
+    clue_location = "City Morgue" if body_loc == "City Morgue" else case_data.get("victim", {}).get("found_at")
+    for desc in case_data.get("body_clues", []):
+        conn.execute(
+            "INSERT INTO clues (case_id, description, location, is_red_herring) VALUES (?, ?, ?, ?)",
+            (case_id, desc, clue_location, 0)
+        )
     conn.commit()
     return case_id
 
@@ -182,21 +197,22 @@ def update_case_status(conn: sqlite3.Connection, *, case_id: int, status: str,
     conn.commit()
 
 
-def create_npc(conn: sqlite3.Connection, *, case_id: int, name: str, role: str,
+def create_npc(conn: sqlite3.Connection, *, case_id: int | None, name: str, role: str,
                system_prompt: str, current_location_id: int,
                alignment: str = "True Neutral", age: int = 35,
                pressure_tolerance: int = 5, kindness_weight: int = 5,
                empathy: int = 5, starting_guilt: int = 0,
-               revelation_style: str = "staged", revelation_stages: int = 3) -> int:
+               revelation_style: str = "staged", revelation_stages: int = 3,
+               corruption: int = 0) -> int:
     cur = conn.execute(
         """INSERT INTO npcs
            (case_id, name, role, system_prompt, current_location_id, alignment, age,
             pressure_tolerance, kindness_weight, empathy, starting_guilt,
-            revelation_style, revelation_stages)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            revelation_style, revelation_stages, corruption)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (case_id, name, role, system_prompt, current_location_id, alignment, age,
          pressure_tolerance, kindness_weight, empathy, starting_guilt,
-         revelation_style, revelation_stages)
+         revelation_style, revelation_stages, corruption)
     )
     conn.commit()
     return cur.lastrowid
@@ -297,7 +313,14 @@ def increment_npc_revelation_stage(conn: sqlite3.Connection, *, npc_id: int) -> 
 
 
 def get_npcs_for_case(conn: sqlite3.Connection, case_id: int) -> list[sqlite3.Row]:
-    return conn.execute("SELECT * FROM npcs WHERE case_id=?", (case_id,)).fetchall()
+    return conn.execute(
+        """SELECT n.* FROM npcs n WHERE n.case_id=?
+           UNION ALL
+           SELECT n.* FROM npcs n
+           JOIN locations l ON n.current_location_id = l.id
+           WHERE n.case_id IS NULL AND l.is_fixed=1""",
+        (case_id,)
+    ).fetchall()
 
 
 def update_npc_location(conn: sqlite3.Connection, *, npc_id: int, location_id: int) -> None:
@@ -353,10 +376,10 @@ def link_evidence_to_suspect(conn: sqlite3.Connection, *, evidence_id: int, npc_
 
 
 def create_arrest(conn: sqlite3.Connection, *, case_id: int, npc_id: int,
-                  evidence_summary: str) -> int:
+                  evidence_summary: str, was_correct: bool | None = None) -> int:
     cur = conn.execute(
-        "INSERT INTO arrests (case_id, npc_id, evidence_summary) VALUES (?, ?, ?)",
-        (case_id, npc_id, evidence_summary)
+        "INSERT INTO arrests (case_id, npc_id, evidence_summary, was_correct) VALUES (?, ?, ?, ?)",
+        (case_id, npc_id, evidence_summary, int(was_correct) if was_correct is not None else None)
     )
     conn.commit()
     return cur.lastrowid
@@ -495,6 +518,23 @@ def set_npc_secret_revealed(conn: sqlite3.Connection, npc_id: int) -> None:
            VALUES (?, 1)
            ON CONFLICT(npc_id) DO UPDATE SET secret_revealed=1""",
         (npc_id,)
+    )
+    conn.commit()
+
+
+def get_npc_revelation_summary(conn: sqlite3.Connection, npc_id: int) -> str | None:
+    row = conn.execute(
+        "SELECT revelation_summary FROM npc_relationships WHERE npc_id=?", (npc_id,)
+    ).fetchone()
+    return row["revelation_summary"] if row else None
+
+
+def set_npc_revelation_summary(conn: sqlite3.Connection, npc_id: int, summary: str) -> None:
+    conn.execute(
+        """INSERT INTO npc_relationships (npc_id, revelation_summary)
+           VALUES (?, ?)
+           ON CONFLICT(npc_id) DO UPDATE SET revelation_summary=excluded.revelation_summary""",
+        (npc_id, summary)
     )
     conn.commit()
 
@@ -683,4 +723,217 @@ def get_alignment(player: sqlite3.Row) -> str:
 def remove_partner(conn: sqlite3.Connection) -> None:
     conn.execute("UPDATE partner SET dark_past_state='lost' WHERE id=1")
     conn.execute("DELETE FROM conversation_history WHERE character_id='partner'")
+    conn.commit()
+
+
+def add_lead(conn: sqlite3.Connection, *, case_id: int, description: str,
+             source_npc: str | None = None) -> None:
+    existing = conn.execute(
+        "SELECT id FROM leads WHERE case_id=? AND description=?", (case_id, description)
+    ).fetchone()
+    if not existing:
+        conn.execute(
+            "INSERT INTO leads (case_id, description, source_npc) VALUES (?, ?, ?)",
+            (case_id, description, source_npc)
+        )
+        conn.commit()
+
+
+def get_leads_for_case(conn: sqlite3.Connection, case_id: int) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM leads WHERE case_id=? ORDER BY id ASC", (case_id,)
+    ).fetchall()
+
+
+def get_all_organizations(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute("SELECT * FROM organizations ORDER BY influence DESC").fetchall()
+
+
+def get_organization_by_name(conn: sqlite3.Connection, name: str) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM organizations WHERE name=?", (name,)).fetchone()
+
+
+def get_or_create_family_org(conn: sqlite3.Connection, surname: str) -> int:
+    name = f"{surname} Family"
+    row = conn.execute("SELECT id FROM organizations WHERE name=?", (name,)).fetchone()
+    if row:
+        return row["id"]
+    conn.execute(
+        """INSERT INTO organizations (name, type, description, is_hierarchical, is_seeded, influence)
+           VALUES (?, 'personal_family', ?, 1, 0, 2)""",
+        (name, f"The {surname} family, a personal family unit.")
+    )
+    conn.commit()
+    return conn.execute("SELECT id FROM organizations WHERE name=?", (name,)).fetchone()["id"]
+
+
+def get_organizations_for_location(conn: sqlite3.Connection, location_id: int) -> list[sqlite3.Row]:
+    return conn.execute(
+        """SELECT o.* FROM organizations o
+           JOIN location_organizations lo ON lo.organization_id = o.id
+           WHERE lo.location_id=?
+           ORDER BY o.influence DESC""",
+        (location_id,)
+    ).fetchall()
+
+
+def get_organizations_for_npc(conn: sqlite3.Connection, npc_id: int) -> list[sqlite3.Row]:
+    return conn.execute(
+        """SELECT o.*, om.role FROM organizations o
+           JOIN organization_members om ON om.organization_id = o.id
+           WHERE om.member_type='npc' AND om.member_id=?
+           ORDER BY o.influence DESC""",
+        (npc_id,)
+    ).fetchall()
+
+
+def get_organizations_for_player(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(
+        """SELECT o.*, om.role FROM organizations o
+           JOIN organization_members om ON om.organization_id = o.id
+           WHERE om.member_type='player' AND om.member_id=1
+           ORDER BY o.influence DESC"""
+    ).fetchall()
+
+
+def get_members_of_organization(conn: sqlite3.Connection, org_id: int) -> list[sqlite3.Row]:
+    return conn.execute(
+        """SELECT om.*, n.name as npc_name, n.role as npc_role
+           FROM organization_members om
+           LEFT JOIN npcs n ON om.member_type='npc' AND om.member_id=n.id
+           WHERE om.organization_id=?
+           ORDER BY om.role""",
+        (org_id,)
+    ).fetchall()
+
+
+def add_organization_member(conn: sqlite3.Connection, *, organization_id: int,
+                             member_type: str, member_id: int,
+                             role: str | None = None, is_static: bool = False) -> None:
+    existing = conn.execute(
+        "SELECT id FROM organization_members WHERE organization_id=? AND member_type=? AND member_id=?",
+        (organization_id, member_type, member_id)
+    ).fetchone()
+    if existing:
+        if role:
+            conn.execute(
+                "UPDATE organization_members SET role=? WHERE id=?",
+                (role, existing["id"])
+            )
+    else:
+        conn.execute(
+            """INSERT INTO organization_members (organization_id, member_type, member_id, role, is_static)
+               VALUES (?, ?, ?, ?, ?)""",
+            (organization_id, member_type, member_id, role, 1 if is_static else 0)
+        )
+    conn.commit()
+
+
+def update_member_role(conn: sqlite3.Connection, *, organization_id: int,
+                        member_type: str, member_id: int, role: str) -> None:
+    conn.execute(
+        """UPDATE organization_members SET role=?
+           WHERE organization_id=? AND member_type=? AND member_id=?""",
+        (role, organization_id, member_type, member_id)
+    )
+    conn.commit()
+
+
+def get_player_cash(conn: sqlite3.Connection) -> int:
+    row = conn.execute("SELECT cash FROM player WHERE id=1").fetchone()
+    return row["cash"] if row and row["cash"] is not None else 0
+
+
+def update_player_cash(conn: sqlite3.Connection, *, delta: int) -> int:
+    conn.execute(
+        "UPDATE player SET cash = MAX(0, COALESCE(cash, 0) + ?) WHERE id=1", (delta,)
+    )
+    conn.commit()
+    return get_player_cash(conn)
+
+
+def record_bribe(conn: sqlite3.Connection, *, case_id: int | None, npc_id: int,
+                 amount: int, accepted: bool, effect: str | None) -> int:
+    cur = conn.execute(
+        "INSERT INTO bribes (case_id, npc_id, amount, accepted, effect) VALUES (?, ?, ?, ?, ?)",
+        (case_id, npc_id, amount, 1 if accepted else 0, effect)
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def get_accepted_bribes_for_case(conn: sqlite3.Connection, case_id: int) -> list:
+    return conn.execute(
+        "SELECT * FROM bribes WHERE case_id=? AND accepted=1", (case_id,)
+    ).fetchall()
+
+
+def get_npc_corruption(conn: sqlite3.Connection, npc_id: int) -> int:
+    row = conn.execute("SELECT corruption FROM npcs WHERE id=?", (npc_id,)).fetchone()
+    return row["corruption"] if row and row["corruption"] is not None else 0
+
+
+def set_npc_corruption(conn: sqlite3.Connection, npc_id: int, corruption: int) -> None:
+    conn.execute("UPDATE npcs SET corruption=? WHERE id=?", (corruption, npc_id))
+    conn.commit()
+
+
+def get_player_org_memberships(conn: sqlite3.Connection) -> list:
+    return conn.execute(
+        """SELECT om.*, o.name as org_name, o.type as org_type, o.influence
+           FROM organization_members om
+           JOIN organizations o ON o.id = om.organization_id
+           WHERE om.member_type='player' AND om.member_id=1"""
+    ).fetchall()
+
+
+def collect_org_payroll(conn: sqlite3.Connection, current_game_time: int) -> list[dict]:
+    """Pay out any org payroll that has come due (daily = 1440 game minutes). Returns list of payouts."""
+    memberships = conn.execute(
+        """SELECT om.id, om.organization_id, om.payroll, om.last_payroll_time, o.name
+           FROM organization_members om
+           JOIN organizations o ON o.id = om.organization_id
+           WHERE om.member_type='player' AND om.member_id=1 AND om.payroll > 0"""
+    ).fetchall()
+    payouts = []
+    for m in memberships:
+        last = m["last_payroll_time"] or 0
+        if current_game_time - last >= 1440:
+            amount = m["payroll"]
+            conn.execute(
+                "UPDATE organization_members SET last_payroll_time=? WHERE id=?",
+                (current_game_time, m["id"])
+            )
+            conn.execute(
+                "UPDATE player SET cash = COALESCE(cash, 0) + ? WHERE id=1", (amount,)
+            )
+            payouts.append({"org_name": m["name"], "amount": amount})
+    if payouts:
+        conn.commit()
+    return payouts
+
+
+def get_street_reputation(conn: sqlite3.Connection) -> dict:
+    row = conn.execute("SELECT tags, street_says FROM street_reputation WHERE id=1").fetchone()
+    if not row:
+        return {"tags": [], "street_says": ""}
+    import json as _json
+    return {
+        "tags": _json.loads(row["tags"] or "[]"),
+        "street_says": row["street_says"] or "",
+    }
+
+
+def update_street_reputation(conn: sqlite3.Connection, *,
+                              tags: list[str], street_says: str) -> None:
+    import json as _json
+    conn.execute(
+        """INSERT INTO street_reputation (id, tags, street_says, updated_at)
+           VALUES (1, ?, ?, CURRENT_TIMESTAMP)
+           ON CONFLICT(id) DO UPDATE SET
+               tags=excluded.tags,
+               street_says=excluded.street_says,
+               updated_at=excluded.updated_at""",
+        (_json.dumps(tags), street_says)
+    )
     conn.commit()
