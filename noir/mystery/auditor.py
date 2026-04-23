@@ -14,7 +14,7 @@ AUDITOR_SYSTEM_PROMPT = (
 
 @dataclass
 class Issue:
-    type: str      # ghost_name | killer_mismatch | bad_clue_location | bad_routine_location | npc_unreachable | bad_relationship_ref | unsolvable | hidden_motive | alibi_contradiction
+    type: str      # ghost_name | killer_mismatch | bad_clue_location | bad_routine_location | npc_unreachable | location_unreachable | clue_unreachable | bad_relationship_ref | unsolvable | hidden_motive | alibi_contradiction | isolated_npc
     subject: str   # clue description, suspect name, etc.
     detail: str
     severity: str  # "patchable" | "fatal"
@@ -73,6 +73,17 @@ class CaseAuditor:
         suspect_names = {s["name"] for s in case.get("suspects", [])}
         victim_name = case.get("victim", {}).get("name", "")
         all_char_names = suspect_names | ({victim_name} if victim_name else set())
+
+        cause = case.get("victim", {}).get("cause_of_death", "").lower()
+        _DROWN_WORDS = {"drown", "submer", "suffocated in", "face-down in", "found in a", "sealed in a"}
+        if any(w in cause for w in _DROWN_WORDS):
+            issues.append(Issue(
+                type="banned_cause",
+                subject="cause_of_death",
+                detail=f"Cause of death involves drowning or submersion: '{cause[:80]}' — this is prohibited",
+                severity="fatal",
+                source="deterministic",
+            ))
 
         killer = case.get("killer_name", "")
         if killer not in suspect_names:
@@ -150,6 +161,94 @@ class CaseAuditor:
                         source="deterministic",
                     ))
 
+        issues += self._check_reachability(case)
+        return issues
+
+    @staticmethod
+    def _reachable_locations(case: dict) -> set[str]:
+        """BFS from crime scene through NPC routine chains. Returns reachable location names."""
+        found_at = case.get("victim", {}).get("found_at", "")
+        body_loc = case.get("body_location", "City Morgue")
+        reachable: set[str] = set()
+        if found_at:
+            reachable.add(found_at)
+        if body_loc != "crime scene":
+            reachable.add("City Morgue")
+        if not reachable:
+            return reachable
+        suspects = case.get("suspects", [])
+        changed = True
+        while changed:
+            changed = False
+            for suspect in suspects:
+                routine_locs = {
+                    e.get("location") for e in suspect.get("routine", [])
+                    if e.get("location") and e.get("location") != "home"
+                }
+                if routine_locs & reachable:
+                    for loc in routine_locs - reachable:
+                        reachable.add(loc)
+                        changed = True
+        return reachable
+
+    def _check_reachability(self, case: dict) -> list[Issue]:
+        """Verify every suspect, location, and clue is reachable (directly or transitively) from crime scene."""
+        issues: list[Issue] = []
+        suspects = case.get("suspects", [])
+        clues = case.get("clues", [])
+        killer = case.get("killer_name", "")
+
+        reachable = self._reachable_locations(case)
+        if not reachable:
+            return []
+
+        # Every suspect must be reachable
+        for suspect in suspects:
+            routine_locs = {
+                e.get("location") for e in suspect.get("routine", [])
+                if e.get("location") and e.get("location") != "home"
+            }
+            if not routine_locs & reachable:
+                sev = "fatal" if suspect["name"] == killer else "patchable"
+                issues.append(Issue(
+                    type="npc_unreachable",
+                    subject=suspect["name"],
+                    detail=(
+                        f"{suspect['name']} has no routine entry at any location reachable "
+                        "from the crime scene — the player cannot discover this character"
+                    ),
+                    severity=sev,
+                    source="deterministic",
+                ))
+
+        # Every case location must be reachable
+        for loc in case.get("locations", []):
+            if loc["name"] not in reachable:
+                issues.append(Issue(
+                    type="location_unreachable",
+                    subject=loc["name"],
+                    detail=(
+                        f"Location '{loc['name']}' cannot be reached starting from the crime scene "
+                        "— no NPC chain connects it to the opening location"
+                    ),
+                    severity="patchable",
+                    source="deterministic",
+                ))
+
+        # Every non-red-herring clue must be at a reachable location
+        for clue in clues:
+            if clue.get("is_red_herring"):
+                continue
+            clue_loc = clue.get("location", "")
+            if clue_loc and clue_loc not in reachable:
+                issues.append(Issue(
+                    type="clue_unreachable",
+                    subject=clue.get("description", ""),
+                    detail=f"Clue at '{clue_loc}' is not reachable from the crime scene",
+                    severity="patchable",
+                    source="deterministic",
+                ))
+
         return issues
 
     def _llm_check(self, case: dict) -> list[Issue]:
@@ -168,7 +267,7 @@ class CaseAuditor:
             "clues": case.get("clues", []),
         }
         prompt = (
-            "Evaluate this mystery case for three types of semantic issues:\n\n"
+            "Evaluate this mystery case for four types of semantic issues:\n\n"
             "1. unsolvable (fatal): Is there at least one non-red-herring clue whose "
             "description meaningfully points toward the killer by name, role, location, "
             "or motive? If not, report this.\n"
@@ -177,9 +276,14 @@ class CaseAuditor:
             "internal 'motive' field with no in-world trail? If hidden, report this.\n"
             "3. alibi_contradiction (patchable): Does any suspect's alibi directly "
             "contradict their own routine entries (e.g. claims to be elsewhere during "
-            "a time their routine places them at the crime scene)? If so, report this.\n\n"
+            "a time their routine places them at the crime scene)? If so, report this.\n"
+            "4. isolated_npc (patchable): Is any suspect completely invisible to other "
+            "NPCs — not mentioned in anyone else's relationships or shared_facts, and "
+            "not referenced by any clue? A player must be able to learn a suspect exists "
+            "from someone or something at the crime scene. If a suspect is totally "
+            "invisible to the rest of the case, report this.\n\n"
             f"Case:\n{json.dumps(slim)}\n\n"
-            'Return ONLY: {"issues": [{"type": "unsolvable"|"hidden_motive"|"alibi_contradiction", '
+            'Return ONLY: {"issues": [{"type": "unsolvable"|"hidden_motive"|"alibi_contradiction"|"isolated_npc", '
             '"subject": "suspect or clue name", "detail": "string", '
             '"severity": "patchable"|"fatal"}]} '
             'If no issues, return {"issues": []}.'
@@ -203,6 +307,7 @@ class CaseAuditor:
         first_loc = case["locations"][0]["name"] if case.get("locations") else "home"
         victim_found_at = case.get("victim", {}).get("found_at", first_loc)
         fallback_loc = victim_found_at if victim_found_at in loc_names else first_loc
+        reachable = self._reachable_locations(case)
 
         for issue in issues:
             if issue.severity != "patchable":
@@ -238,12 +343,56 @@ class CaseAuditor:
                     if suspect["name"] == issue.subject:
                         if not isinstance(suspect.get("routine"), list):
                             suspect["routine"] = []
+                        # Use any reachable location as a bridge, preferring crime scene
+                        bridge = fallback_loc if fallback_loc in reachable else (
+                            next(iter(reachable), fallback_loc)
+                        )
                         suspect["routine"].append({
                             "time_start": "09:00",
                             "time_end": "17:00",
-                            "location": first_loc,
+                            "location": bridge,
                         })
                         break
+
+            elif issue.type == "location_unreachable":
+                # Wire an already-reachable NPC to visit the isolated location
+                reachable_suspects = [
+                    s for s in case["suspects"]
+                    if any(e.get("location") in reachable for e in s.get("routine", []))
+                ]
+                target_suspect = reachable_suspects[0] if reachable_suspects else (
+                    case["suspects"][0] if case["suspects"] else None
+                )
+                if target_suspect:
+                    if not isinstance(target_suspect.get("routine"), list):
+                        target_suspect["routine"] = []
+                    target_suspect["routine"].append({
+                        "time_start": "18:00",
+                        "time_end": "22:00",
+                        "location": issue.subject,
+                    })
+
+            elif issue.type == "clue_unreachable":
+                for clue in case["clues"]:
+                    if clue.get("description") == issue.subject:
+                        clue["location"] = fallback_loc
+                        break
+
+            elif issue.type == "isolated_npc":
+                # Add a relationship reference from a connected suspect to the isolated one
+                isolated_name = issue.subject
+                connected = [
+                    s for s in case["suspects"]
+                    if s["name"] != isolated_name
+                    and any(e.get("location") == fallback_loc for e in s.get("routine", []))
+                ]
+                if connected:
+                    rel = connected[0].setdefault("relationships", [])
+                    rel.append({
+                        "name": isolated_name,
+                        "relationship": "known associate",
+                        "shared_facts": [],
+                    })
 
             elif issue.type == "alibi_contradiction":
                 for suspect in case["suspects"]:
@@ -268,6 +417,7 @@ class CaseAuditor:
     def _build_correction_vector(self, case: dict, fatal: list[Issue]) -> dict:
         suspect_names = [s["name"] for s in case.get("suspects", [])]
         loc_names = [loc["name"] for loc in case.get("locations", [])]
+        reachable = sorted(self._reachable_locations(case))
         vector: dict = {}
 
         for issue in fatal:
@@ -291,6 +441,20 @@ class CaseAuditor:
                     "fix": (
                         "The motive must be discoverable through at least one clue description "
                         "or through what NPCs say — not only in the internal 'motive' field."
+                    ),
+                }
+            elif issue.type == "banned_cause":
+                vector["banned_cause_of_death"] = {
+                    "problem": issue.detail,
+                    "fix": "Rewrite the cause of death. It must NOT involve drowning, submersion, or liquid suffocation in any form.",
+                }
+            elif issue.type == "npc_unreachable":
+                vector[f"npc_unreachable:{issue.subject}"] = {
+                    "problem": issue.detail,
+                    "fix": (
+                        f"Give {issue.subject} at least one routine entry at a location already "
+                        f"reachable via the NPC chain from the crime scene. "
+                        f"Currently reachable locations: {reachable or loc_names}"
                     ),
                 }
             else:

@@ -1,9 +1,9 @@
 from noir.characters.npc_archetype_loader import load_npc_archetypes, get_npc_archetype, archetype_ids
 
 
-def test_load_npc_archetypes_returns_30():
+def test_load_npc_archetypes_count():
     archetypes = load_npc_archetypes()
-    assert len(archetypes) == 30
+    assert len(archetypes) == 45
 
 
 def test_each_archetype_has_required_fields():
@@ -28,5 +28,5 @@ def test_get_npc_archetype_unknown_returns_none():
 
 def test_archetype_ids_returns_all_unique():
     ids = archetype_ids()
-    assert len(ids) == 30
+    assert len(ids) == 45
     assert len(set(ids)) == len(ids)  # no duplicates

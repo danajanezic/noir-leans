@@ -21,14 +21,56 @@ REQUIRED_LOCATION_FIELDS = {"name"}
 GENERATOR_SYSTEM_PROMPT = (
     _get_world_context() + "\n\n"
     "You are a mystery generator for this world. "
-    "Generate richly detailed, darkly comic mysteries. Characters should be over-the-top and memorable. "
-    "Causes of death should be absurd. Motives should be simultaneously petty and grandiose. "
+    "Generate richly detailed noir mysteries. Characters should be vivid and memorable. "
+    "Causes of death should be specific, unexpected, and varied — they can be darkly comic, brutal, banal, or strange, but never generic. Motives should feel simultaneously petty and grandiose. "
+    "ABSOLUTE PROHIBITION: The cause of death must NEVER involve drowning, submersion, or liquid suffocation in any form — no drowning in tureens, barrels, vats, rivers, bathtubs, pools, or any other vessel or body of water. Violating this rule invalidates the entire case. "
     "The setting is period-accurate 1935: no phones in pockets, no computers, cash economy, Prohibition recently ended, fedoras mandatory. "
     "Never use the word 'Negro' or any racial slur in any field. Refer to Black characters as Black. "
-    "Return ONLY valid JSON matching the requested schema. No prose, no markdown, just JSON."
+    "Return ONLY valid JSON matching the requested schema. No prose, no markdown, just JSON. "
+    "For body_location: choose 'crime scene' roughly half the time (body still at the scene) and 'City Morgue' the other half (body removed). "
+    "For body_clues: include 0-3 forensic details found on the body (wounds, ligature marks, objects in pockets, etc.) — "
+    "sometimes there are none, sometimes one key clue. Place these in the body_clues array, not in the main clues array. "
+    "In the main clues array, set the location of body-related clues to match body_location "
+    "(either the crime scene location name, or 'City Morgue')."
 )
 
 DARK_PAST_CASE_SYSTEM_PROMPT = """You are a mystery generator for Noirleans, 1935. Generate a case directly tied to a partner's dark past — a crime they committed or were part of. The player must investigate this case knowing their partner is implicated. The tone is morally complex and personal. The partner should appear as a named NPC in the case (as a suspect or witness). Return ONLY valid JSON matching the case schema."""
+
+
+def _case_schema(archetype_list: str, org_list: str) -> str:
+    return (
+        "{\n"
+        '  "title": "string",\n'
+        '  "victim": {"name": "string", "cause_of_death": "string", "found_at": "string (location name where body was discovered)"},\n'
+        '  "body_location": "crime scene" or "City Morgue" (where the body currently is — at the crime scene or moved to the City Morgue),\n'
+        '  "body_clues": ["string"] (0-3 forensic clues found on or with the body — wounds, marks, objects; can be empty []),\n'
+        '  "killer_name": "string (must match one suspect name)",\n'
+        '  "motive": "string",\n'
+        '  "suspects": [\n'
+        '    {"name": "string", "role": "suspect|witness|informant",\n'
+        '     "race": "string (e.g. Black, white, Creole, Cajun, Italian, Irish)",\n'
+        '     "political_connections": "string (e.g. none, alderman on payroll, police captain, organized crime)",\n'
+        '     "alibi": "string", "secret": "string",\n'
+        f'     "archetype_id": "string (MUST be one of: {archetype_list})",\n'
+        '     "alignment": "string (one of: Lawful Good, Neutral Good, Chaotic Good, Lawful Neutral, True Neutral, Chaotic Neutral, Lawful Evil, Neutral Evil, Chaotic Evil)",\n'
+        '     "age": integer,\n'
+        '     "pressure_tolerance": integer 1-10,\n'
+        '     "kindness_weight": integer 1-10,\n'
+        '     "empathy": integer 1-10,\n'
+        '     "starting_guilt": integer 0-10,\n'
+        '     "revelation_style": "staged" or "sudden" — use "sudden" only for emotionally fragile or guilt-ridden characters who will crack all at once; use "staged" for controlled, criminal, or self-protective characters who reveal slowly under accumulating pressure,\n'
+        '     "revelation_stages": integer (2-5 for staged; higher = harder to crack; 1 for sudden),\n'
+        '     "routine": [{"time_start": "HH:MM", "time_end": "HH:MM", "location": "string"}],\n'
+        '     "relationships": [{"name": "string", "relationship": "string", "shared_facts": ["string"]}]}\n'
+        '  ],\n'
+        '  "clues": [\n'
+        '    {"description": "string", "is_red_herring": boolean, "location": "string"}\n'
+        '  ],\n'
+        '  "locations": [\n'
+        f'    {{"name": "string", "organizations": ["string"] (0-1 org names from this list that control this location: {org_list}; use [] if none apply; a single location should not be controlled by two rival criminal organizations)}}\n'
+        '  ]\n'
+        "}"
+    )
 
 
 def _build_npc_system_prompt(name: str, role: str, race: str,
@@ -68,10 +110,13 @@ def _build_npc_system_prompt(name: str, role: str, race: str,
         f"{political_line}"
         f"Your alibi (which may or may not be true): {alibi}. "
         f"Your secret: {secret}. "
-        + (f"{rel_text} " if rel_text else "")
-        + "You are in Noirleans, 1935 — Depression-era, corrupt to the bone, "
-        "jazz leaking out of every cracked window. Stay in character. "
-        "Be evasive about your secret but not impossibly so."
+        "You guard this with your life — you do not volunteer it, hint at it, or confirm it under casual questioning. "
+        "You will only reveal it if the game system explicitly tells you to (you will see an instruction in brackets). "
+        "Until that instruction appears, treat your secret as information you will take to the grave. "
+        "You may deny, deflect, lie, change the subject, or go silent — but you do not crack."
+        + (f" {rel_text}" if rel_text else "")
+        + " You are in Noirleans, 1935 — Depression-era, corrupt to the bone, "
+        "jazz leaking out of every cracked window. Stay in character."
     )
 
 
@@ -203,19 +248,28 @@ class MysteryGenerator:
             "SELECT case_data FROM cases ORDER BY id DESC LIMIT 6"
         ).fetchall()
         names = []
-        for r in rows:
+        recent_names: list[str] = []
+        for i, r in enumerate(rows):
             try:
                 cd = json.loads(r["case_data"])
                 victim = cd.get("victim", {}).get("name", "")
+                tokens = []
                 if victim:
-                    names.extend(victim.split())
+                    tokens.extend(victim.split())
                 for s in cd.get("suspects", []):
-                    names.extend(s.get("name", "").split())
+                    tokens.extend(s.get("name", "").split())
+                names.extend(tokens)
+                if i < 2:
+                    recent_names.extend(tokens)
             except Exception:
                 pass
         from collections import Counter
         last_names = [n for n in names if len(n) > 3]
         recurring = [n for n, c in Counter(last_names).items() if c > 1]
+        # Always ban every name from the two most-recent cases, not just recurring ones
+        for n in recent_names:
+            if len(n) > 3 and n not in recurring:
+                recurring.append(n)
 
         # always ban the partner's family name
         partner_row = self.conn.execute("SELECT name FROM partner WHERE id=1").fetchone()
@@ -241,6 +295,21 @@ class MysteryGenerator:
                 pass
         return causes
 
+    def _recent_crime_scenes(self) -> list[str]:
+        rows = self.conn.execute(
+            "SELECT case_data FROM cases ORDER BY id DESC LIMIT 4"
+        ).fetchall()
+        scenes = []
+        for r in rows:
+            try:
+                cd = json.loads(r["case_data"])
+                loc = cd.get("victim", {}).get("found_at", "")
+                if loc:
+                    scenes.append(loc)
+            except Exception:
+                pass
+        return scenes
+
     def generate(self, archetype_name: str, theme: str | None = None) -> dict:
         from noir.characters.npc_archetype_loader import archetype_ids
         from noir.persistence.repository import get_seeded_location_names
@@ -249,6 +318,9 @@ class MysteryGenerator:
         _location_pool = get_seeded_location_names(self.conn)
         _loc_sample = random.sample(_location_pool, min(40, len(_location_pool))) if _location_pool else []
         _location_list = "\n".join(f"- {n}" for n in _loc_sample)
+        _org_list = ", ".join(
+            r[0] for r in self.conn.execute("SELECT name FROM organizations ORDER BY influence DESC").fetchall()
+        )
 
         player = get_player(self.conn)
         player_context = _build_player_context(player)
@@ -275,62 +347,41 @@ class MysteryGenerator:
         recent_causes = self._recent_causes()
         avoid_text = (
             f"\n\nDo NOT use any of these recently used causes of death: {', '.join(recent_causes)}. "
-            "Be inventive — causes of death should be absurd, specific, and varied. "
-            "Examples of the kind of variety expected: trampled by escaped circus elephant, "
-            "drowned in a vat of bootleg rum, death by trombone (blunt force), "
-            "electrocuted by a faulty neon sign, buried alive in a shipment of oysters, "
-            "suffocated by an exceptionally large bribe."
+            "Be inventive — causes of death should be specific, unexpected, and varied. "
+            "They can be brutal, ironic, banal, or strange — the only requirement is that "
+            "they feel particular to this victim, this place, this moment. "
+            "Avoid any form of drowning. Do not use generic causes like 'shot', 'stabbed', 'poisoned' without specific detail."
         ) if recent_causes else (
-            "\n\nThe cause of death must be specific and absurd — not generic. "
-            "Avoid: poison, shooting, stabbing used plainly. "
-            "Instead: trampled by escaped circus elephant, drowned in bootleg rum, "
-            "death by trombone, electrocuted by faulty neon sign."
+            "\n\nThe cause of death must be specific and particular — not generic. "
+            "Avoid any form of drowning. Avoid: shot, stabbed, poisoned used without vivid detail. "
+            "The cause should feel tied to this victim, this setting, this world."
         )
 
+        recent_scenes = self._recent_crime_scenes()
+        scenes_text = (
+            f"\n\nDo NOT use any of these recently used crime scene locations: {', '.join(recent_scenes)}. "
+            "The murder must happen somewhere new."
+        ) if recent_scenes else ""
+
+        schema = _case_schema(_archetype_list, _org_list)
         prompt = (
-            f"{archetype_prompt}{theme_text}{avoid_text}{names_text}\n\n"
+            f"{archetype_prompt}{theme_text}{avoid_text}{names_text}{scenes_text}\n\n"
             f"{player_context}\n\n"
             f"Available locations to choose from (pick 4-6 for this case):\n{_location_list}\n\n"
-            "Return a JSON object with this exact schema:\n"
-            "{\n"
-            '  "title": "string",\n'
-            '  "victim": {"name": "string", "cause_of_death": "string", "found_at": "string (location name where body was discovered)"},\n'
-            '  "killer_name": "string (must match one suspect name)",\n'
-            '  "motive": "string",\n'
-            '  "suspects": [\n'
-            '    {"name": "string", "role": "suspect|witness|informant",\n'
-            '     "race": "string (e.g. Black, white, Creole, Cajun, Italian, Irish — reflect the real demographic diversity of 1930s New Orleans)",\n'
-            '     "political_connections": "string (e.g. none, alderman on payroll, police captain, judge, city council, organized crime, none — who protects them in 1935 Noirleans)",\n'
-            '     "alibi": "string", "secret": "string",\n'
-            f'     "archetype_id": "string (MUST be one of: {{_archetype_list}})",\n'
-            '     "alignment": "string (one of: Lawful Good, Neutral Good, Chaotic Good, Lawful Neutral, True Neutral, Chaotic Neutral, Lawful Evil, Neutral Evil, Chaotic Evil)",\n'
-            '     "age": integer (guidelines: law/legal 28-65, working adults 20-60, young 18-30),\n'
-            '     "pressure_tolerance": integer 1-10 (1=cracks immediately under pressure, 10=barely flinches),\n'
-            '     "kindness_weight": integer 1-10 (how much sympathy and warmth moves them),\n'
-            '     "empathy": integer 1-10 (guilt response to emotional appeals about victim consequences),\n'
-            '     "starting_guilt": integer 0-10 (initial guilt at case start — 0=no guilt, 10=barely keeping it together),\n'
-            '     "revelation_style": "staged" or "sudden" (staged=reveals secret gradually, sudden=cracks all at once),\n'
-            '     "revelation_stages": integer 2-5 for staged, 1 for sudden,\n'
-            '     "routine": [{"time_start": "HH:MM", "time_end": "HH:MM", "location": "string (location name from the locations list, or \'home\')"}],\n'
-            '     "relationships": [{"name": "string", "relationship": "string", "shared_facts": ["string"]}]}\n'
-            '  ],\n'
-            '  "clues": [\n'
-            '    {"description": "string", "is_red_herring": boolean, "location": "string"}\n'
-            '  ],\n'
-            '  "locations": [\n'
-            '    {"name": "string (MUST be from the available locations list above)"}\n'
-            '  ]\n'
-            "}"
+            f"Return a JSON object with this exact schema:\n{schema}"
         )
 
         case = self.llm.query_structured(GENERATOR_SYSTEM_PROMPT, [], prompt)
 
         if not _validate_case(case):
+            missing = REQUIRED_FIELDS - set(case.keys())
             error_msg = (
-                f"The generated case is missing required fields or has invalid structure.\n"
-                f"Required top-level fields: {REQUIRED_FIELDS}\n"
-                f"Generated case keys: {set(case.keys())}\n"
-                "Please regenerate with the complete schema."
+                f"The case JSON is missing or malformed. Missing top-level fields: {missing or 'none — check suspect fields'}.\n"
+                f"Locations MUST be chosen from this list:\n{_location_list}\n\n"
+                f"{names_text}\n\n"
+                f"{avoid_text}\n\n"
+                f"{scenes_text}\n\n"
+                f"Return a corrected JSON object using exactly this schema:\n{schema}"
             )
             case = self.llm.query_structured(GENERATOR_SYSTEM_PROMPT, [], error_msg)
             if not _validate_case(case):
@@ -357,12 +408,16 @@ class MysteryGenerator:
         _location_pool = get_seeded_location_names(self.conn)
         _loc_sample = random.sample(_location_pool, min(40, len(_location_pool))) if _location_pool else []
         _location_list = "\n".join(f"- {n}" for n in _loc_sample)
+        _org_list = ", ".join(
+            r[0] for r in self.conn.execute("SELECT name FROM organizations ORDER BY influence DESC").fetchall()
+        )
 
         player = get_player(self.conn)
         player_context = _build_player_context(player)
         archetypes = list_archetypes(self.conn)
         archetype_name = _pick_best_archetype(self.llm, archetypes, crime_summary)
 
+        schema = _case_schema(_archetype_list, _org_list)
         recent_names = self._recent_names()
         banned_names_text = (
             f"Do NOT reuse these family names: {', '.join(recent_names)}. "
@@ -380,45 +435,17 @@ class MysteryGenerator:
             "Generate the case. The partner should be implicated but not obviously guilty — "
             "the player must investigate to understand what really happened. "
             f"Available locations to choose from (pick 4-6 for this case):\n{_location_list}\n\n"
-            "Return a JSON object with this exact schema:\n"
-            "{\n"
-            '  "title": "string",\n'
-            '  "victim": {"name": "string", "cause_of_death": "string", "found_at": "string"},\n'
-            '  "killer_name": "string (must match one suspect name)",\n'
-            '  "motive": "string",\n'
-            '  "suspects": [\n'
-            '    {"name": "string", "role": "suspect|witness|informant",\n'
-            '     "race": "string (e.g. Black, white, Creole, Cajun, Italian, Irish — reflect the real demographic diversity of 1930s New Orleans)",\n'
-            '     "political_connections": "string (e.g. none, alderman on payroll, police captain, judge, city council, organized crime, none — who protects them in 1935 Noirleans)",\n'
-            '     "alibi": "string", "secret": "string",\n'
-            f'     "archetype_id": "string (MUST be one of: {{_archetype_list}})",\n'
-            '     "alignment": "string (one of: Lawful Good, Neutral Good, Chaotic Good, Lawful Neutral, True Neutral, Chaotic Neutral, Lawful Evil, Neutral Evil, Chaotic Evil)",\n'
-            '     "age": integer (guidelines: law/legal 28-65, working adults 20-60, young 18-30),\n'
-            '     "pressure_tolerance": integer 1-10 (1=cracks immediately under pressure, 10=barely flinches),\n'
-            '     "kindness_weight": integer 1-10 (how much sympathy and warmth moves them),\n'
-            '     "empathy": integer 1-10 (guilt response to emotional appeals about victim consequences),\n'
-            '     "starting_guilt": integer 0-10 (initial guilt at case start — 0=no guilt, 10=barely keeping it together),\n'
-            '     "revelation_style": "staged" or "sudden" (staged=reveals secret gradually, sudden=cracks all at once),\n'
-            '     "revelation_stages": integer 2-5 for staged, 1 for sudden,\n'
-            '     "routine": [{"time_start": "HH:MM", "time_end": "HH:MM", "location": "string (location name from the locations list, or \'home\')"}],\n'
-            '     "relationships": [{"name": "string", "relationship": "string", "shared_facts": ["string"]}]}\n'
-            '  ],\n'
-            '  "clues": [\n'
-            '    {"description": "string", "is_red_herring": boolean, "location": "string"}\n'
-            '  ],\n'
-            '  "locations": [\n'
-            '    {"name": "string (MUST be from the available locations list above)"}\n'
-            '  ]\n'
-            "}"
+            f"Return a JSON object with this exact schema:\n{schema}"
         )
 
         case = self.llm.query_structured(DARK_PAST_CASE_SYSTEM_PROMPT, [], prompt)
         if not _validate_case(case):
+            missing = REQUIRED_FIELDS - set(case.keys())
             error_msg = (
-                f"The generated case is missing required fields or has invalid structure.\n"
-                f"Required top-level fields: {REQUIRED_FIELDS}\n"
-                f"Generated case keys: {set(case.keys())}\n"
-                "Please regenerate with the complete schema."
+                f"The case JSON is missing or malformed. Missing top-level fields: {missing or 'none — check suspect fields'}.\n"
+                f"Locations MUST be chosen from this list:\n{_location_list}\n\n"
+                + (f"{banned_names_text}\n\n" if banned_names_text else "")
+                + f"Return a corrected JSON object using exactly this schema:\n{schema}"
             )
             case = self.llm.query_structured(DARK_PAST_CASE_SYSTEM_PROMPT, [], error_msg)
             if not _validate_case(case):

@@ -20,7 +20,8 @@ Set moved_npc only when action is GO and your dialogue explicitly moves an NPC w
 Dialogue clarity rules:
 - Make one point at a time.
 - Describe what you observe or feel; do not state logical conclusions as fact. Wonder aloud, don't deduce.
-- Complete every sentence. Never trail off mid-thought."""
+- Complete every sentence. Never trail off mid-thought.
+- NEVER state where an NPC is or isn't — NPC location facts are context for your awareness only, not your dialogue."""
 
 
 DARK_PAST_SYSTEM_PROMPT = """You are generating a partner's dark past confession for an absurdist noir detective game set in Noirleans, 1935. The confession is written in the partner's voice — first person, in their speech style. It describes something terrible they did or were part of: a crime committed, a death they caused or enabled, an injustice they participated in. It should be morally complex, not cartoonishly evil. It should feel like something a real person would carry for years. It must connect to the provided theme. 2-3 paragraphs. Return ONLY valid JSON: {"backstory": "string (the confession in the partner's voice)", "crime_summary": "string (one sentence describing what they did, third person)"}"""
@@ -40,7 +41,7 @@ class Companion(Agent):
     def interpret(self, player_input: str) -> dict:
         """Respond in character AND return a game action to dispatch."""
         interpret_system = self._locked_system_prompt + _INTERPRET_SUFFIX
-        history = get_history(self.conn, character_id=self.character_id, case_id=self.case_id)
+        history = self._history_with_summaries()
         result = self.llm.query_structured(interpret_system, history, player_input)
         dialogue = result.get("dialogue", "")
         append_history(self.conn, character_id=self.character_id,

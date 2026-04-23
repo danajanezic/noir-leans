@@ -6,7 +6,7 @@ CONFIG_PATH = Path.home() / ".noir_detective" / "config.json"
 DEFAULTS: dict = {
     "backend": "claude_cli",
     "dialogue_model": "sonnet",
-    "structured_model": "haiku",
+    "structured_model": "sonnet",
 }
 
 

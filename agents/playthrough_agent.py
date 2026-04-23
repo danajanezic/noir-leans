@@ -22,6 +22,7 @@ from agents.report import build_report
 _NEXT_ACTION_SUFFIX = (
     "\n\nCurrent investigation state:\n{context}"
     "\n\nGame state: {state}"
+    "\n\nLast action output:\n{last_output}"
     "\n\nWhat is your next action? Return ONLY JSON."
 )
 
@@ -45,6 +46,8 @@ class PlaythroughAgent:
         )
         self._routines: dict[str, list] = {}
         self._known_locations: set[str] = set()
+        self._available_npcs: list[str] = []
+        self._last_output: str = "(none yet)"
 
     def run(self, max_turns: int = 40) -> dict:
         case_id = self._get_active_case_id()
@@ -71,6 +74,7 @@ class PlaythroughAgent:
 
                 input_data = self._action_to_step_input(action)
                 result, game_text = self._step(input_data)
+                self._last_output = game_text.strip() or f"(action: {action})"
 
                 if result.get("ok"):
                     state = result.get("state", state)
@@ -84,6 +88,8 @@ class PlaythroughAgent:
                     if action_type == "go":
                         loc = action.get("target", "")
                         self._check_pending_meetings(loc, turns)
+                else:
+                    self._last_output = result.get("error", self._last_output)
 
         finally:
             self.conn.close()
@@ -106,7 +112,9 @@ class PlaythroughAgent:
 
     def _get_next_action(self, state: dict) -> dict:
         context = self._build_context()
-        prompt = _NEXT_ACTION_SUFFIX.format(context=context, state=state)
+        prompt = _NEXT_ACTION_SUFFIX.format(
+            context=context, state=state, last_output=self._last_output
+        )
         return self.llm.query_structured(self.persona["system_prompt"], [], prompt)
 
     def _action_to_step_input(self, action: dict) -> dict:
@@ -185,6 +193,10 @@ class PlaythroughAgent:
 
     def _build_context(self) -> str:
         parts = []
+        if self._available_npcs:
+            parts.append(f"Suspects in this case (use exact names for talk): {', '.join(self._available_npcs)}")
+        if self._known_locations:
+            parts.append(f"Known locations (use exact names for /go): {', '.join(sorted(self._known_locations))}")
         if self.case_notes:
             parts.append("Facts learned:")
             for speaker, facts in self.case_notes.items():
@@ -209,6 +221,7 @@ class PlaythroughAgent:
             schedule = get_npc_schedule_entries(self.conn, npc["id"])
             if schedule:
                 self._routines[npc["name"]] = [dict(e) for e in schedule]
+        self._available_npcs = [npc["name"] for npc in npcs]
 
         case_locs = get_locations_for_case(self.conn, case_id)
         fixed_locs = get_fixed_locations(self.conn)

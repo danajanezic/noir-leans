@@ -125,13 +125,40 @@ def check_revelation(conn: sqlite3.Connection, llm: LLMBackend,
                      npc_id: int, case_id: int, npc_name: str,
                      events: dict, psychology: dict) -> str | None:
     flags = get_npc_relationship_flags(conn, npc_id)
-    if flags and flags.get("secret_revealed"):
-        return None
 
     style = psychology.get("revelation_style", "staged")
     stages = psychology.get("revelation_stages", 3)
     thresholds = _revelation_thresholds(style, stages)
     current_stage = get_npc_revelation_stage(conn, npc_id)
+
+    if flags and flags.get("secret_revealed"):
+        if current_stage > len(thresholds):
+            return None  # restatement already used
+        pressure = psychology.get("pressure_score", 0)
+        guilt = psychology.get("guilt", 0)
+        affection = psychology.get("affection", 0)
+        kw = psychology.get("kindness_weight", 5)
+        combined = pressure + guilt + (affection * kw / 10)
+        if combined < 50:
+            return None
+        from noir.persistence.repository import get_history as _get_history
+        history = _get_history(conn, character_id=f"npc_{npc_id}", case_id=case_id)
+        excerpt = ""
+        if history:
+            assistant_msgs = [m["content"] for m in history if m["role"] == "assistant"]
+            if assistant_msgs:
+                excerpt = assistant_msgs[-1][:300]
+        increment_npc_revelation_stage(conn, npc_id=npc_id)
+        if excerpt:
+            return (
+                f"[You have already admitted your secret. Your most recent words were: \"{excerpt}\". "
+                f"The detective is pressing you to say it plainly — no metaphor, no deflection. "
+                f"Restate what you already admitted, directly, in your own voice.]"
+            )
+        return (
+            "[You have already admitted your secret. The detective is pressing you to say it plainly. "
+            "State it directly, in your own voice, without evasion.]"
+        )
 
     if current_stage >= len(thresholds):
         return None
@@ -168,9 +195,4 @@ def check_revelation(conn: sqlite3.Connection, llm: LLMBackend,
         prompt = prompt.replace("[You are about to reveal something you have been hiding.",
                                 f"[You are about to reveal something you have been hiding{override_note}.")
 
-    npc_row = get_npc(conn, npc_id)
-    if npc_row is None:
-        return None
-
-    response = llm.query(npc_row["system_prompt"], [], prompt)
-    return response
+    return prompt  # caller injects this into the next npc.speak() call

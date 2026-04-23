@@ -391,7 +391,7 @@ def _backfill_clues(conn: sqlite3.Connection) -> None:
 def _make_case_id_nullable(conn: sqlite3.Connection) -> None:
     """Recreate npcs and suspects tables to allow case_id=NULL (world-persistent rows)."""
     for row in conn.execute("PRAGMA table_info('npcs')").fetchall():
-        if row["name"] == "case_id" and row["notnull"] == 0:
+        if row[1] == "case_id" and row[3] == 0:
             return  # already nullable
 
     conn.executescript("""

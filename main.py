@@ -23,7 +23,7 @@ def _maybe_enable_hot_reload() -> None:
         return
     try:
         import jurigged
-        jurigged.watch("noir/")
+        jurigged.watch("noir/", logger=lambda *_, **__: None)
         print("[dev] Hot-reload active — save any file in noir/ to patch it live.")
     except ImportError:
         print("[dev] Install jurigged for hot-reload: pip install jurigged")
