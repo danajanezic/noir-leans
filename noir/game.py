@@ -13,7 +13,7 @@ from noir.display import (
     show_travel_animation, show_location_rule, travel_status, show_splash, typewrite, show_narrator,
     show_conversation_header, show_conversation_footer, show_evidence, show_partner_aside,
     show_relationships, show_dossier, show_dossier_all, show_cases, show_player_profile,
-    npc_input_prompt,
+    npc_input_prompt, show_player_turn,
     show_wait_result, fmt_game_time, console, enable_game_padding
 )
 from noir.parser import parse_command, Intent
@@ -28,6 +28,7 @@ from noir.persistence.repository import (
     get_player_states, add_player_state, remove_player_state, clear_transient_states,
     add_dossier_facts, get_dossier, get_all_dossier,
     add_lead, get_leads_for_case,
+    get_discovered_locations_for_case, discover_location, discover_location_by_name,
     get_street_reputation, update_street_reputation,
     update_player_identity,
     get_npc_affection, get_npc_relationship_flags, increment_npc_affection,
@@ -50,6 +51,7 @@ from noir.persistence.repository import (
     get_npc_corruption, set_npc_corruption,
     get_organization_by_name, add_organization_member,
     get_player_org_memberships, collect_org_payroll,
+    get_history,
 )
 from noir.persistence.db import create_schema
 from noir.characters.companion import Companion
@@ -908,6 +910,11 @@ class Game:
         self.conn.commit()
 
         found_at = case_data.get("victim", {}).get("found_at", "").lower()
+        # Auto-discover only the crime scene; all other case locations start hidden
+        for loc_name, loc_id in loc_map.items():
+            if loc_name.lower() == found_at:
+                self.conn.execute("UPDATE locations SET discovered=1 WHERE id=?", (loc_id,))
+        self.conn.commit()
         npc_locs = {k: v for k, v in loc_map.items() if k.lower() != found_at} or loc_map
 
         for suspect in case_data.get("suspects", []):
@@ -1086,6 +1093,9 @@ class Game:
         if loc is None:
             console.print(f"[red]'{target}' doesn't ring any bells. Try somewhere else.[/red]")
             return
+        if loc["case_id"] is not None and not loc["discovered"]:
+            console.print(f"[red]'{target}' doesn't ring any bells. Try somewhere else.[/red]")
+            return
         self.current_location_id = loc["id"]
         set_character_location(self.conn, character_id="player", location_id=loc["id"])
         advance_game_time(self.conn, delta=30)
@@ -1106,10 +1116,13 @@ class Game:
                         body_note = f"The body of {victim.get('name', 'the victim')} is still here."
                     elif found_at:
                         body_note = f"The victim's body was found here and has been taken to the City Morgue."
-            npc_hint = f" {npc_names[0]} is here." if npc_names else ""
+            if npc_names:
+                npc_hint = f" People present: {', '.join(npc_names)}. ONLY mention people from this list — do not invent or describe anyone else."
+            else:
+                npc_hint = " No one else is here."
             arrival_prompt = (
                 f"[Physical setting: you are both INSIDE {loc['name']}. {loc['description']}"
-                f"{npc_hint} {body_note} This is a processed crime scene — police have secured it, no civilians present.] "
+                f"{npc_hint} {body_note}] "
                 f"You've just arrived. Notice one specific, concrete detail about the space — something unexpected, "
                 f"not a generic mood-setter. Hint at what might be worth examining or who to talk to. "
                 f"One or two sentences, in character. "
@@ -1282,8 +1295,7 @@ class Game:
                     elif self.companion:
                         _evidence_rejection_quip(self.companion.name, "Already collected" in result["message"], result.get("reason"))
                 continue
-            if cmd.intent == Intent.FLIRT:
-                self._handle_npc_flirt(npc_row["id"])
+            show_player_turn(player_input)
             state_ctx = self._player_state_context()
             identity_ctx = self._player_identity_context()
             rel_ctx = self._npc_relationship_context(npc_row["id"])
@@ -1306,7 +1318,7 @@ class Game:
             speak_input = ctx + player_input
             if revelation_prompt:
                 speak_input = speak_input + "\n\n" + revelation_prompt
-            response = npc.speak(speak_input)
+            response = npc.speak(speak_input, store_as=player_input)
             show_dialogue(npc_row["name"], response)
             if revelation_prompt and "already admitted" in revelation_prompt:
                 # Restatement turn — NPC was forced to say it plainly, store this version
@@ -1323,8 +1335,19 @@ class Game:
             self._observations.setdefault(self.current_location_id, []).append(
                 f"spoke with {npc_row['name']} ({npc_row['role']})"
             )
+        # Summarize conversation — persist cross-case for fixed NPCs, apply affection delta for all
+        hist = get_history(self.conn, character_id=f"npc_{npc_row['id']}", case_id=self.active_case_id)
+        is_fixed = npc_row["case_id"] is None
+        summary_result = npc.summarize_and_save(hist, persist=is_fixed)
+        affection_delta = summary_result["affection_delta"]
+        if affection_delta:
+            increment_npc_affection(self.conn, npc_row["id"], affection_delta)
+            self._check_npc_romance_milestone(npc_row["id"], npc)
         self._extract_dossier_facts(npc_row["name"], npc_row["id"])
         self._extract_leads(npc_row["name"], npc_row["id"])
+        # Discover the NPC's home location — the player now knows where to find them
+        if npc_row["current_location_id"] and self.active_case_id:
+            discover_location(self.conn, npc_row["current_location_id"])
 
     def _companion_context(self, player_input: str) -> str:
         import json as _json
@@ -1428,7 +1451,7 @@ class Game:
                 clues = get_clues_for_case(self.conn, self.active_case_id)
                 here = [
                     c["description"] for c in clues
-                    if c["location"].lower() == loc_name.lower()
+                    if c["location"] and c["location"].lower() == loc_name.lower()
                     and c["id"] not in collected_ids
                 ]
                 if here:
@@ -1441,6 +1464,15 @@ class Game:
                         "There are no collectible evidence items at this location. "
                         "Do not suggest the detective collect or bag anything here."
                     )
+        if self.active_case_id:
+            dossier = get_all_dossier(self.conn, case_id=self.active_case_id)
+            if dossier:
+                dossier_lines = []
+                for npc_name, facts in dossier.items():
+                    dossier_lines.append(f"{npc_name}: {'; '.join(facts)}")
+                context_parts.append(
+                    f"What the detective has learned from interviews: {' | '.join(dossier_lines)}"
+                )
         states = get_player_states(self.conn)
         if states:
             intensity_map = {1: "slightly", 2: "noticeably", 3: "severely"}
@@ -1452,16 +1484,54 @@ class Game:
         else:
             context_parts.append("Detective's condition: normal. They are fully sober and clear-headed — do not reference any prior intoxication.")
 
+        judge_ctx = self._judge_context(player_input)
+        if judge_ctx:
+            context_parts.append(judge_ctx)
+
         ctx_block = f"[{' | '.join(context_parts)}] " if context_parts else ""
         return romance_ctx + " " + self._partner_identity_context() + ctx_block + player_input
 
-    def _copresent_npc_context(self, exclude_npc_id: int) -> str:
-        if not self.active_case_id or not self.current_location_id:
+    def _judge_context(self, player_input: str) -> str:
+        from noir.cases.trial import _JUDGE_TRAITS
+        inp = player_input.lower()
+        if not any(w in inp for w in ("judge", "bench", "court", "trial", "assigned", "beaumont",
+                                       "arceneaux", "flannery", "callahan", "lacoste", "bergeron",
+                                       "hebert", "flynn", "tureaud", "broussard", "marino")):
             return ""
-        all_npcs = get_npcs_for_case(self.conn, self.active_case_id)
+        # Find all judges whose names appear in the active case or in the input
+        matching = []
+        for name, traits in _JUDGE_TRAITS.items():
+            last = name.split()[-1].lower()
+            if last in inp or name.lower() in inp:
+                matching.append((name, traits))
+        # Also include the assigned judge for the active case if any
+        if self.active_case_id:
+            case = get_case(self.conn, self.active_case_id)
+            if case and case["assigned_judge_id"]:
+                j = self.conn.execute(
+                    "SELECT name FROM npcs WHERE id=?", (case["assigned_judge_id"],)
+                ).fetchone()
+                if j:
+                    jname = j["name"]
+                    jtrait = _JUDGE_TRAITS.get(jname, "")
+                    if not any(m[0] == jname for m in matching):
+                        matching.append((jname, jtrait))
+        if not matching:
+            # Generic judge query — load all
+            matching = list(_JUDGE_TRAITS.items())
+        lines = [f"{n}: {t}" for n, t in matching]
+        return (
+            "Judge reference — what you know about the bench: "
+            + "; | ".join(lines)
+            + ". Use this to give the detective an honest read on the judge's tendencies."
+        )
+
+    def _copresent_npc_context(self, exclude_npc_id: int) -> str:
+        if not self.active_case_id or not self.current_location_id or not self.world:
+            return ""
         others = [
-            n for n in all_npcs
-            if n["id"] != exclude_npc_id and n["current_location_id"] == self.current_location_id
+            n for n in self.world.get_npcs_at(self.current_location_id)
+            if n["id"] != exclude_npc_id
         ]
         if not others:
             return ""
@@ -1619,16 +1689,21 @@ class Game:
                     else:
                         _evidence_rejection_quip(self.companion.name, "Already collected" in result["message"], result.get("reason"))
                 continue
-            if cmd.intent == Intent.FLIRT:
-                self._handle_partner_flirt()
+            show_player_turn(player_input)
             self._check_partner_romance_milestone()
             dark_past_state = get_partner_dark_past_state(self.conn)
             if dark_past_state == "flagged" and _is_dark_past_invitation(player_input):
                 self._trigger_dark_past_revelation()
                 break
-            response = self.companion.speak(self._companion_context(player_input))
+            response = self.companion.speak(self._companion_context(player_input), store_as=player_input)
             show_dialogue(self.companion.name, response)
         show_conversation_footer(self.companion.name)
+        hist = get_history(self.conn, character_id="partner", case_id=None)
+        summary_result = self.companion.summarize_and_save(hist)
+        affection_delta = summary_result["affection_delta"]
+        if affection_delta:
+            increment_partner_affection(self.conn, delta=affection_delta)
+            self._check_partner_romance_milestone()
 
     def handle_arrest(self, target: str) -> None:
         if self.active_case_id is None or self.case_manager is None:
@@ -1729,6 +1804,9 @@ class Game:
             "no dates, ages, years, names, or numbers unless they appear in the context provided. "
             "If a photograph looks old, say it looks old. Do NOT say it is four years old. "
             "Stick to sensory observation; leave interpretation to the detective. "
+            "EXCEPTION: If the item being examined is a document, letter, note, or written text, "
+            "you MUST quote or paraphrase its contents — invent plausible 1930s-era text that fits the clue context. "
+            "Never write 'it reads:' and leave it blank. If it's a letter, write what the letter says. "
             "CRITICAL: Never describe the inner states, feelings, or thoughts of other characters. "
             "No 'she feels', 'he senses', 'they wonder', 'it makes him feel like'. "
             "You only report what the detective can see, hear, smell, or touch — never what others experience internally. "
@@ -1782,14 +1860,26 @@ class Game:
                     _add_member(self.conn, organization_id=org["id"], member_type="npc",
                                 member_id=npc_id, role=fnpc.get("org_role"), is_static=True)
 
-        _BAR_KEYWORDS = ("bar", "lounge", "saloon", "club", "speakeasy", "tavern", "cabaret")
+        _BAR_KEYWORDS = (
+            "bar", "lounge", "saloon", "club", "speakeasy", "tavern", "cabaret",
+            "pub", "inn", "dive", "joint", "room", "anchor", "vail", "veil",
+            "parlor", "den", "grill",
+        )
+        _BAR_DESC_KEYWORDS = ("drink", "bartender", "bourbon", "whiskey", "gin", "beer", "rum",
+                               "cocktail", "bottle", "pour", "stool", "sawdust", "jazz")
         _BARTENDER_NAMES = [
             "Mickey", "Ray", "Sal", "Eddie", "Frank", "Pete", "Gus", "Dutch", "Benny", "Joe"
         ]
         case_locs = get_locations_for_case(self.conn, case_id)
         used_names = {n["name"] for n in get_npcs_for_case(self.conn, case_id)}
         for loc in case_locs:
-            if not any(kw in loc["name"].lower() for kw in _BAR_KEYWORDS):
+            name_lower = loc["name"].lower()
+            desc_lower = (loc["description"] or "").lower()
+            is_bar = (
+                any(kw in name_lower for kw in _BAR_KEYWORDS)
+                or any(kw in desc_lower for kw in _BAR_DESC_KEYWORDS)
+            )
+            if not is_bar:
                 continue
             npcs_here = [n for n in get_npcs_for_case(self.conn, case_id)
                          if n["current_location_id"] == loc["id"]]
@@ -2031,21 +2121,39 @@ class Game:
             f"{'Detective' if m['role'] == 'user' else npc_name}: {m['content']}"
             for m in history[-20:]
         )
+        known_locs = []
+        if self.world:
+            known_locs = [loc["name"] for loc in self.world.list_locations()]
+        loc_constraint = (
+            f" When a lead involves going somewhere, ONLY use these exact location names: {', '.join(known_locs)}."
+            " Do not invent or reference locations that are not in this list."
+            if known_locs else ""
+        )
         try:
             result = self.llm.query_structured(
                 "Extract up to 4 actionable investigative leads from this conversation. "
                 "Only include leads explicitly suggested by this NPC's words. Do not invent. "
-                "Each lead: one short sentence under 12 words, starting with a verb (Talk to, Go to, Find, Check). "
-                "Return ONLY valid JSON: {\"leads\": [\"string\", ...]} — empty list if none.",
+                "Each lead: one short sentence under 12 words, starting with a verb (Talk to, Go to, Find, Check)."
+                + loc_constraint +
+                " Return ONLY valid JSON: {\"leads\": [\"string\", ...]} — empty list if none.",
                 [],
                 f"Source NPC: {npc_name}\n\nConversation:\n{transcript}"
             )
         except SystemExit:
             import logging as _log; _log.getLogger(__name__).warning("Lead extraction failed for %s", npc_name)
             return
+        case_locs = get_locations_for_case(self.conn, self.active_case_id)
         for lead_text in result.get("leads", []):
             add_lead(self.conn, case_id=self.active_case_id,
                      description=lead_text, source_npc=npc_name)
+            for loc in case_locs:
+                if loc["name"].lower() in lead_text.lower():
+                    discover_location_by_name(self.conn, self.active_case_id, loc["name"])
+        # Also discover locations mentioned anywhere in the NPC's dialogue
+        transcript_lower = transcript.lower()
+        for loc in case_locs:
+            if loc["name"].lower() in transcript_lower:
+                discover_location_by_name(self.conn, self.active_case_id, loc["name"])
 
     def _handle_org_succession(self, convicted_npc_id: int) -> None:
         """Handle leadership succession when a convicted NPC held a leadership role."""
@@ -2164,7 +2272,7 @@ class Game:
         case_locs = []
         case_title = None
         if self.active_case_id:
-            case_locs = get_locations_for_case(self.conn, self.active_case_id)
+            case_locs = get_discovered_locations_for_case(self.conn, self.active_case_id)
             case = get_case(self.conn, self.active_case_id)
             if case:
                 case_title = case["title"]
@@ -2319,7 +2427,7 @@ class Game:
             if any(_t == t or _t in t or t in _t for t in triggers):
                 for loc in candidates:
                     name_lower = loc["name"].lower()
-                    desc_lower = (loc.get("description") or "").lower()
+                    desc_lower = (loc["description"] or "").lower() if loc["description"] else ""
                     if any(kw in name_lower or kw in desc_lower for kw in loc_keywords):
                         return loc
         return None
@@ -2463,13 +2571,13 @@ class Game:
                     f"Do not be neutral. You have an opinion. Speak first.] "
                 )
                 ctx = self._companion_context("I want to drop this case.")
-                partner_response = self.companion.speak(drop_ctx + ctx)
+                partner_response = self.companion.speak(drop_ctx + ctx, store_as="[drop case discussion]")
                 show_dialogue(partner_name, partner_response)
                 # One exchange — player can respond
                 player_reply = console.input("[bold white]>[/bold white] ").strip()
                 if player_reply:
                     followup_ctx = self._companion_context(player_reply)
-                    followup = self.companion.speak(followup_ctx)
+                    followup = self.companion.speak(followup_ctx, store_as=player_reply)
                     show_dialogue(partner_name, followup)
                     final_response = followup
                 else:
@@ -2595,7 +2703,19 @@ class Game:
                 "SELECT was_correct, npc_id FROM arrests WHERE case_id=? ORDER BY id DESC LIMIT 1",
                 (case_id,)
             ).fetchone()
-            was_correct = bool(arrest and arrest["was_correct"])
+            original_correct = bool(arrest and arrest["was_correct"])
+            outcome = verdict.get("outcome", "") if verdict else ""
+            corruption_loss = original_correct and outcome == "not_guilty"
+            was_correct = original_correct and outcome != "not_guilty"
+            if corruption_loss and self.companion:
+                consolation_prompt = (
+                    f"[Case: {case['title']}. The detective arrested the right person but the verdict just came back not guilty — "
+                    "the system is corrupt, the fix was in, and the killer walks free.] "
+                    "Offer the detective a few words. Acknowledge the injustice directly — don't be abstract about it. "
+                    "Be in character. One or two sentences."
+                )
+                consolation = self.companion.narrate(consolation_prompt)
+                show_dialogue(self.companion.name, consolation)
             threading.Thread(
                 target=self._update_street_rep,
                 args=(case_id, was_correct),
@@ -3032,12 +3152,6 @@ class Game:
             "devoted has made a choice and will protect this person.] "
         )
 
-    def _handle_npc_flirt(self, npc_id: int) -> None:
-        affection = get_npc_affection(self.conn, npc_id)
-        stage = _affection_to_stage(affection)
-        delta = 4 if stage == "cold" else 8
-        increment_npc_affection(self.conn, npc_id, delta)
-
     def _check_npc_romance_milestone(self, npc_id: int, npc) -> None:
         affection = get_npc_affection(self.conn, npc_id)
         stage = _affection_to_stage(affection)
@@ -3062,12 +3176,6 @@ class Game:
             )
             response = npc.speak(prompt, record=False)
             show_dialogue(npc.name, response)
-
-    def _handle_partner_flirt(self) -> None:
-        affection = get_partner_affection(self.conn)
-        stage = _affection_to_stage(affection, is_partner=True)
-        delta = 4 if stage == "professional" else 8
-        increment_partner_affection(self.conn, delta)
 
     def _check_partner_romance_milestone(self) -> None:
         affection = get_partner_affection(self.conn)

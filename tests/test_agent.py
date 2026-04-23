@@ -211,3 +211,26 @@ def test_npc_background_not_injected_on_non_history_query(db, mock_llm):
     npc = NPC.load(conn=db, llm=mock_llm, npc_id=npc_id, case_id=case_id)
     npc.speak("Where were you last Tuesday?")
     assert all("Historical background" not in call["user_input"] for call in mock_llm.calls)
+
+
+def test_summarize_returns_xp_awards(db, mock_llm):
+    import json
+    mock_llm._responses = iter([
+        json.dumps({
+            "summary": "The detective pressed hard on the suspect.",
+            "npc_opinion": "Ruthless but effective.",
+            "affection_delta": 0,
+            "xp_awards": {"authority": 5, "streetwise": 0, "empathy": 2, "cunning": 0}
+        })
+    ])
+    from noir.characters.agent import Agent
+    agent = Agent(character_id="npc_1", system_prompt="test", llm=mock_llm,
+                  conn=db, case_id=None)
+    history = [
+        {"role": "user", "content": "Where were you that night?"},
+        {"role": "assistant", "content": "I told you, I was home."},
+    ]
+    result = agent.summarize_and_save(history, persist=False)
+    assert "affection_delta" in result
+    assert "xp_awards" in result
+    assert result["xp_awards"]["authority"] == 5
