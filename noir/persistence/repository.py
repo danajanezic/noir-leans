@@ -88,19 +88,27 @@ def get_history(conn: sqlite3.Connection, *, character_id: str,
 
 
 def save_conversation_summary(conn: sqlite3.Connection, *, character_id: str,
-                               summary: str, npc_opinion: str | None = None) -> None:
+                               summary: str, npc_opinion: str | None = None,
+                               case_id: int | None = None) -> None:
     conn.execute(
-        "INSERT INTO conversation_summaries (character_id, summary, npc_opinion) VALUES (?, ?, ?)",
-        (character_id, summary, npc_opinion)
+        "INSERT INTO conversation_summaries (character_id, summary, npc_opinion, case_id) VALUES (?, ?, ?, ?)",
+        (character_id, summary, npc_opinion, case_id)
     )
     conn.commit()
 
 
-def get_conversation_summaries(conn: sqlite3.Connection, *, character_id: str) -> list[str]:
-    rows = conn.execute(
-        "SELECT summary FROM conversation_summaries WHERE character_id=? ORDER BY id",
-        (character_id,)
-    ).fetchall()
+def get_conversation_summaries(conn: sqlite3.Connection, *, character_id: str,
+                               case_id: int | None = None) -> list[str]:
+    if case_id is not None:
+        rows = conn.execute(
+            "SELECT summary FROM conversation_summaries WHERE character_id=? AND case_id=? ORDER BY id",
+            (character_id, case_id)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT summary FROM conversation_summaries WHERE character_id=? ORDER BY id",
+            (character_id,)
+        ).fetchall()
     return [r["summary"] for r in rows]
 
 
@@ -110,6 +118,16 @@ def get_latest_npc_opinion(conn: sqlite3.Connection, *, character_id: str) -> st
         (character_id,)
     ).fetchone()
     return row["npc_opinion"] if row else None
+
+
+def get_partner_relationship(conn: sqlite3.Connection) -> str | None:
+    row = conn.execute("SELECT relationship_notes FROM partner WHERE id=1").fetchone()
+    return row["relationship_notes"] if row else None
+
+
+def save_partner_relationship(conn: sqlite3.Connection, notes: str) -> None:
+    conn.execute("UPDATE partner SET relationship_notes=? WHERE id=1", (notes,))
+    conn.commit()
 
 
 _XP_PER_LEVEL = 100

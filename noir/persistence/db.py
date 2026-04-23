@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS partner (
     affection INTEGER DEFAULT 0,
     dark_past_state TEXT DEFAULT 'none',
     dark_past TEXT,
+    relationship_notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -362,6 +363,8 @@ _MIGRATIONS = [
     "CREATE TABLE IF NOT EXISTS skill_events (id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT NOT NULL, root TEXT NOT NULL, xp_awarded INTEGER NOT NULL, reason TEXT, case_id INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
     "CREATE INDEX IF NOT EXISTS idx_player_skills_owner ON player_skills(owner)",
     "CREATE INDEX IF NOT EXISTS idx_skill_events_owner_root ON skill_events(owner, root)",
+    "ALTER TABLE partner ADD COLUMN relationship_notes TEXT",
+    "ALTER TABLE conversation_summaries ADD COLUMN case_id INTEGER",
 ]
 
 

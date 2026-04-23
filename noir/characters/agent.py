@@ -173,7 +173,8 @@ class Agent:
                     xp_awards[root] = 0
         if persist and summary:
             save_conversation_summary(self.conn, character_id=self.character_id,
-                                      summary=summary, npc_opinion=opinion)
+                                      summary=summary, npc_opinion=opinion,
+                                      case_id=self.case_id)
         return {"affection_delta": affection_delta, "xp_awards": xp_awards}
 
     def speak(self, player_input: str, record: bool = True, store_as: str | None = None) -> str:
