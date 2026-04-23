@@ -410,3 +410,62 @@ def test_alignment_is_unbounded(db):
     player = get_player(db)
     assert player["law_chaos"] == 40
     assert player["good_evil"] == 40
+
+
+def test_initialize_player_skills(db):
+    from noir.persistence.repository import (
+        initialize_player_skills, get_skills
+    )
+    initialize_player_skills(db, owner="player", roots=["authority", "empathy"])
+    skills = get_skills(db, owner="player")
+    assert skills["authority"]["level"] == 1
+    assert skills["authority"]["xp"] == 0
+    assert skills["empathy"]["level"] == 1
+    assert "streetwise" not in skills
+
+
+def test_award_xp_no_levelup(db):
+    from noir.persistence.repository import (
+        initialize_player_skills, award_xp, get_skills
+    )
+    initialize_player_skills(db, owner="player", roots=["authority"])
+    old_level, new_level = award_xp(db, owner="player", root="authority", xp=50, reason="test")
+    assert old_level == 1
+    assert new_level == 1
+    skills = get_skills(db, owner="player")
+    assert skills["authority"]["xp"] == 50
+
+
+def test_award_xp_levelup(db):
+    from noir.persistence.repository import (
+        initialize_player_skills, award_xp, get_skills
+    )
+    initialize_player_skills(db, owner="player", roots=["authority"])
+    old_level, new_level = award_xp(db, owner="player", root="authority", xp=100, reason="test")
+    assert old_level == 1
+    assert new_level == 2
+    skills = get_skills(db, owner="player")
+    assert skills["authority"]["level"] == 2
+
+
+def test_save_and_get_specialization(db):
+    from noir.persistence.repository import (
+        save_specialization, get_specializations
+    )
+    save_specialization(db, owner="player", root="authority",
+                        name="Iron Stare", description="Years of pressing witnesses has made your silence louder than most men's threats.",
+                        unlocked_at_level=3)
+    specs = get_specializations(db, owner="player")
+    assert len(specs) == 1
+    assert specs[0]["name"] == "Iron Stare"
+    assert specs[0]["root"] == "authority"
+
+
+def test_log_and_get_skill_events(db):
+    from noir.persistence.repository import (
+        log_skill_event, get_skill_events
+    )
+    log_skill_event(db, owner="player", root="empathy", xp=5, reason="showed_kindness")
+    events = get_skill_events(db, owner="player", root="empathy", limit=10)
+    assert len(events) == 1
+    assert events[0]["xp_awarded"] == 5

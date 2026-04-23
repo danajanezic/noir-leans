@@ -112,6 +112,84 @@ def get_latest_npc_opinion(conn: sqlite3.Connection, *, character_id: str) -> st
     return row["npc_opinion"] if row else None
 
 
+_XP_PER_LEVEL = 100
+
+
+def initialize_player_skills(conn: sqlite3.Connection, *, owner: str, roots: list[str]) -> None:
+    for root in roots:
+        conn.execute(
+            "INSERT OR IGNORE INTO player_skills (owner, root, level, xp) VALUES (?, ?, 1, 0)",
+            (owner, root)
+        )
+    conn.commit()
+
+
+def get_skills(conn: sqlite3.Connection, *, owner: str) -> dict[str, dict]:
+    rows = conn.execute(
+        "SELECT root, level, xp FROM player_skills WHERE owner=?", (owner,)
+    ).fetchall()
+    return {r["root"]: {"level": r["level"], "xp": r["xp"]} for r in rows}
+
+
+def award_xp(conn: sqlite3.Connection, *, owner: str, root: str,
+             xp: int, reason: str | None = None, case_id: int | None = None) -> tuple[int, int]:
+    """Award XP to a root skill. Returns (old_level, new_level)."""
+    conn.execute(
+        "INSERT OR IGNORE INTO player_skills (owner, root, level, xp) VALUES (?, ?, 1, 0)",
+        (owner, root)
+    )
+    row = conn.execute(
+        "SELECT level, xp FROM player_skills WHERE owner=? AND root=?", (owner, root)
+    ).fetchone()
+    old_level = row["level"]
+    new_xp = row["xp"] + xp
+    new_level = 1 + new_xp // _XP_PER_LEVEL
+    conn.execute(
+        "UPDATE player_skills SET xp=?, level=? WHERE owner=? AND root=?",
+        (new_xp, new_level, owner, root)
+    )
+    log_skill_event(conn, owner=owner, root=root, xp=xp, reason=reason, case_id=case_id)
+    conn.commit()
+    return old_level, new_level
+
+
+def get_specializations(conn: sqlite3.Connection, *, owner: str) -> list[dict]:
+    rows = conn.execute(
+        "SELECT root, name, description, unlocked_at_level, created_at "
+        "FROM player_specializations WHERE owner=? ORDER BY created_at",
+        (owner,)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def save_specialization(conn: sqlite3.Connection, *, owner: str, root: str,
+                         name: str, description: str, unlocked_at_level: int) -> None:
+    conn.execute(
+        "INSERT INTO player_specializations (owner, root, name, description, unlocked_at_level) VALUES (?, ?, ?, ?, ?)",
+        (owner, root, name, description, unlocked_at_level)
+    )
+    conn.commit()
+
+
+def log_skill_event(conn: sqlite3.Connection, *, owner: str, root: str,
+                     xp: int, reason: str | None = None, case_id: int | None = None) -> None:
+    conn.execute(
+        "INSERT INTO skill_events (owner, root, xp_awarded, reason, case_id) VALUES (?, ?, ?, ?, ?)",
+        (owner, root, xp, reason, case_id)
+    )
+    conn.commit()
+
+
+def get_skill_events(conn: sqlite3.Connection, *, owner: str, root: str,
+                      limit: int = 20) -> list[dict]:
+    rows = conn.execute(
+        "SELECT root, xp_awarded, reason, case_id, created_at "
+        "FROM skill_events WHERE owner=? AND root=? ORDER BY id DESC LIMIT ?",
+        (owner, root, limit)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def create_location(conn: sqlite3.Connection, *, name: str, description: str,
                     is_fixed: bool = False, case_id: int | None = None) -> int:
     cur = conn.execute(
