@@ -1,6 +1,8 @@
 import sqlite3
 from noir.llm.base import LLMBackend
-from noir.persistence.repository import save_partner, update_player_alignment
+from noir.persistence.repository import (
+    save_partner, update_player_alignment, get_player, initialize_player_skills,
+)
 
 QUIZ_QUESTIONS = [
     {
@@ -245,4 +247,13 @@ class Quiz:
             system_prompt=traits["system_prompt"],
             alignment=traits.get("alignment", "True Neutral"),
         )
+        from noir.characters.skills import roots_for_alignment
+        player = get_player(self.conn)
+        player_roots = roots_for_alignment(
+            law_chaos=player["law_chaos"], good_evil=player["good_evil"]
+        )
+        partner_roots = [r for r in ("authority", "streetwise", "empathy", "cunning")
+                         if r not in player_roots]
+        initialize_player_skills(self.conn, owner="player", roots=player_roots)
+        initialize_player_skills(self.conn, owner="partner", roots=partner_roots)
         return traits

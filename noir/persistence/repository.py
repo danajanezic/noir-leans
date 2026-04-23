@@ -189,6 +189,13 @@ def get_skill_events(conn: sqlite3.Connection, *, owner: str, root: str,
     return [dict(r) for r in rows]
 
 
+def get_player_skill_roots(conn: sqlite3.Connection, *, owner: str) -> list[str]:
+    rows = conn.execute(
+        "SELECT root FROM player_skills WHERE owner=?", (owner,)
+    ).fetchall()
+    return [r["root"] for r in rows]
+
+
 def create_location(conn: sqlite3.Connection, *, name: str, description: str,
                     is_fixed: bool = False, case_id: int | None = None) -> int:
     cur = conn.execute(

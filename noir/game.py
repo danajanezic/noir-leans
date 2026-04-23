@@ -1347,11 +1347,44 @@ class Game:
         if affection_delta:
             increment_npc_affection(self.conn, npc_row["id"], affection_delta)
             self._check_npc_romance_milestone(npc_row["id"], npc)
+        xp_awards = summary_result.get("xp_awards", {})
+        if xp_awards:
+            self._apply_skill_xp_and_check_unlocks("player", xp_awards)
         self._extract_dossier_facts(npc_row["name"], npc_row["id"])
         self._extract_leads(npc_row["name"], npc_row["id"])
         # Discover the NPC's home location — the player now knows where to find them
         if npc_row["current_location_id"] and self.active_case_id:
             discover_location(self.conn, npc_row["current_location_id"])
+
+    def _apply_skill_xp_and_check_unlocks(self, owner: str, xp_awards: dict,
+                                            partner_name: str | None = None) -> None:
+        from noir.characters.skills import apply_conversation_xp, maybe_generate_specialization
+        player = get_player(self.conn)
+        if not player:
+            return
+        law_chaos = player["law_chaos"]
+        good_evil = player["good_evil"]
+        level_changes = apply_conversation_xp(
+            self.conn, owner=owner, xp_awards=xp_awards,
+            law_chaos=law_chaos, good_evil=good_evil,
+            case_id=self.active_case_id,
+        )
+        for root, (old_level, new_level) in level_changes.items():
+            if new_level == old_level:
+                continue
+            spec = maybe_generate_specialization(
+                self.llm, self.conn, owner=owner, root=root,
+                law_chaos=law_chaos, good_evil=good_evil,
+            )
+            if spec and self.companion and owner == "player":
+                aside = self.companion.narrate(
+                    f"[The detective has just gotten noticeably better at something — "
+                    f"specifically: {spec['name']} ({root}). "
+                    f"Say one quiet, in-character thing about it. One sentence.]"
+                )
+                show_partner_aside(self.companion.name, aside)
+            elif spec and owner == "partner" and partner_name:
+                show_partner_aside(partner_name, "You're getting good at that.")
 
     def _should_partner_interject(self, player_input: str, npc_response: str,
                                    outcome: str) -> bool:
@@ -1738,6 +1771,12 @@ class Game:
         if affection_delta:
             increment_partner_affection(self.conn, delta=affection_delta)
             self._check_partner_romance_milestone()
+        xp_awards = summary_result.get("xp_awards", {})
+        if xp_awards:
+            partner_name = self.companion.name if self.companion else None
+            self._apply_skill_xp_and_check_unlocks("player", xp_awards)
+            partner_xp = {k: max(0, v - 2) for k, v in xp_awards.items()}
+            self._apply_skill_xp_and_check_unlocks("partner", partner_xp, partner_name=partner_name)
 
     def handle_arrest(self, target: str) -> None:
         if self.active_case_id is None or self.case_manager is None:
