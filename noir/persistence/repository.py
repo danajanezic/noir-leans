@@ -87,6 +87,31 @@ def get_history(conn: sqlite3.Connection, *, character_id: str,
     return [{"role": row["role"], "content": row["content"]} for row in rows]
 
 
+def save_conversation_summary(conn: sqlite3.Connection, *, character_id: str,
+                               summary: str, npc_opinion: str | None = None) -> None:
+    conn.execute(
+        "INSERT INTO conversation_summaries (character_id, summary, npc_opinion) VALUES (?, ?, ?)",
+        (character_id, summary, npc_opinion)
+    )
+    conn.commit()
+
+
+def get_conversation_summaries(conn: sqlite3.Connection, *, character_id: str) -> list[str]:
+    rows = conn.execute(
+        "SELECT summary FROM conversation_summaries WHERE character_id=? ORDER BY id",
+        (character_id,)
+    ).fetchall()
+    return [r["summary"] for r in rows]
+
+
+def get_latest_npc_opinion(conn: sqlite3.Connection, *, character_id: str) -> str | None:
+    row = conn.execute(
+        "SELECT npc_opinion FROM conversation_summaries WHERE character_id=? AND npc_opinion IS NOT NULL ORDER BY id DESC LIMIT 1",
+        (character_id,)
+    ).fetchone()
+    return row["npc_opinion"] if row else None
+
+
 def create_location(conn: sqlite3.Connection, *, name: str, description: str,
                     is_fixed: bool = False, case_id: int | None = None) -> int:
     cur = conn.execute(
@@ -128,6 +153,30 @@ def get_fixed_locations(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 
 def get_locations_for_case(conn: sqlite3.Connection, case_id: int) -> list[sqlite3.Row]:
     return conn.execute("SELECT * FROM locations WHERE case_id=?", (case_id,)).fetchall()
+
+
+def get_discovered_locations_for_case(conn: sqlite3.Connection, case_id: int) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM locations WHERE case_id=? AND discovered=1", (case_id,)
+    ).fetchall()
+
+
+def discover_location(conn: sqlite3.Connection, location_id: int) -> None:
+    conn.execute("UPDATE locations SET discovered=1 WHERE id=?", (location_id,))
+    conn.commit()
+
+
+def discover_location_by_name(conn: sqlite3.Connection, case_id: int, name: str) -> bool:
+    """Discover a case location by name (case-insensitive). Returns True if found."""
+    row = conn.execute(
+        "SELECT id FROM locations WHERE case_id=? AND lower(name)=lower(?)",
+        (case_id, name)
+    ).fetchone()
+    if row:
+        conn.execute("UPDATE locations SET discovered=1 WHERE id=?", (row["id"],))
+        conn.commit()
+        return True
+    return False
 
 
 def create_clue(conn: sqlite3.Connection, *, case_id: int, description: str,
@@ -706,10 +755,7 @@ def get_met_suspects_for_case(conn: sqlite3.Connection, case_id: int) -> list[sq
 def update_player_alignment(conn: sqlite3.Connection, *,
                              law_delta: int = 0, good_delta: int = 0) -> None:
     conn.execute(
-        """UPDATE player SET
-           law_chaos = MAX(-16, MIN(16, law_chaos + ?)),
-           good_evil = MAX(-16, MIN(16, good_evil + ?))
-           WHERE id=1""",
+        "UPDATE player SET law_chaos = law_chaos + ?, good_evil = good_evil + ? WHERE id=1",
         (law_delta, good_delta)
     )
     conn.commit()

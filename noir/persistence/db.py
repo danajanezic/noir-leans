@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS locations (
     description TEXT NOT NULL,
     is_fixed INTEGER DEFAULT 0,
     case_id INTEGER,
+    discovered INTEGER DEFAULT 0,
     FOREIGN KEY (case_id) REFERENCES cases(id)
 );
 
@@ -212,6 +213,16 @@ CREATE INDEX IF NOT EXISTS idx_evidence_case ON evidence(case_id);
 CREATE INDEX IF NOT EXISTS idx_arrests_case ON arrests(case_id);
 CREATE INDEX IF NOT EXISTS idx_locations_case ON locations(case_id);
 
+CREATE TABLE IF NOT EXISTS conversation_summaries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    character_id TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    npc_opinion TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_conv_summaries_character ON conversation_summaries(character_id);
+
 CREATE TABLE IF NOT EXISTS seeded_locations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
@@ -227,6 +238,38 @@ CREATE TABLE IF NOT EXISTS leads (
     added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (case_id) REFERENCES cases(id)
 );
+
+CREATE TABLE IF NOT EXISTS player_skills (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner TEXT NOT NULL,
+    root TEXT NOT NULL,
+    level INTEGER DEFAULT 1,
+    xp INTEGER DEFAULT 0,
+    UNIQUE(owner, root)
+);
+
+CREATE TABLE IF NOT EXISTS player_specializations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner TEXT NOT NULL,
+    root TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    unlocked_at_level INTEGER NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS skill_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner TEXT NOT NULL,
+    root TEXT NOT NULL,
+    xp_awarded INTEGER NOT NULL,
+    reason TEXT,
+    case_id INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_player_skills_owner ON player_skills(owner);
+CREATE INDEX IF NOT EXISTS idx_skill_events_owner_root ON skill_events(owner, root);
 
 CREATE TABLE IF NOT EXISTS street_reputation (
     id INTEGER PRIMARY KEY,
@@ -310,6 +353,15 @@ _MIGRATIONS = [
     "ALTER TABLE npcs ADD COLUMN corruption INTEGER DEFAULT 0",
     "ALTER TABLE organization_members ADD COLUMN payroll INTEGER DEFAULT 0",
     "ALTER TABLE organization_members ADD COLUMN last_payroll_time INTEGER DEFAULT 0",
+    "ALTER TABLE locations ADD COLUMN discovered INTEGER DEFAULT 0",
+    "CREATE TABLE IF NOT EXISTS conversation_summaries (id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT NOT NULL, summary TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE INDEX IF NOT EXISTS idx_conv_summaries_character ON conversation_summaries(character_id)",
+    "ALTER TABLE conversation_summaries ADD COLUMN npc_opinion TEXT",
+    "CREATE TABLE IF NOT EXISTS player_skills (id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT NOT NULL, root TEXT NOT NULL, level INTEGER DEFAULT 1, xp INTEGER DEFAULT 0, UNIQUE(owner, root))",
+    "CREATE TABLE IF NOT EXISTS player_specializations (id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT NOT NULL, root TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL, unlocked_at_level INTEGER NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS skill_events (id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT NOT NULL, root TEXT NOT NULL, xp_awarded INTEGER NOT NULL, reason TEXT, case_id INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE INDEX IF NOT EXISTS idx_player_skills_owner ON player_skills(owner)",
+    "CREATE INDEX IF NOT EXISTS idx_skill_events_owner_root ON skill_events(owner, root)",
 ]
 
 

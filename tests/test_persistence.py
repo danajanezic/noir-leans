@@ -353,8 +353,8 @@ def test_update_player_alignment_clamps_to_bounds(db):
     create_player(db)
     update_player_alignment(db, law_delta=20, good_delta=-20)
     player = get_player(db)
-    assert player["law_chaos"] == 16
-    assert player["good_evil"] == -16
+    assert player["law_chaos"] == 20
+    assert player["good_evil"] == -20
 
 def test_get_alignment_lawful_good(db):
     create_player(db)
@@ -390,3 +390,23 @@ def test_create_npc_age_defaults_to_35(db):
                         system_prompt="You are Jake.", current_location_id=loc_id)
     row = get_npc(db, npc_id)
     assert row["age"] == 35
+
+
+def test_new_tables_exist(db):
+    tables = {
+        row[0] for row in
+        db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    }
+    assert "player_skills" in tables
+    assert "player_specializations" in tables
+    assert "skill_events" in tables
+
+
+def test_alignment_is_unbounded(db):
+    create_player(db)
+    # Apply large deltas — should not clamp
+    for _ in range(20):
+        update_player_alignment(db, law_delta=2, good_delta=2)
+    player = get_player(db)
+    assert player["law_chaos"] == 40
+    assert player["good_evil"] == 40
