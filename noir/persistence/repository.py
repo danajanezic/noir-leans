@@ -177,7 +177,6 @@ def log_skill_event(conn: sqlite3.Connection, *, owner: str, root: str,
         "INSERT INTO skill_events (owner, root, xp_awarded, reason, case_id) VALUES (?, ?, ?, ?, ?)",
         (owner, root, xp, reason, case_id)
     )
-    conn.commit()
 
 
 def get_skill_events(conn: sqlite3.Connection, *, owner: str, root: str,

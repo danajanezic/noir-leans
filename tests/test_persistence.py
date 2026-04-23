@@ -466,6 +466,7 @@ def test_log_and_get_skill_events(db):
         log_skill_event, get_skill_events
     )
     log_skill_event(db, owner="player", root="empathy", xp=5, reason="showed_kindness")
+    db.commit()
     events = get_skill_events(db, owner="player", root="empathy", limit=10)
     assert len(events) == 1
     assert events[0]["xp_awarded"] == 5
