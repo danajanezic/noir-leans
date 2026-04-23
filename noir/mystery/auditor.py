@@ -85,6 +85,17 @@ class CaseAuditor:
                 source="deterministic",
             ))
 
+        if victim_name:
+            for suspect in case.get("suspects", []):
+                if suspect.get("name", "").strip().lower() == victim_name.strip().lower():
+                    issues.append(Issue(
+                        type="duplicate_victim_name",
+                        subject=suspect["name"],
+                        detail=f"Suspect '{suspect['name']}' has the exact same name as the victim — regenerate",
+                        severity="fatal",
+                        source="deterministic",
+                    ))
+
         killer = case.get("killer_name", "")
         if killer not in suspect_names:
             issues.append(Issue(
