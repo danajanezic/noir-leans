@@ -192,9 +192,12 @@ class CaseAuditor:
         while changed:
             changed = False
             for suspect in suspects:
+                routine = suspect.get("routine", [])
+                if not isinstance(routine, list):
+                    continue
                 routine_locs = {
-                    e.get("location") for e in suspect.get("routine", [])
-                    if e.get("location") and e.get("location") != "home"
+                    e.get("location") for e in routine
+                    if isinstance(e, dict) and e.get("location") and e.get("location") != "home"
                 }
                 if routine_locs & reachable:
                     for loc in routine_locs - reachable:
@@ -215,9 +218,12 @@ class CaseAuditor:
 
         # Every suspect must be reachable
         for suspect in suspects:
+            routine = suspect.get("routine", [])
+            if not isinstance(routine, list):
+                routine = []
             routine_locs = {
-                e.get("location") for e in suspect.get("routine", [])
-                if e.get("location") and e.get("location") != "home"
+                e.get("location") for e in routine
+                if isinstance(e, dict) and e.get("location") and e.get("location") != "home"
             }
             if not routine_locs & reachable:
                 sev = "fatal" if suspect["name"] == killer else "patchable"

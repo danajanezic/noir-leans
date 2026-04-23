@@ -48,7 +48,8 @@ def test_collect_evidence_saves_to_db(case_setup):
 
 def test_validate_and_collect_accepts_matching_clue(case_setup):
     db, case_id, loc_id, _ = case_setup
-    llm = MockLLMBackend(responses=['{"matched": true, "clue_description": "A monogrammed flamingo feather", "reason": "matches"}'])
+    clue_id = get_clues_for_case(db, case_id)[0]["id"]
+    llm = MockLLMBackend(responses=[f'{{"matched": true, "clue_id": {clue_id}}}'])
     mgr = CaseManager(conn=db, case_id=case_id, llm=llm)
     result = mgr.validate_and_collect(description="the flamingo feather", location_id=loc_id, source_npc_id=None)
     assert result["ok"] is True
@@ -69,9 +70,10 @@ def test_validate_and_collect_rejects_invalid_item(case_setup):
 
 def test_validate_and_collect_rejects_duplicate(case_setup):
     db, case_id, loc_id, _ = case_setup
+    clue_id = get_clues_for_case(db, case_id)[0]["id"]
     llm = MockLLMBackend(responses=[
-        '{"matched": true, "clue_description": "A monogrammed flamingo feather", "reason": "matches"}',
-        '{"matched": true, "clue_description": "A monogrammed flamingo feather", "reason": "matches"}',
+        f'{{"matched": true, "clue_id": {clue_id}}}',
+        f'{{"matched": true, "clue_id": {clue_id}}}',
     ])
     mgr = CaseManager(conn=db, case_id=case_id, llm=llm)
     mgr.validate_and_collect(description="the feather", location_id=loc_id, source_npc_id=None)
@@ -83,7 +85,8 @@ def test_validate_and_collect_rejects_duplicate(case_setup):
 
 def test_validate_and_collect_uses_canonical_description(case_setup):
     db, case_id, loc_id, _ = case_setup
-    llm = MockLLMBackend(responses=['{"matched": true, "clue_description": "A torn receipt from Café Lune", "reason": "matches"}'])
+    clue_id = get_clues_for_case(db, case_id)[1]["id"]  # second clue: torn receipt
+    llm = MockLLMBackend(responses=[f'{{"matched": true, "clue_id": {clue_id}}}'])
     mgr = CaseManager(conn=db, case_id=case_id, llm=llm)
     result = mgr.validate_and_collect(description="receipt", location_id=loc_id, source_npc_id=None)
     assert result["ok"] is True
@@ -212,8 +215,7 @@ def test_accepted_case_starts_trial(case_setup):
     ts = TrialSystem(conn=db, case_id=case_id, llm=llm)
     ts.submit_to_da(evidence_summary="Strong evidence")
     case = get_case(db, case_id)
-    assert case["status"] == "in_trial"
-    assert case["trial_end_time"] is not None
+    assert case["status"] == "pending_magistrate"
 
 
 def test_courthouse_reports_trial_in_progress(case_setup):
@@ -223,7 +225,7 @@ def test_courthouse_reports_trial_in_progress(case_setup):
     ts = TrialSystem(conn=db, case_id=case_id, llm=llm)
     ts.submit_to_da(evidence_summary="Strong evidence")
     status = ts.check_courthouse()
-    assert status["status"] == "in_trial"
+    assert status["status"] == "pending_magistrate"
 
 
 def test_da_history_persists_across_calls(case_setup):

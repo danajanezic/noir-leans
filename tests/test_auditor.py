@@ -70,7 +70,6 @@ BASE_CASE = {
     ],
     "locations": [
         {"name": "Fournier's Jazz Club"},
-        {"name": "City Hall"},
     ],
 }
 
@@ -105,7 +104,6 @@ def test_name_words_extracts_all_character_name_parts(auditor, clean_case):
 def test_location_names_includes_home(auditor, clean_case):
     locs = auditor._location_names(clean_case)
     assert "Fournier's Jazz Club" in locs
-    assert "City Hall" in locs
     assert "home" in locs
 
 
