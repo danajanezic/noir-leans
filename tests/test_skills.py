@@ -1,12 +1,16 @@
 import sqlite3
+import json
 import pytest
 from noir.persistence.db import create_schema
-from noir.persistence.repository import initialize_player_skills, get_skills
+from noir.persistence.repository import (
+    initialize_player_skills, get_skills, award_xp, log_skill_event
+)
 from noir.characters.skills import (
     alignment_xp_multiplier,
     check_skill_attempt,
     roots_for_alignment,
     apply_conversation_xp,
+    maybe_generate_specialization,
 )
 from noir.llm.mock import MockLLMBackend
 
@@ -81,3 +85,85 @@ def test_apply_conversation_xp(db):
     skills = get_skills(db, owner="player")
     assert skills["authority"]["xp"] > 0
     assert skills["empathy"]["xp"] > 0
+
+
+def test_maybe_generate_specialization_at_divisible_level(db, mock_llm):
+    """Test that specialization is generated at levels divisible by 3."""
+    initialize_player_skills(db, owner="player", roots=["authority"])
+
+    # Award XP to reach level 3 (divisible by 3)
+    # Level is calculated as 1 + xp // 100, so to get level 3 we need xp >= 200
+    award_xp(db, owner="player", root="authority", xp=200, reason="test_event_1")
+    log_skill_event(db, owner="player", root="authority", xp=100, reason="defeated suspect")
+    log_skill_event(db, owner="player", root="authority", xp=100, reason="interrogated witness")
+
+    # Verify we're at level 3
+    skills = get_skills(db, owner="player")
+    assert skills["authority"]["level"] == 3
+
+    # Mock the LLM to return a specialization
+    mock_llm._responses = iter([json.dumps({
+        "name": "Iron Stare",
+        "description": "Makes suspects nervous."
+    })])
+
+    result = maybe_generate_specialization(
+        mock_llm, db,
+        owner="player", root="authority",
+        law_chaos=10, good_evil=10
+    )
+
+    assert result is not None
+    assert result["name"] == "Iron Stare"
+    assert result["description"] == "Makes suspects nervous."
+    assert result["root"] == "authority"
+    assert result["level"] == 3
+
+
+def test_maybe_generate_specialization_at_non_divisible_level(db, mock_llm):
+    """Test that specialization is NOT generated at levels not divisible by 3."""
+    initialize_player_skills(db, owner="player", roots=["authority"])
+
+    # Award XP to reach level 2 (not divisible by 3)
+    award_xp(db, owner="player", root="authority", xp=100, reason="test_event")
+
+    # Verify we're at level 2
+    skills = get_skills(db, owner="player")
+    assert skills["authority"]["level"] == 2
+
+    result = maybe_generate_specialization(
+        mock_llm, db,
+        owner="player", root="authority",
+        law_chaos=10, good_evil=10
+    )
+
+    assert result is None
+
+
+def test_maybe_generate_specialization_at_level_6(db, mock_llm):
+    """Test specialization at another divisible-by-3 level (level 6)."""
+    initialize_player_skills(db, owner="player", roots=["cunning"])
+
+    # Award XP to reach level 6 (need xp >= 500)
+    award_xp(db, owner="player", root="cunning", xp=500, reason="backstabbed rival")
+
+    skills = get_skills(db, owner="player")
+    assert skills["cunning"]["level"] == 6
+
+    # Mock the LLM to return a specialization
+    mock_llm._responses = iter([json.dumps({
+        "name": "Silent Knife",
+        "description": "Strike without warning or trace."
+    })])
+
+    result = maybe_generate_specialization(
+        mock_llm, db,
+        owner="player", root="cunning",
+        law_chaos=-10, good_evil=-10
+    )
+
+    assert result is not None
+    assert result["name"] == "Silent Knife"
+    assert result["description"] == "Strike without warning or trace."
+    assert result["root"] == "cunning"
+    assert result["level"] == 6
