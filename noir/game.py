@@ -3171,7 +3171,19 @@ class Game:
                         "stage": _affection_to_stage(affection),
                     })
 
-        show_player_profile(dict(player), org_list, partner_name, partner_stage, npc_rels)
+        from noir.persistence.repository import get_skills, get_specializations
+        p_skills = get_skills(self.conn, owner="player") or None
+        p_specs = get_specializations(self.conn, owner="player") or None
+        pt_skills = get_skills(self.conn, owner="partner") or None
+        pt_specs = get_specializations(self.conn, owner="partner") or None
+
+        show_player_profile(
+            dict(player), org_list, partner_name, partner_stage, npc_rels,
+            player_skills=p_skills,
+            player_specializations=p_specs,
+            partner_skills=pt_skills,
+            partner_specializations=pt_specs,
+        )
 
     def handle_slash_drink(self) -> None:
         _BAR_KEYWORDS = ("bar", "lounge", "saloon", "club", "speakeasy", "tavern", "cabaret",

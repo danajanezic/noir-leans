@@ -76,6 +76,18 @@ def enable_game_padding() -> None:
     console._width = _game_inner_width  # type: ignore[attr-defined]
 
 
+def _pin_console_width() -> int:
+    """Re-pin console._width to _game_inner_width and return it.
+
+    prompt_toolkit resets terminal state between prompts; call this before any
+    Rich panel or rule to ensure centering uses the padded inner width, not the
+    raw terminal width.
+    """
+    if _game_inner_width:
+        console._width = _game_inner_width  # type: ignore[attr-defined]
+    return _game_inner_width or 80
+
+
 def show_splash() -> None:
     term = shutil.get_terminal_size()
     term_width = max(term.columns, 40)
@@ -238,8 +250,10 @@ def npc_input_prompt(npc_name: str, role: str, rel_stage: str | None) -> str:
     except (EOFError, KeyboardInterrupt):
         raise
     finally:
-        # Erase the toolbar rows (rule + hint) from the scrollback.
-        for _ in range(1 + hint_rows):
+        # Erase the toolbar rows (rule + hint) and the prompt line itself.
+        prompt_len = len(npc_name) + 3 + len(result or "")
+        prompt_rows = max(1, math.ceil(prompt_len / width))
+        for _ in range(1 + hint_rows + prompt_rows):
             raw.write("\033[1A\033[2K")
         raw.flush()
         if isinstance(sys.stdout, _PaddedWriter):
@@ -336,15 +350,16 @@ def show_location(name: str, description: str, npcs_present: list[str],
         border_style="yellow",
         box=box.DOUBLE_EDGE,
     ))
-    if npcs_present:
-        hint = f"[dim]examine <thing>  ·  talk to {npcs_present[0]}  ·  talk to partner[/dim]"
-    else:
-        hint = "[dim]examine <thing>  ·  talk to partner[/dim]"
-    console.print(hint)
 
 
 def show_dialogue(speaker: str, text: str, delay: float = 0.02) -> None:
     console.print(f"\n[bold cyan]{speaker}:[/bold cyan]")
+    console.print(Markdown(text))
+    console.print()
+
+
+def show_player_turn(text: str) -> None:
+    console.print(f"\n[bold red]Player:[/bold red]")
     console.print(Markdown(text))
     console.print()
 
@@ -415,19 +430,23 @@ def show_player_input_prompt() -> str:
 
 
 def show_evidence_collected(description: str) -> None:
+    width = _pin_console_width()
     console.print(Panel(
         f"[green]{description}[/green]",
         title="[bold green]Evidence Collected[/bold green]",
         border_style="green",
+        width=width,
     ))
 
 
 def show_arrest_confirmation(npc_name: str) -> None:
+    width = _pin_console_width()
     console.print(Panel(
         f"[bold red]{npc_name} has been arrested.[/bold red]\n"
         "[dim]Whether this is correct remains to be seen.[/dim]",
         border_style="red",
         title="[red]ARREST[/red]",
+        width=width,
     ))
 
 
@@ -449,13 +468,16 @@ def show_trial_status(case_title: str, status: str, time_remaining: str | None) 
         body = f"[yellow]{case_title}[/yellow] is before the jury.\nEstimated time remaining: {time_remaining}"
     else:
         body = f"[green]{case_title}[/green] — verdict reached."
-    console.print(Panel(body, title="[bold]Courthouse[/bold]", border_style="blue"))
+    width = _pin_console_width()
+    console.print(Panel(body, title="[bold]Courthouse[/bold]", border_style="blue", width=width))
 
 
 def show_player_status(states: list) -> None:
+    width = _pin_console_width()
     if not states:
         console.print(Panel("[dim]No active conditions.[/dim]",
-                            title="[bold]Detective Status[/bold]", border_style="dim"))
+                            title="[bold]Detective Status[/bold]", border_style="dim",
+                            width=width))
         return
     intensity_labels = {1: "mild", 2: "moderate", 3: "severe"}
     lines = [
@@ -463,7 +485,7 @@ def show_player_status(states: list) -> None:
         for s in states
     ]
     console.print(Panel("\n".join(lines), title="[bold]Detective Status[/bold]",
-                        border_style="yellow"))
+                        border_style="yellow", width=width))
 
 
 def show_locations(fixed: list, case_locs: list, case_title: str | None = None,
@@ -561,7 +583,11 @@ def show_dossier_all(entries: dict[str, list[str]]) -> None:
 
 
 def show_player_profile(player: dict, orgs: list[dict], partner_name: str | None,
-                        partner_stage: str | None, npc_relationships: list[dict]) -> None:
+                        partner_stage: str | None, npc_relationships: list[dict],
+                        player_skills: dict | None = None,
+                        player_specializations: list[dict] | None = None,
+                        partner_skills: dict | None = None,
+                        partner_specializations: list[dict] | None = None) -> None:
     lines = []
 
     # Identity
@@ -607,6 +633,26 @@ def show_player_profile(player: dict, orgs: list[dict], partner_name: str | None
             color = {"cold": "dim", "curious": "white", "warm": "yellow",
                      "smitten": "magenta", "devoted": "red"}.get(stage, "white")
             lines.append(f"  [{color}]· {escape(rel['name'])} ({escape(rel['role'])}) — {stage}[/{color}]")
+
+    # Skills section
+    has_skills = player_skills or partner_skills
+    if has_skills:
+        lines.append("")
+        lines.append("[bold green]Skills[/bold green]")
+
+        def _render_owner_skills(label, skills, specs):
+            if not skills:
+                return
+            lines.append(f"  [green]{escape(label)}[/green]")
+            for root, data in sorted(skills.items()):
+                level = data.get("level", 1)
+                root_specs = [s for s in (specs or []) if s["root"] == root]
+                lines.append(f"    [dim]{escape(root.title())} — level {level}[/dim]")
+                for s in root_specs:
+                    lines.append(f"      [italic dim]· {escape(s['name'])}:[/italic dim] {escape(s['description'])}")
+
+        _render_owner_skills("Detective", player_skills, player_specializations)
+        _render_owner_skills(partner_name or "Partner", partner_skills, partner_specializations)
 
     console.print(Panel("\n".join(lines), title="[bold white]Detective File[/bold white]",
                         border_style="white"))
