@@ -1320,6 +1320,10 @@ class Game:
                 speak_input = speak_input + "\n\n" + revelation_prompt
             response = npc.speak(speak_input, store_as=player_input)
             show_dialogue(npc_row["name"], response)
+            if self.companion and self._should_partner_interject(player_input, response, "success"):
+                interject_ctx = self._partner_interject_context(player_input, npc_row["name"], response, "success")
+                interject_response = self.companion.speak(interject_ctx, store_as=f"[interjection re: {npc_row['name']}]")
+                show_dialogue(self.companion.name, interject_response)
             if revelation_prompt and "already admitted" in revelation_prompt:
                 # Restatement turn — NPC was forced to say it plainly, store this version
                 set_npc_revelation_summary(self.conn, npc_row["id"], response[:500])
@@ -1348,6 +1352,36 @@ class Game:
         # Discover the NPC's home location — the player now knows where to find them
         if npc_row["current_location_id"] and self.active_case_id:
             discover_location(self.conn, npc_row["current_location_id"])
+
+    def _should_partner_interject(self, player_input: str, npc_response: str,
+                                   outcome: str) -> bool:
+        import random
+        if not self.companion:
+            return False
+        if outcome == "backfire":
+            return True
+        uncertainty_words = [
+            "don't know", "not sure", "maybe", "i suppose",
+            "could be", "might have", "i think", "possibly",
+        ]
+        has_opening = any(w in npc_response.lower() for w in uncertainty_words)
+        if has_opening:
+            return random.random() < 0.55
+        return random.random() < 0.12
+
+    def _partner_interject_context(self, player_input: str, npc_name: str,
+                                    npc_response: str, outcome: str) -> str:
+        approach_note = {
+            "backfire": f"The detective's approach with {npc_name} just backfired. Cover for them or redirect.",
+            "success": f"{npc_name} is opening up. Reinforce it or surface what's still unsaid.",
+        }.get(outcome, f"There's an opening in what {npc_name} just said. Use it.")
+        return (
+            f"[You are in a conversation with {npc_name}. "
+            f"The detective just said: \"{player_input[:200]}\". "
+            f"{npc_name} responded: \"{npc_response[:300]}\". "
+            f"{approach_note} "
+            f"One sentence, in character. Do not explain what you're doing — just do it.]"
+        )
 
     def _companion_context(self, player_input: str) -> str:
         import json as _json
