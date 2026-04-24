@@ -73,6 +73,11 @@ class AmbientManager:
             if audio.ndim > 1:
                 audio = audio.mean(axis=1)
             audio = apply_ambient_filter(audio, sr)
+            if len(audio) == 0:
+                log.warning("ambient clip %r is empty, skipping", clip_name)
+                return
+            if sr != self._sr:
+                log.warning("ambient clip %r has sr=%d, stream opened at sr=%d; pitch will be wrong", clip_name, sr, self._sr)
             with self._lock:
                 self._audio = audio
                 self._sr = sr
