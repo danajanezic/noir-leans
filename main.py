@@ -71,8 +71,15 @@ def main():
     config = load_config()
     conn = get_connection()
     llm = create_backend(config)
+
+    import noir.audio as audio
+    audio.init(no_audio="--no-audio" in sys.argv)
+
     game = Game(conn=conn, llm=llm)
-    game.loop()
+    try:
+        game.loop()
+    finally:
+        audio.shutdown()
 
 
 if __name__ == "__main__":

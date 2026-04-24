@@ -88,6 +88,15 @@ def _parse_hhmm(s: str) -> int:
         return 0
 
 
+def _infer_npc_voice(system_prompt: str) -> str:
+    """Infer Kokoro voice ID from NPC system prompt pronouns."""
+    sp = system_prompt.lower()
+    female_signals = [" she ", " her ", " herself ", "woman", "lady", "mrs.", "miss "]
+    if any(s in sp for s in female_signals):
+        return "af_bella"
+    return "am_adam"
+
+
 def _tod_to_absolute(current_game_time: int, tod_minutes: int) -> int:
     """Convert a time-of-day (0-1439) to an absolute future game_time."""
     current_tod = current_game_time % 1440
@@ -1026,6 +1035,8 @@ class Game:
         t.start()
 
     def start_new_case(self) -> None:
+        import noir.audio as audio
+        audio.flush()
         if self._pending_gen_thread and self._pending_gen_thread.is_alive():
             console.print("[dim]Reviewing the file...[/dim]")
             self._pending_gen_thread.join()
@@ -1133,12 +1144,16 @@ class Game:
                 arrival = self.companion.narrate(arrival_prompt)
             self.llm.suppress_status = False
             loc_orgs = [r["name"] for r in get_organizations_for_location(self.conn, loc["id"])]
+            import noir.audio as audio
+            audio.flush()
             show_travel_animation()
             show_location_rule()
             show_location(loc["name"], loc["description"], npc_names,
                           game_time=get_game_time(self.conn), orgs=loc_orgs)
         else:
             loc_orgs = [r["name"] for r in get_organizations_for_location(self.conn, loc["id"])]
+            import noir.audio as audio
+            audio.flush()
             show_travel_animation()
             show_location_rule()
             show_location(loc["name"], loc["description"], npc_names,
@@ -1208,6 +1223,11 @@ class Game:
             llm=self.llm,
             npc_id=npc_row["id"],
             case_id=self.active_case_id,
+        )
+        import noir.audio as audio
+        audio.register_voice(
+            npc_row["name"],
+            _infer_npc_voice(npc_row["system_prompt"]),
         )
         others_ctx = self._copresent_npc_context(npc_row["id"])
         loc_ctx = ""
@@ -3405,8 +3425,13 @@ class Game:
         is_returning = partner is not None
         if not is_returning:
             self.run_onboarding()
+            if self.companion:
+                import noir.audio as audio
+                audio.register_voice(self.companion.name, "af_bella")
         else:
             self.companion = Companion.load(conn=self.conn, llm=self.llm)
+            import noir.audio as audio
+            audio.register_voice(self.companion.name, "af_bella")
             console.print("\n[bold yellow]Welcome back, detective.[/bold yellow]")
 
         active_cases = get_active_cases(self.conn)
