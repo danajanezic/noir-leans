@@ -168,7 +168,7 @@ def test_flush_discards_queued_items():
     processed = []
 
     def slow_speak(text, voice_id):
-        gate.wait()
+        gate.wait(timeout=5.0)
         processed.append(text)
 
     worker = SpeechQueueWorker(speak_fn=slow_speak)
@@ -208,3 +208,45 @@ def test_worker_continues_after_speak_exception():
     worker.enqueue(SpeechItem(text="recovered", voice_id="am_adam"))
     worker.shutdown()
     assert "recovered" in calls
+
+
+from pathlib import Path
+from noir.audio.ambient import _match_location, AmbientManager
+
+
+def test_match_speakeasy():
+    assert _match_location("The Lucky Speakeasy") == "speakeasy_jazz.wav"
+
+
+def test_match_precinct():
+    assert _match_location("The Precinct") == "police_station.wav"
+
+
+def test_match_docks():
+    assert _match_location("Bourbon Street Docks") == "docks.wav"
+
+
+def test_match_courthouse():
+    assert _match_location("The Courthouse") == "courthouse.wav"
+
+
+def test_match_apartment():
+    assert _match_location("Clara's Apartment") == "apartment_rain.wav"
+
+
+def test_match_street():
+    assert _match_location("Rue Bourbon, Rainy Street") == "street_rain.wav"
+
+
+def test_match_default():
+    assert _match_location("Somewhere Unknown") == "city_night.wav"
+
+
+def test_set_location_missing_file_no_crash(tmp_path):
+    manager = AmbientManager(ambient_dir=tmp_path)
+    manager.set_location("The Precinct")  # file not present → silent skip
+
+
+def test_set_location_wrong_dir_no_crash():
+    manager = AmbientManager(ambient_dir=Path("/nonexistent/path"))
+    manager.set_location("The Speakeasy")  # must not raise
