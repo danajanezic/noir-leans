@@ -3425,9 +3425,8 @@ class Game:
         is_returning = partner is not None
         if not is_returning:
             self.run_onboarding()
-            if self.companion:
-                import noir.audio as audio
-                audio.register_voice(self.companion.name, "af_bella")
+            import noir.audio as audio
+            audio.register_voice(self.companion.name, "af_bella")
         else:
             self.companion = Companion.load(conn=self.conn, llm=self.llm)
             import noir.audio as audio
