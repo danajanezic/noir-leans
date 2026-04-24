@@ -65,6 +65,14 @@ def shutdown() -> None:
     if _worker is not None:
         _worker.shutdown()
         _worker = None
+    from noir.audio import tts as _tts
+    if _tts._out_stream is not None:
+        try:
+            _tts._out_stream.stop()
+            _tts._out_stream.close()
+        except Exception:
+            pass
+        _tts._out_stream = None
 
 
 def speak(text: str, voice_id: str) -> None:

@@ -84,8 +84,20 @@ def generate_audio(text: str, voice_id: str) -> np.ndarray:
     return np.asarray(samples, dtype=np.float32)
 
 
-def speak_blocking(text: str, voice_id: str) -> None:
+_out_stream = None
+
+
+def _get_output_stream():
+    """Return a persistent output stream, creating it if needed."""
+    global _out_stream
     import sounddevice as sd
+    if _out_stream is None or not _out_stream.active:
+        _out_stream = sd.OutputStream(samplerate=_SR, channels=1, dtype="float32")
+        _out_stream.start()
+    return _out_stream
+
+
+def speak_blocking(text: str, voice_id: str) -> None:
     audio = generate_audio(text, voice_id)
     if len(audio) == 0:
         return
@@ -93,5 +105,4 @@ def speak_blocking(text: str, voice_id: str) -> None:
     peak = np.max(np.abs(audio))
     if peak > 1e-8:
         audio = audio / peak * 0.8
-    sd.play(audio, samplerate=_SR)
-    sd.wait()
+    _get_output_stream().write(audio)
