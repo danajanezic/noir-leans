@@ -24,10 +24,8 @@ def _add_crackle(audio: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     if len(audio) <= 10:
         return result
     positions = rng.integers(0, len(audio) - 10, size=n_bursts)
-    peak = np.max(np.abs(audio))
-    scale = min(0.15, max(0.05, peak * 0.3)) if peak > 0 else 0.15
     for pos in positions:
-        burst = rng.standard_normal(10).astype(np.float32) * scale
+        burst = rng.standard_normal(10).astype(np.float32) * 0.15
         result[pos : pos + 10] += burst
     return result
 
@@ -70,5 +68,8 @@ def speak_blocking(text: str, voice_id: str) -> None:
     if len(audio) == 0:
         return
     audio = apply_voice_filter(audio, _SR)
+    peak = np.max(np.abs(audio))
+    if peak > 1e-8:
+        audio = audio / peak * 0.8
     sd.play(audio, samplerate=_SR)
     sd.wait()
