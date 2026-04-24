@@ -67,6 +67,11 @@ def flush() -> None:
     _worker.flush()
 
 
+def is_audio_active() -> bool:
+    """True when audio is initialised and not suppressed — display uses this for text fallback."""
+    return not _no_audio and _worker is not None
+
+
 def register_voice(name: str, voice_id: str) -> None:
     with _registry_lock:
         _voice_registry[name.lower()] = voice_id
