@@ -11,11 +11,16 @@ from noir.persistence.repository import (
 _ADMISSIBILITY_SYSTEM = (
     "You are an evidence admissibility evaluator for a 1935 noir detective game. "
     "The detective wants to record something as evidence. "
-    "Your job: could the detective plausibly know this based on what they have actually learned? "
-    "Accept if the claim is supported by or reasonably inferable from dossier facts or case context. "
+    "WITNESS STATEMENTS: If a recent conversation excerpt is provided and the detective's claim is "
+    "something the NPC said, confirmed, or clearly implied in that conversation, it IS admissible "
+    "as a witness statement — record it. This is the most common case. "
+    "PHYSICAL DESCRIPTIONS: If a witness described a person by appearance (height, build, clothing, coloring, "
+    "distinctive features) — even without naming them — that is admissible. "
+    "Record the description as stated: 'Witness described a [appearance] seen [where/when].'"
+    "DOSSIER FACTS: Accept if the claim is supported by or reasonably inferable from dossier facts or case context. "
     "Accept implicit confirmations — if the detective accused someone and the NPC responded without denying it, that is admissible. "
-    "Reject pure speculation with no basis in what was actually learned. "
-    "Be generous with wording but honest about whether there is a real foundation. "
+    "REJECT only pure speculation with no basis in the conversation, dossier, or case context. "
+    "Be generous with wording. If the conversation excerpt shows the NPC said something close to the claim, accept it. "
     "Return ONLY valid JSON: "
     '{"admissible": true|false, '
     '"evidence_text": "canonical one-sentence version of the evidence as it would appear in the file, or null", '
@@ -51,7 +56,9 @@ class CaseManager:
                 clue_list = "\n".join(f"- id={c['id']}: {c['description']}" for c in clues)
                 fp_result = self.llm.query_structured(
                     "Match a player's collect command against a case clue list. "
-                    "Be generous with wording variations. "
+                    "Match on wording variations for the SAME physical object. "
+                    "Do NOT match a tool used on an object to the object itself (e.g. wrench ≠ bolt). "
+                    "Do NOT match a container to its contents, or a method to its result. "
                     "Return ONLY valid JSON: "
                     '{"matched": true|false, "clue_id": integer|null}',
                     [],
@@ -70,7 +77,7 @@ class CaseManager:
                 )
             if matched_clue:
                 if matched_clue["id"] in already_collected_ids:
-                    return {"ok": False, "message": f"Already collected: {matched_clue['description']}"}
+                    return {"ok": False, "message": f"Already collected: {matched_clue['description']}", "matched_desc": matched_clue["description"]}
                 if matched_clue["location"] and location_id and not source_npc_id:
                     current_loc = get_location(self.conn, location_id)
                     if current_loc and current_loc["name"].lower() != matched_clue["location"].lower():
@@ -127,7 +134,7 @@ class CaseManager:
             history = get_history(self.conn, character_id=f"npc_{source_npc_id}",
                                   case_id=self.case_id)
             if history:
-                npc_excerpt = "\nRecent conversation with " + npc_name + ":\n" + "\n".join(
+                npc_excerpt = "\nConversation with " + npc_name + " (this interview, just now):\n" + "\n".join(
                     f"{'Detective' if m['role'] == 'user' else npc_name}: {m['content']}"
                     for m in history[-10:]
                 )

@@ -88,12 +88,105 @@ def _pin_console_width() -> int:
     return _game_inner_width or 80
 
 
+def _thunderstorm_title(title_text: str) -> bool:
+    try:
+        from terminaltexteffects.effects.effect_thunderstorm import Thunderstorm, ThunderstormConfig
+        from terminaltexteffects.engine.terminal import TerminalConfig
+        import terminaltexteffects as tte
+        term = shutil.get_terminal_size()
+        pad = "  "
+        inner = pad + title_text + pad
+        bar = "═" * len(inner)
+        box_text = "\n".join([
+            "╔" + bar + "╗",
+            "║" + inner + "║",
+            "╚" + bar + "╝",
+        ])
+        effect_cfg = ThunderstormConfig(
+            lightning_color=tte.Color("B8C5E8"),
+            glowing_text_color=tte.Color("CC2200"),
+            text_glow_time=6,
+            raindrop_symbols=("\\", ".", ","),
+            spark_symbols=("*", ".", "'"),
+            spark_glow_color=tte.Color("FF4400"),
+            spark_glow_time=18,
+            storm_time=7,
+            final_gradient_stops=(tte.Color("6B0000"), tte.Color("8B0000"), tte.Color("CC2200")),
+            final_gradient_steps=(12,),
+            final_gradient_frames=3,
+            final_gradient_direction=tte.Gradient.Direction.VERTICAL,
+        )
+        term_cfg = TerminalConfig(
+            tab_width=4,
+            xterm_colors=False,
+            no_color=False,
+            terminal_background_color=tte.Color("000000"),
+            existing_color_handling="ignore",
+            wrap_text=False,
+            frame_rate=60,
+            canvas_width=term.columns,
+            canvas_height=max(term.lines // 2, 16),
+            anchor_canvas="c",
+            anchor_text="c",
+            ignore_terminal_dimensions=False,
+            reuse_canvas=False,
+            no_eol=False,
+            no_restore_cursor=False,
+        )
+        effect = Thunderstorm(box_text, effect_config=effect_cfg, terminal_config=term_cfg)
+        with effect.terminal_output() as terminal:
+            for frame in effect:
+                terminal.print(frame)
+        return True
+    except Exception as _tte_err:
+        import logging as _log
+        _log.getLogger(__name__).warning("thunderstorm title failed: %s", _tte_err, exc_info=True)
+        return False
+
+
 def show_splash() -> None:
     term = shutil.get_terminal_size()
     term_width = max(term.columns, 40)
     term_height = max(term.lines, 24)
 
-    # top rule + blank + blank + 3 border + blank + 1935 + blank + 3 flavor + blank + bottom rule + blank
+    title_text = "N  O  I  R  L  E  A  N  S"
+
+    if _thunderstorm_title(title_text):
+        # thunderstorm handled the title; print the rest below
+        console.print(Rule(style="yellow dim"))
+        console.print()
+        _DIM_YELLOW = "\033[2;33m"
+
+        def _typewrite_centered(text: str, delay: float, ansi: str = "") -> None:
+            indent = " " * max((term_width - len(text)) // 2, 0)
+            sys.stdout.write(indent)
+            if ansi:
+                sys.stdout.write(ansi)
+            for char in text:
+                sys.stdout.write(char)
+                sys.stdout.flush()
+                time.sleep(delay)
+            if ansi:
+                sys.stdout.write("\033[0m")
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+
+        _typewrite_centered("1  9  3  5", 0.04, "")
+        console.print()
+        for line, pause in [
+            ("The Depression is on.", 0.65),
+            ("Everyone is broke.", 0.65),
+            ("Someone is always dead.", 0),
+        ]:
+            _typewrite_centered(line, 0.04, _DIM_YELLOW)
+            if pause:
+                time.sleep(pause)
+        console.print()
+        console.print(Rule(style="yellow dim"))
+        console.print()
+        return
+
+    # fallback: original typewritten animation
     content_lines = 15
     top_pad = max((term_height - content_lines) // 2, 0)
     sys.stdout.write("\n" * top_pad)
@@ -330,12 +423,9 @@ def fmt_game_time(game_time: int) -> str:
     return f"{h12}:{m:02d} {period}"
 
 
-def show_wait_result(new_time: int, npc_movements: list[tuple[str, str]]) -> None:
+def show_wait_result(new_time: int) -> None:
     time_str = fmt_game_time(new_time)
-    lines = [f"[dim]Time passes. It is now [bold]{time_str}[/bold].[/dim]"]
-    for name, loc in npc_movements:
-        lines.append(f"[dim]  · {name} has moved to {loc}.[/dim]")
-    console.print("\n" + "\n".join(lines))
+    console.print(f"\n[dim]Time passes. It is now [bold]{time_str}[/bold].[/dim]")
 
 
 def show_location(name: str, description: str, npcs_present: list[str],
@@ -489,7 +579,8 @@ def show_player_status(states: list) -> None:
 
 
 def show_locations(fixed: list, case_locs: list, case_title: str | None = None,
-                   current_location: str | None = None) -> None:
+                   current_location: str | None = None,
+                   crime_scene: str | None = None) -> None:
     t = Table(box=box.SIMPLE, show_header=True, header_style="bold yellow")
     t.add_column("Location", style="white")
     t.add_column("Case", style="dim")
@@ -498,7 +589,8 @@ def show_locations(fixed: list, case_locs: list, case_title: str | None = None,
         t.add_row(name, "—")
     for loc in case_locs:
         name = f"{loc['name']} *" if current_location and loc["name"] == current_location else loc["name"]
-        t.add_row(name, case_title or "current case")
+        tag = "crime scene" if crime_scene and loc["name"].lower() == crime_scene.lower() else (case_title or "current case")
+        t.add_row(name, tag)
     console.print(Panel(t, title="[bold yellow]Known Locations[/bold yellow]",
                         border_style="yellow"))
     console.print("[dim]* you are here  ·  Ask your partner about any of them.[/dim]\n")
@@ -582,6 +674,45 @@ def show_dossier_all(entries: dict[str, list[str]]) -> None:
                         title="[bold yellow]Dossier[/bold yellow]", border_style="yellow"))
 
 
+def _render_alignment_grid(lc: int, ge: int) -> str:
+    W, H = 21, 9  # odd dimensions
+    cx, cy = W // 2, H // 2
+    px = cx + round(lc / 100 * cx)
+    py = cy - round(ge / 100 * cy)  # inverted: positive ge = up = lower row index
+    px = max(0, min(W - 1, px))
+    py = max(0, min(H - 1, py))
+
+    rows = []
+    for y in range(H):
+        row = []
+        for x in range(W):
+            if x == px and y == py:
+                row.append('◆')
+            elif y == cy and x == cx:
+                row.append('+')
+            elif y == cy:
+                row.append('─')
+            elif x == cx:
+                row.append('│')
+            else:
+                row.append(' ')
+        rows.append(''.join(row))
+
+    # Inject axis labels into middle row
+    mid = list(rows[cy])
+    chaos = 'chaos'
+    lawful = 'lawful'
+    for i, ch in enumerate(chaos):
+        mid[i] = ch
+    for i, ch in enumerate(lawful):
+        mid[W - len(lawful) + i] = ch
+    rows[cy] = ''.join(mid)
+
+    header = ' ' * cx + 'good'
+    footer = ' ' * cx + 'evil'
+    return '\n'.join([header] + rows + [footer])
+
+
 def show_player_profile(player: dict, orgs: list[dict], partner_name: str | None,
                         partner_stage: str | None, npc_relationships: list[dict],
                         player_skills: dict | None = None,
@@ -598,9 +729,10 @@ def show_player_profile(player: dict, orgs: list[dict], partner_name: str | None
     # Alignment
     lc = player.get("law_chaos", 0)
     ge = player.get("good_evil", 0)
-    lc_label = "Lawful" if lc <= -5 else "Chaotic" if lc >= 5 else "Neutral"
-    ge_label = "Good" if ge <= -5 else "Evil" if ge >= 5 else "Neutral"
-    lines.append(f"[dim]Alignment: {lc_label} {ge_label} (law/chaos {lc:+d}, good/evil {ge:+d})[/dim]")
+    lc_label = "Lawful" if lc >= 5 else "Chaotic" if lc <= -5 else "Neutral"
+    ge_label = "Good" if ge >= 5 else "Evil" if ge <= -5 else "Neutral"
+    lines.append(f"Alignment: {lc_label} {ge_label}")
+    lines.append(_render_alignment_grid(lc, ge))
     lines.append("")
 
     # Case stats
@@ -647,9 +779,9 @@ def show_player_profile(player: dict, orgs: list[dict], partner_name: str | None
             for root, data in sorted(skills.items()):
                 level = data.get("level", 1)
                 root_specs = [s for s in (specs or []) if s["root"] == root]
-                lines.append(f"    [dim]{escape(root.title())} — level {level}[/dim]")
+                lines.append(f"    {escape(root.title())} — level {level}")
                 for s in root_specs:
-                    lines.append(f"      [italic dim]· {escape(s['name'])}:[/italic dim] {escape(s['description'])}")
+                    lines.append(f"      [italic]· {escape(s['name'])}:[/italic] {escape(s['description'])}")
 
         _render_owner_skills("Detective", player_skills, player_specializations)
         _render_owner_skills(partner_name or "Partner", partner_skills, partner_specializations)
@@ -697,9 +829,14 @@ def show_help() -> None:
         "  /look · /look around — survey the area\n"
         "  /examine [object] · /look at [object]\n"
         "  /collect [item] · /pick up [item]\n"
-        "  /arrest [suspect]\n\n"
+        "  /arrest [suspect]\n"
+        "  /detain [suspect] — bring in for interrogation at The Precinct\n"
+        "  /release [suspect] — release from holding\n"
+        "  /holding — list suspects currently detained\n\n"
         "[bold]Case:[/bold]\n"
-        "  /go da — submit your case or drop it for a new one\n"
+        "  /go da — go to the DA's Office\n"
+        "  /submit — submit case for trial (from anywhere)\n"
+        "  /drop — drop current case\n"
         "  /go courthouse — check trial status\n\n"
         "[bold]Detective status:[/bold]\n"
         "  /status — view active conditions\n"

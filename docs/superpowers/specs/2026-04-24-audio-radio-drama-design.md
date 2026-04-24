@@ -148,7 +148,7 @@ Each output function gets one audio call. Text output is minimized in audio-firs
 | `show_travel_animation()` | `flush()` + ambient crossfade via `set_location` | animation unchanged |
 | `show_location_rule()` | *(silent)* | unchanged |
 
-`voice_for(speaker)` is a module-level lookup that maps speaker names to voice IDs. It's populated at game init from NPC data (gender field) and falls back to role-based defaults.
+`voice_for(speaker)` is a module-level dict mapping speaker name → voice ID. Entries are registered via `audio.register_voice(name, voice_id)` called from `game.py` when an NPC is loaded (gender is available there). Unknown speakers fall back to `am_adam` / `af_heart` by a simple male/female heuristic on the name, then to `am_adam` as final default.
 
 ---
 

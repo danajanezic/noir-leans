@@ -187,6 +187,65 @@ def test_bad_relationship_ref_detected(auditor, clean_case):
     assert "bad_relationship_ref" in types
 
 
+def test_clue_location_mismatch_detected(auditor, clean_case):
+    clean_case["locations"].append({"name": "Silver Linings Pawn Shop"})
+    clean_case["clues"].append({
+        "description": "A watch pawned at Silver Linings Pawn Shop after the murder",
+        "is_red_herring": False,
+        "location": "Fournier's Jazz Club",
+    })
+    issues = auditor._deterministic_check(clean_case)
+    types = [i.type for i in issues]
+    assert "clue_location_mismatch" in types
+    mismatch = [i for i in issues if i.type == "clue_location_mismatch"][0]
+    assert "Silver Linings Pawn Shop" in mismatch.detail
+
+
+def test_patch_clue_location_mismatch_fixes_location(auditor, clean_case):
+    clean_case["locations"].append({"name": "Silver Linings Pawn Shop"})
+    clean_case["clues"].append({
+        "description": "A watch pawned at Silver Linings Pawn Shop after the murder",
+        "is_red_herring": False,
+        "location": "Fournier's Jazz Club",
+    })
+    issue = Issue(
+        type="clue_location_mismatch",
+        subject="A watch pawned at Silver Linings Pawn Shop after the murder",
+        detail="clue description mentions 'Silver Linings Pawn Shop' but location field is 'Fournier's Jazz Club'",
+        severity="patchable",
+        source="deterministic",
+    )
+    patched = auditor._patch(clean_case, [issue])
+    clue = next(c for c in patched["clues"] if "Silver Linings" in c["description"])
+    assert clue["location"] == "Silver Linings Pawn Shop"
+
+
+def test_clue_clustering_detected(auditor, clean_case):
+    # Add three clues all at the same non-crime-scene location
+    clean_case["clues"] += [
+        {"description": "A receipt", "is_red_herring": False, "location": "Stacked Deck Saloon"},
+        {"description": "A matchbook", "is_red_herring": False, "location": "Stacked Deck Saloon"},
+        {"description": "A torn note", "is_red_herring": False, "location": "Stacked Deck Saloon"},
+    ]
+    clean_case["locations"].append({"name": "Stacked Deck Saloon"})
+    issues = auditor._deterministic_check(clean_case)
+    types = [i.type for i in issues]
+    assert "clue_clustering" in types
+    cluster = [i for i in issues if i.type == "clue_clustering"]
+    assert cluster[0].subject == "Stacked Deck Saloon"
+
+
+def test_clue_clustering_not_triggered_when_spread(auditor, clean_case):
+    clean_case["clues"] += [
+        {"description": "A receipt", "is_red_herring": False, "location": "Stacked Deck Saloon"},
+        {"description": "A matchbook", "is_red_herring": False, "location": "Le Chat Noir"},
+    ]
+    clean_case["locations"] += [{"name": "Stacked Deck Saloon"}, {"name": "Le Chat Noir"}]
+    issues = auditor._deterministic_check(clean_case)
+    types = [i.type for i in issues]
+    assert "clue_clustering" not in types
+
+
 def test_clean_case_has_no_deterministic_issues(auditor, clean_case):
     issues = auditor._deterministic_check(clean_case)
     assert issues == []

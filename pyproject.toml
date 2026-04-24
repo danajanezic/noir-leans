@@ -9,6 +9,7 @@ requires-python = ">=3.11"
 dependencies = [
     "rich>=13.0",
     "prompt_toolkit>=3.0",
+    "terminaltexteffects>=0.14",
 ]
 
 [project.optional-dependencies]
@@ -17,6 +18,9 @@ dev = [
     "pytest-cov>=4.0",
     "jurigged>=0.5",
 ]
+
+[tool.setuptools.packages.find]
+include = ["noir*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

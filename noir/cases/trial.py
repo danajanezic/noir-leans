@@ -227,8 +227,14 @@ class TrialSystem:
                    ORDER BY o.influence DESC""",
                 (arrested["npc_id"],)
             ).fetchall()
+            def _influence_label(n: int) -> str:
+                if n >= 9: return "dominant citywide power"
+                if n >= 7: return "major political/criminal force"
+                if n >= 5: return "significant local presence"
+                if n >= 3: return "minor faction"
+                return "fringe group"
             suspect_orgs = [
-                f"{r['name']} ({r['type']}, influence {r['influence']}" +
+                f"{r['name']} ({r['type']}, {_influence_label(r['influence'])}" +
                 (f", role: {r['role']}" if r['role'] else "") + ")"
                 for r in org_rows
             ]
