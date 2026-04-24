@@ -4,6 +4,17 @@ import pytest
 import noir.audio as audio
 
 
+@pytest.fixture(autouse=True)
+def reset_audio_state():
+    """Reset module-level audio state between tests."""
+    import noir.audio as _audio
+    _audio._voice_registry.clear()
+    _audio._no_audio = False
+    yield
+    _audio._voice_registry.clear()
+    _audio._no_audio = False
+
+
 def test_init_noop_does_not_crash():
     audio.init(no_audio=True)
     audio.shutdown()

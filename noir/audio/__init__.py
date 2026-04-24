@@ -13,14 +13,6 @@ _ROLE_VOICES: dict[str, str] = {
     "magistrate": "bm_george",
 }
 
-_GENDER_VOICES: dict[str, str] = {
-    "female": "af_bella",
-    "woman": "af_bella",
-    "male": "am_adam",
-    "man": "am_adam",
-}
-
-
 def init(no_audio: bool = False) -> None:
     global _no_audio
     _no_audio = no_audio or os.environ.get("NOIR_NO_AUDIO") == "1"
