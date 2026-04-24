@@ -355,16 +355,17 @@ def create_npc(conn: sqlite3.Connection, *, case_id: int | None, name: str, role
                empathy: int = 5, starting_guilt: int = 0,
                revelation_style: str = "staged", revelation_stages: int = 3,
                corruption: int = 0, maiden_name: str | None = None,
-               physical_description: str | None = None) -> int:
+               physical_description: str | None = None,
+               sex: str | None = None) -> int:
     cur = conn.execute(
         """INSERT INTO npcs
            (case_id, name, role, system_prompt, current_location_id, alignment, age,
             pressure_tolerance, kindness_weight, empathy, starting_guilt,
-            revelation_style, revelation_stages, corruption, maiden_name, physical_description)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            revelation_style, revelation_stages, corruption, maiden_name, physical_description, sex)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (case_id, name, role, system_prompt, current_location_id, alignment, age,
          pressure_tolerance, kindness_weight, empathy, starting_guilt,
-         revelation_style, revelation_stages, corruption, maiden_name, physical_description)
+         revelation_style, revelation_stages, corruption, maiden_name, physical_description, sex)
     )
     conn.commit()
     return cur.lastrowid

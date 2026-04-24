@@ -57,6 +57,7 @@ def _case_schema(archetype_list: str, org_list: str) -> str:
         '  "motive": "string",\n'
         '  "suspects": [\n'
         '    {"name": "string", "role": "suspect|witness|informant",\n'
+        '     "sex": "male"|"female"|"nonbinary",\n'
         '     "race": "string (e.g. Black, white, Creole, Cajun, Italian, Irish)",\n'
         '     "political_connections": "string (e.g. none, alderman on payroll, police captain, organized crime)",\n'
         '     "alibi": "string", "secret": "string",\n'

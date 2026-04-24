@@ -90,19 +90,24 @@ def _parse_hhmm(s: str) -> int:
 
 
 def _infer_npc_voice(npc_row) -> str:
-    """Infer Kokoro voice ID from NPC row fields."""
+    """Return Kokoro voice ID for an NPC row."""
+    keys = npc_row.keys()
+    sex = (npc_row["sex"] if "sex" in keys else None) or ""
+    if sex in ("female", "nonbinary"):
+        return "af_bella"
+    if sex == "male":
+        return "am_adam"
+    # Fallback for pre-sex rows: score keyword hits across all text fields.
     text = " ".join(filter(None, [
         npc_row["system_prompt"],
-        npc_row["physical_description"] if "physical_description" in npc_row.keys() else None,
-        npc_row["maiden_name"] if "maiden_name" in npc_row.keys() else None,
+        npc_row["physical_description"] if "physical_description" in keys else None,
+        npc_row["maiden_name"] if "maiden_name" in keys else None,
     ])).lower()
     female = ["woman", "lady", "mrs.", "miss ", "girl", " she ", " her ", " herself ",
               "waitress", "actress", "hostess", "widow", "wife", "nun", "madam", "maid"]
     male = ["man", "mr.", "sir ", "guy ", " he ", " him ", " himself ",
             "waiter", "actor", "host ", "widower", "husband", "priest", "barman", "cop"]
-    female_hits = sum(1 for s in female if s in text)
-    male_hits = sum(1 for s in male if s in text)
-    if female_hits > male_hits:
+    if sum(1 for s in female if s in text) > sum(1 for s in male if s in text):
         return "af_bella"
     return "am_adam"
 
@@ -1008,6 +1013,7 @@ class Game:
                 revelation_stages=suspect.get("revelation_stages", 3),
                 maiden_name=suspect.get("maiden_name") or None,
                 physical_description=suspect.get("physical_description") or None,
+                sex=suspect.get("sex") or None,
             )
             set_character_location(self.conn, character_id=f"npc_{npc_id}", location_id=loc_id)
             initialize_npc_relationship(self.conn, npc_id, suspect.get("starting_guilt", 0))

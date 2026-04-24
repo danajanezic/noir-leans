@@ -368,6 +368,7 @@ _MIGRATIONS = [
     "ALTER TABLE npcs ADD COLUMN maiden_name TEXT",
     "ALTER TABLE npcs ADD COLUMN physical_description TEXT",
     "ALTER TABLE npcs ADD COLUMN detained INTEGER DEFAULT 0",
+    "ALTER TABLE npcs ADD COLUMN sex TEXT",
 ]
 
 
