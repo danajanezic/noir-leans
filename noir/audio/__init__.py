@@ -18,11 +18,16 @@ _FEMALE_VOICES = [
     "af_bella", "af_heart", "af_jessica", "af_nicole", "af_sarah",
     "af_alloy", "af_nova", "af_river", "af_kore",
     "bf_alice", "bf_emma", "bf_lily", "bf_isabella",
+    "ff_siwis",           # French
+    "if_sara",            # Italian
+    "ef_dora",            # Spanish
 ]
 _MALE_VOICES = [
     "am_adam", "am_eric", "am_liam", "am_michael", "am_onyx",
     "am_echo", "am_fenrir",
     "bm_daniel", "bm_fable", "bm_lewis",
+    "im_nicola",          # Italian
+    "em_alex",            # Spanish
 ]
 
 _ROLE_VOICES: dict[str, str] = {
