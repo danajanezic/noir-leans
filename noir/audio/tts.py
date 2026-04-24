@@ -12,8 +12,20 @@ _MODEL_DIR = Path.home() / ".cache" / "noir-detective" / "kokoro"
 _MODEL_PATH = _MODEL_DIR / "kokoro-v1.0.onnx"
 _VOICES_PATH = _MODEL_DIR / "voices-v1.0.bin"
 
-_FADE_SAMPLES = 256  # ~10ms at 24kHz — eliminates click transients at clip edges
+_FADE_SAMPLES = 256   # ~10ms at 24kHz — eliminates click transients at clip edges
 _XFADE_SAMPLES = 2048  # ~85ms crossfade for seamless ambient looping
+_SILENCE_THRESHOLD = 0.005  # amplitude below which trailing audio is considered silence
+_SILENCE_TAIL_MS = 80  # ms of audio to keep after last loud sample
+
+
+def _trim_trailing(audio: np.ndarray, sr: int) -> np.ndarray:
+    """Remove the artifact/echo kokoro generates after speech ends."""
+    tail_samples = int(sr * _SILENCE_TAIL_MS / 1000)
+    above = np.where(np.abs(audio) > _SILENCE_THRESHOLD)[0]
+    if len(above) == 0:
+        return audio
+    cut = min(above[-1] + tail_samples, len(audio))
+    return audio[:cut]
 
 
 def _fade_edges(audio: np.ndarray) -> np.ndarray:
@@ -41,6 +53,7 @@ def make_loop_seamless(audio: np.ndarray) -> np.ndarray:
 
 
 def apply_voice_filter(audio: np.ndarray, sr: int, seed: int = 0) -> np.ndarray:
+    audio = _trim_trailing(audio, sr)
     return _fade_edges(audio)
 
 
