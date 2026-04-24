@@ -10,9 +10,17 @@ def reset_audio_state():
     import noir.audio as _audio
     _audio._voice_registry.clear()
     _audio._no_audio = False
+    _audio._worker = None
+    _audio._ambient = None
     yield
     _audio._voice_registry.clear()
     _audio._no_audio = False
+    if _audio._worker is not None:
+        _audio._worker.shutdown()
+        _audio._worker = None
+    if _audio._ambient is not None:
+        _audio._ambient.stop()
+        _audio._ambient = None
 
 
 def test_init_noop_does_not_crash():
@@ -250,3 +258,36 @@ def test_set_location_missing_file_no_crash(tmp_path):
 def test_set_location_wrong_dir_no_crash():
     manager = AmbientManager(ambient_dir=Path("/nonexistent/path"))
     manager.set_location("The Speakeasy")  # must not raise
+
+
+def test_speak_enqueues_when_audio_active():
+    """Replace SpeechQueueWorker with a fake to verify speak() routes through queue."""
+    import noir.audio as audio
+    import noir.audio.queue_worker as qw
+
+    calls = []
+    original_worker_class = qw.SpeechQueueWorker
+
+    class FakeWorker:
+        def __init__(self, speak_fn):
+            self._speak_fn = speak_fn
+
+        def enqueue(self, item):
+            calls.append((item.text, item.voice_id))
+
+        def flush(self):
+            calls.append(("__flush__", ""))
+
+        def shutdown(self):
+            pass
+
+    qw.SpeechQueueWorker = FakeWorker
+    try:
+        audio.init(no_audio=False)
+        audio._no_audio = False  # force active even without kokoro
+        audio.speak("test line", "am_adam")
+        assert ("test line", "am_adam") in calls
+    finally:
+        qw.SpeechQueueWorker = original_worker_class
+        audio.shutdown()
+        audio._no_audio = True
