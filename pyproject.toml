@@ -19,7 +19,7 @@ dev = [
     "scipy>=1.13",
 ]
 audio = [
-    "kokoro>=0.9",
+    "kokoro-onnx>=0.4",
     "sounddevice>=0.5",
     "soundfile>=0.13",
     "scipy>=1.13",

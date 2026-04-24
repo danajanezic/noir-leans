@@ -1,8 +1,17 @@
+import logging
+from pathlib import Path
+
 import numpy as np
 from scipy.signal import butter, sosfilt
 
+log = logging.getLogger(__name__)
+
 _SR = 24000
 _pipeline = None
+
+_MODEL_DIR = Path.home() / ".cache" / "noir-detective" / "kokoro"
+_MODEL_PATH = _MODEL_DIR / "kokoro-v1.0.onnx"
+_VOICES_PATH = _MODEL_DIR / "voices-v1.0.bin"
 
 
 def _bandpass_filter(audio: np.ndarray, sr: int) -> np.ndarray:
@@ -48,18 +57,24 @@ def apply_ambient_filter(audio: np.ndarray, sr: int, seed: int = 0) -> np.ndarra
 def generate_audio(text: str, voice_id: str) -> np.ndarray:
     global _pipeline
     try:
-        from kokoro import KPipeline
+        from kokoro_onnx import Kokoro
     except ImportError:
-        raise RuntimeError("kokoro not installed — run: pip install 'noir-detective[audio]'")
+        raise RuntimeError(
+            "kokoro-onnx not installed — run: pip install kokoro-onnx"
+        )
     if _pipeline is None:
-        _pipeline = KPipeline(lang_code="a")
-    chunks = []
-    for _, _, audio in _pipeline(text, voice=voice_id, speed=0.92):
-        if audio is not None:
-            chunks.append(np.asarray(audio, dtype=np.float32))
-    if not chunks:
-        return np.zeros(0, dtype=np.float32)
-    return np.concatenate(chunks)
+        if not _MODEL_PATH.exists() or not _VOICES_PATH.exists():
+            raise RuntimeError(
+                f"Kokoro model files not found in {_MODEL_DIR}.\n"
+                "Download them:\n"
+                "  wget -P ~/.cache/noir-detective/kokoro "
+                "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx\n"
+                "  wget -P ~/.cache/noir-detective/kokoro "
+                "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin"
+            )
+        _pipeline = Kokoro(str(_MODEL_PATH), str(_VOICES_PATH))
+    samples, _ = _pipeline.create(text, voice=voice_id, speed=0.92, lang="en-us")
+    return np.asarray(samples, dtype=np.float32)
 
 
 def speak_blocking(text: str, voice_id: str) -> None:
