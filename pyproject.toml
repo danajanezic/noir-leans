@@ -25,5 +25,8 @@ audio = [
     "scipy>=1.13",
 ]
 
+[tool.setuptools.packages.find]
+include = ["noir*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
