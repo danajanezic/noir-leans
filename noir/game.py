@@ -3327,6 +3327,7 @@ class Game:
             character_id=f"npc_{npc_row['id']}",
             system_prompt=bribe_system,
             llm=self.llm,
+            conn=self.conn,
         )
         response = agent.speak(bribe_prompt)
         show_dialogue(npc_row["name"], response)
@@ -3528,6 +3529,7 @@ class Game:
             character_id=f"npc_{leader_row['id']}",
             system_prompt=join_system,
             llm=self.llm,
+            conn=self.conn,
         )
         response = agent.speak(join_prompt)
         show_dialogue(leader_row["name"], response)
