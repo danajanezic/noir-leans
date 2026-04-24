@@ -3,6 +3,7 @@ import threading
 from dataclasses import dataclass
 from typing import Callable
 
+_FLUSH = object()
 _STOP = object()
 
 
@@ -16,26 +17,21 @@ class SpeechQueueWorker:
     def __init__(self, speak_fn: Callable[[str, str], None]) -> None:
         self._q: queue.Queue = queue.Queue()
         self._speak_fn = speak_fn
-        self._lock = threading.Lock()
-        self._accept_new_items = True
         self._thread = threading.Thread(target=self._run, daemon=True, name="audio-queue")
         self._thread.start()
 
     def enqueue(self, item: SpeechItem) -> None:
-        with self._lock:
-            if self._accept_new_items:
-                self._q.put(item)
+        self._q.put(item)
 
     def flush(self) -> None:
-        with self._lock:
-            self._accept_new_items = False
-            # Drain the queue
-            while True:
-                try:
-                    self._q.get_nowait()
-                except queue.Empty:
+        while True:
+            try:
+                item = self._q.get_nowait()
+                if item is _STOP:
+                    self._q.put(item)
                     break
-            self._accept_new_items = True
+            except queue.Empty:
+                break
 
     def shutdown(self) -> None:
         self._q.put(_STOP)
