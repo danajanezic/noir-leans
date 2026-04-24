@@ -161,9 +161,8 @@ def typewrite(text: str, delay: float = 0.025) -> None:
 
 
 def show_narrator(text: str) -> None:
-    console.print()
-    console.print(f"[dim italic]{escape(text)}[/dim italic]")
-    console.print()
+    import noir.audio as audio
+    audio.speak(text, audio.NARRATOR_VOICE)
 
 
 def show_conversation_header(name: str) -> None:
@@ -341,21 +340,23 @@ def show_wait_result(new_time: int, npc_movements: list[tuple[str, str]]) -> Non
 def show_location(name: str, description: str, npcs_present: list[str],
                   game_time: int | None = None,
                   orgs: list[str] | None = None) -> None:
-    npc_text = f"\n\n[dim]Present: {', '.join(npcs_present)}[/dim]" if npcs_present else ""
-    org_text = f"\n[dim]Controlled by: {', '.join(orgs)}[/dim]" if orgs else ""
+    import noir.audio as audio
+    audio.speak(name, audio.NARRATOR_VOICE)
+    audio.set_location(name)
     time_text = f"  [dim]{fmt_game_time(game_time)}[/dim]" if game_time is not None else ""
+    npc_text = f"[dim]Present: {', '.join(npcs_present)}[/dim]" if npcs_present else ""
     console.print(Panel(
-        f"[italic]{description}[/italic]{npc_text}{org_text}",
-        title=f"[bold yellow]{name}[/bold yellow]{time_text}",
+        npc_text,
+        title=f"[bold yellow]{escape(name)}[/bold yellow]{time_text}",
         border_style="yellow",
         box=box.DOUBLE_EDGE,
     ))
 
 
 def show_dialogue(speaker: str, text: str, delay: float = 0.02) -> None:
-    console.print(f"\n[bold cyan]{speaker}:[/bold cyan]")
-    console.print(Markdown(text))
-    console.print()
+    import noir.audio as audio
+    audio.speak(text, audio.voice_for(speaker))
+    console.print(f"\n[bold cyan]{escape(speaker)}[/bold cyan]")
 
 
 def show_player_turn(text: str) -> None:
@@ -365,7 +366,9 @@ def show_player_turn(text: str) -> None:
 
 
 def show_partner_aside(speaker: str, text: str) -> None:
-    console.print(f"\n[dim cyan]{escape(speaker)}:[/dim cyan] [italic]{escape(text)}[/italic]")
+    import noir.audio as audio
+    audio.speak(text, audio.voice_for(speaker))
+    console.print(f"\n[dim cyan]{escape(speaker)}:[/dim cyan] [italic](aside)[/italic]")
 
 
 _PROMPT_HINT_PLAIN = (
