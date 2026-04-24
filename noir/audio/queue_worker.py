@@ -3,7 +3,6 @@ import threading
 from dataclasses import dataclass
 from typing import Callable
 
-_FLUSH = object()
 _STOP = object()
 
 
