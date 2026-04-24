@@ -1,5 +1,6 @@
 import logging
 import os
+import threading
 
 log = logging.getLogger(__name__)
 
@@ -7,6 +8,7 @@ _no_audio: bool = False
 _worker = None
 _ambient = None
 _voice_registry: dict[str, str] = {}
+_registry_lock = threading.Lock()
 
 NARRATOR_VOICE = "bm_george"
 
@@ -47,32 +49,34 @@ def shutdown() -> None:
 
 
 def speak(text: str, voice_id: str) -> None:
-    if _no_audio or _worker is None:
+    if _no_audio or _worker is None:  # also covers pre-init state
         return
-    from noir.audio.queue_worker import SpeechItem
+    from noir.audio.queue_worker import SpeechItem  # deferred to keep audio imports lazy
     _worker.enqueue(SpeechItem(text=text, voice_id=voice_id))
 
 
 def set_location(location_type: str) -> None:
-    if _no_audio or _ambient is None:
+    if _no_audio or _ambient is None:  # also covers pre-init state
         return
     _ambient.set_location(location_type)
 
 
 def flush() -> None:
-    if _no_audio or _worker is None:
+    if _no_audio or _worker is None:  # also covers pre-init state
         return
     _worker.flush()
 
 
 def register_voice(name: str, voice_id: str) -> None:
-    _voice_registry[name.lower()] = voice_id
+    with _registry_lock:
+        _voice_registry[name.lower()] = voice_id
 
 
 def voice_for(speaker: str) -> str:
     key = speaker.lower()
-    if key in _voice_registry:
-        return _voice_registry[key]
+    with _registry_lock:
+        if key in _voice_registry:
+            return _voice_registry[key]
     for role_kw, voice in _ROLE_VOICES.items():
         if role_kw in key:
             return voice
