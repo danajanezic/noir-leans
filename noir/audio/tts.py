@@ -41,17 +41,13 @@ def _add_crackle(audio: np.ndarray, rng: np.random.Generator) -> np.ndarray:
 
 
 def apply_voice_filter(audio: np.ndarray, sr: int, seed: int = 0) -> np.ndarray:
-    rng = np.random.default_rng(seed)
     audio = _bandpass_filter(audio, sr)
     audio = _soft_compress(audio)
-    audio = _add_crackle(audio, rng)
     return audio
 
 
 def apply_ambient_filter(audio: np.ndarray, sr: int, seed: int = 0) -> np.ndarray:
-    rng = np.random.default_rng(seed)
     audio = _bandpass_filter(audio, sr)
-    audio = _add_crackle(audio, rng)
     return audio
 
 
