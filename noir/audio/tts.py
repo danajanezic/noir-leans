@@ -29,12 +29,13 @@ def _soft_compress(audio: np.ndarray) -> np.ndarray:
 
 def _add_crackle(audio: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     result = audio.copy()
-    n_bursts = max(1, int(len(audio) * 0.002))
+    # ~2-3 pops per second; 0.002 was 48/s which sounds like digital clipping
+    n_bursts = max(1, int(len(audio) / _SR * 3))
     if len(audio) <= 10:
         return result
     positions = rng.integers(0, len(audio) - 10, size=n_bursts)
     for pos in positions:
-        burst = rng.standard_normal(10).astype(np.float32) * 0.15
+        burst = rng.standard_normal(10).astype(np.float32) * 0.05
         result[pos : pos + 10] += burst
     return result
 
