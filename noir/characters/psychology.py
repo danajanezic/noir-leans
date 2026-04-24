@@ -8,7 +8,14 @@ from noir.persistence.repository import (
 
 _CLASSIFY_SYSTEM = (
     "You are classifying what happened in a detective interrogation exchange. "
-    "Return ONLY valid JSON with five boolean fields."
+    "Return ONLY valid JSON with five boolean fields. "
+    "Definitions: "
+    "pressure_applied = detective used persistent questioning, confrontation, or emotional pressure to push the NPC. "
+    "threat_made = detective explicitly threatened consequences (arrest, exposure, violence, harm to the NPC or someone they care about) — NOT merely firm questioning. "
+    "kindness_shown = detective showed empathy, offered help, or built rapport. "
+    "guilt_trigger = the exchange touched on something the NPC feels guilty about. "
+    "evidence_confronted = detective presented a specific piece of evidence directly to the NPC. "
+    "Be conservative on threat_made — only mark true for explicit threats, not strong questions."
 )
 
 
@@ -84,20 +91,24 @@ def _next_threshold(current_stage: int, psychology: dict) -> int | None:
 
 
 def _build_revelation_prompt(stage: int, total_stages: int,
-                              events: dict, style: str) -> str:
+                              events: dict, style: str,
+                              player_input: str = "") -> str:
     fired = [k for k, v in events.items() if v]
     events_desc = ", ".join(fired) if fired else "accumulated pressure and guilt"
+    topic_hint = (f" The detective was pressing you about: \"{player_input[:120]}\". "
+                  "If your secret touches that thread, let it surface through that angle."
+                  ) if player_input.strip() else ""
     if style == "sudden":
         return (
             "[You have reached your breaking point. Tell the detective your secret — all of it. "
-            f"What broke you: {events_desc}. "
+            f"What broke you: {events_desc}.{topic_hint} "
             "Stay fully in character. No speeches. Speak the way this person actually speaks.]"
         )
     return (
         f"[You are about to reveal something you have been hiding. "
         f"This is stage {stage} of {total_stages} — reveal approximately "
         f"1/{total_stages} of your secret. Do not reveal more than this stage calls for. "
-        f"What broke you open just now: {events_desc}. "
+        f"What broke you open just now: {events_desc}.{topic_hint} "
         "Stay fully in character. Do not announce that you are confessing. "
         "Speak naturally, as the moment demands.]"
     )
@@ -123,7 +134,8 @@ def update_npc_state(conn: sqlite3.Connection, npc_id: int,
 
 def check_revelation(conn: sqlite3.Connection, llm: LLMBackend,
                      npc_id: int, case_id: int, npc_name: str,
-                     events: dict, psychology: dict) -> str | None:
+                     events: dict, psychology: dict,
+                     player_input: str = "") -> str | None:
     flags = get_npc_relationship_flags(conn, npc_id)
 
     style = psychology.get("revelation_style", "staged")
@@ -188,6 +200,7 @@ def check_revelation(conn: sqlite3.Connection, llm: LLMBackend,
         total_stages=len(thresholds),
         events=events,
         style=effective_style,
+        player_input=player_input,
     )
     if override_note:
         prompt = prompt.replace("[You have reached your breaking point.",

@@ -11,7 +11,7 @@ from noir.mystery.auditor import CaseAuditor
 REQUIRED_FIELDS = {"title", "victim", "killer_name", "motive", "suspects", "clues", "locations"}
 REQUIRED_SUSPECT_FIELDS = {
     "name", "role", "alibi", "secret", "archetype_id", "race",
-    "political_connections", "routine", "alignment", "age",
+    "political_connections", "alignment", "age",
     "pressure_tolerance", "kindness_weight", "empathy",
     "starting_guilt", "revelation_style", "revelation_stages",
 }
@@ -31,7 +31,16 @@ GENERATOR_SYSTEM_PROMPT = (
     "For body_clues: include 0-3 forensic details found on the body (wounds, ligature marks, objects in pockets, etc.) — "
     "sometimes there are none, sometimes one key clue. Place these in the body_clues array, not in the main clues array. "
     "In the main clues array, set the location of body-related clues to match body_location "
-    "(either the crime scene location name, or 'City Morgue')."
+    "(either the crime scene location name, or 'City Morgue'). "
+    "CLUE LOCATIONS: Each clue's location must match where it would logically be found. "
+    "Forensic clues belong at the crime scene or City Morgue. "
+    "Personal effects and correspondence belong at the victim's home or workplace. "
+    "Financial records belong at an office, bank, or City Hall. "
+    "Pawned or sold items belong at a pawn shop or business. "
+    "Spread clues across the case's locations — at most half the clues should share the same location. "
+    "NPC ROUTINES: Each NPC needs exactly 1-2 routine entries — no more. "
+    "Place them at locations that reflect where this person actually lives or works. "
+    "At least one entry must be at a location other than the crime scene."
 )
 
 DARK_PAST_CASE_SYSTEM_PROMPT = """You are a mystery generator for Noirleans, 1935. Generate a case directly tied to a partner's dark past — a crime they committed or were part of. The player must investigate this case knowing their partner is implicated. The tone is morally complex and personal. The partner should appear as a named NPC in the case (as a suspect or witness). Return ONLY valid JSON matching the case schema."""
@@ -60,8 +69,8 @@ def _case_schema(archetype_list: str, org_list: str) -> str:
         '     "starting_guilt": integer 0-10,\n'
         '     "revelation_style": "staged" or "sudden" — use "sudden" only for emotionally fragile or guilt-ridden characters who will crack all at once; use "staged" for controlled, criminal, or self-protective characters who reveal slowly under accumulating pressure,\n'
         '     "revelation_stages": integer (2-5 for staged; higher = harder to crack; 1 for sudden),\n'
-        '     "routine": [{"time_start": "HH:MM", "time_end": "HH:MM", "location": "string"}],\n'
-        '     "relationships": [{"name": "string", "relationship": "string", "shared_facts": ["string"]}]}\n'
+        '     "routine": [{"location": "string (must be a case location name)", "time_start": "HH:MM", "time_end": "HH:MM"}] (1-2 entries — where this character can be found; at least one must NOT be the crime scene),\n'
+        '     "relationships": [{"name": "string", "relationship": "string"}]}\n'
         '  ],\n'
         '  "clues": [\n'
         '    {"description": "string", "is_red_herring": boolean, "location": "string"}\n'
@@ -76,7 +85,9 @@ def _case_schema(archetype_list: str, org_list: str) -> str:
 def _build_npc_system_prompt(name: str, role: str, race: str,
                               political_connections: str, alibi: str, secret: str,
                               relationships_json: str, personality: str,
-                              speech_style: str, backstory: str = "") -> str:
+                              speech_style: str, backstory: str = "",
+                              contact_locations: dict | None = None,
+                              peer_descriptions: dict | None = None) -> str:
     import json as _j
     race_line = (
         f"Race/background: {race}. This shapes your experience of 1935 Noirleans — "
@@ -100,8 +111,17 @@ def _build_npc_system_prompt(name: str, role: str, race: str,
         facts = r.get("shared_facts", [])
         if facts:
             part += f" Facts you both know: {' '.join(facts)}"
+        if contact_locations and r["name"] in contact_locations:
+            part += f" [PRIVATE: If the detective asks where to find {r['name']}, you can tell them: {contact_locations[r['name']]}. Do not volunteer this — only share it if directly asked how to reach them.]"
         rel_parts.append(part)
     rel_text = " ".join(rel_parts)
+    peer_text = ""
+    if peer_descriptions:
+        lines = [f"{n}: {d}" for n, d in peer_descriptions.items()]
+        peer_text = (
+            " [PRIVATE — how others in this case look, so you can describe them if asked without using their name: "
+            + "; ".join(lines) + "]"
+        )
     return (
         f"You are {name}, a {role} in a murder investigation. "
         f"{backstory_line}"
@@ -115,13 +135,17 @@ def _build_npc_system_prompt(name: str, role: str, race: str,
         "Until that instruction appears, treat your secret as information you will take to the grave. "
         "You may deny, deflect, lie, change the subject, or go silent — but you do not crack."
         + (f" {rel_text}" if rel_text else "")
+        + peer_text
         + " You are in Noirleans, 1935 — Depression-era, corrupt to the bone, "
         "jazz leaking out of every cracked window. Stay in character."
     )
 
 
 def enrich_npc(conn, llm, npc_id: int) -> None:
-    from noir.persistence.repository import get_npc, update_npc_system_prompt, update_suspect_backstory
+    from noir.persistence.repository import (
+        get_npc, update_npc_system_prompt, update_suspect_backstory,
+        get_locations_for_case,
+    )
     from noir.characters.npc_archetype_loader import get_npc_archetype
 
     npc_row = get_npc(conn, npc_id)
@@ -138,16 +162,104 @@ def enrich_npc(conn, llm, npc_id: int) -> None:
     personality = archetype["personality"] if archetype else "Reserved and watchful"
     speech_style = archetype["speech_style"] if archetype else "Short, careful sentences"
 
-    result = llm.query_structured(
-        "Generate a one-sentence backstory for this character. "
-        "Return ONLY valid JSON: {\"backstory\": \"string\"}",
+    import json as _j
+
+    # Collect case locations for routine generation
+    case_loc_names: list[str] = []
+    if npc_row["case_id"] is not None:
+        case_locs = get_locations_for_case(conn, npc_row["case_id"])
+        case_loc_names = [l["name"] for l in case_locs]
+
+    existing_rels: list[dict] = []
+    try:
+        existing_rels = _j.loads(suspect_row["relationships"] or "[]")
+    except Exception:
+        pass
+    rel_names = [r.get("name", "") for r in existing_rels if r.get("name")]
+
+    detail_result = llm.query_structured(
+        "Generate detail fields for this 1935 Noirleans character. "
+        "Return ONLY valid JSON matching the schema exactly — no extra fields, no markdown.",
         [],
-        f"Name: {npc_row['name']}, Role: {npc_row['role']}, "
-        f"Race: {suspect_row['race']}, Alibi: {suspect_row['alibi']}, "
-        f"Secret: {suspect_row['secret']}. "
-        "Write one sentence about who they were before this case — specific, grounded, 1935 Noirleans."
+        f"Character: {npc_row['name']}, role: {npc_row['role']}, race: {suspect_row['race']}, "
+        f"alibi: {suspect_row['alibi']}, secret: {suspect_row['secret']}.\n"
+        f"Case locations available: {', '.join(case_loc_names) or 'none'}.\n"
+        f"Related characters: {', '.join(rel_names) or 'none'}.\n\n"
+        "Return JSON with exactly this schema:\n"
+        "{\n"
+        '  "backstory": "one sentence about who they were before this case",\n'
+        '  "physical_description": "one sentence: height, build, coloring, distinctive features, clothing (1935 era)",\n'
+        '  "maiden_name": "string or null — married women\'s pre-marriage surname; null otherwise",\n'
+        '  "shared_facts": {"<character_name>": ["fact1", "fact2"]} (1-2 facts per related character; {} if none)\n'
+        "}"
     )
-    backstory = result.get("backstory", "")
+
+    backstory = detail_result.get("backstory", "")
+    physical_description = detail_result.get("physical_description") or None
+    maiden_name = detail_result.get("maiden_name") or None
+
+    # Persist physical_description and maiden_name
+    if physical_description or maiden_name:
+        conn.execute(
+            "UPDATE npcs SET physical_description=COALESCE(?, physical_description), "
+            "maiden_name=COALESCE(?, maiden_name) WHERE id=?",
+            (physical_description, maiden_name, npc_id)
+        )
+        conn.commit()
+
+    # Merge shared_facts into relationships and persist
+    shared_facts_map: dict[str, list] = {}
+    try:
+        shared_facts_map = detail_result.get("shared_facts") or {}
+        if not isinstance(shared_facts_map, dict):
+            shared_facts_map = {}
+    except Exception:
+        pass
+    enriched_rels = []
+    for r in existing_rels:
+        rel = dict(r)
+        facts = shared_facts_map.get(rel.get("name", ""), [])
+        if facts:
+            rel["shared_facts"] = facts
+        enriched_rels.append(rel)
+    if enriched_rels != existing_rels:
+        conn.execute(
+            "UPDATE suspects SET relationships=? WHERE npc_id=?",
+            (_j.dumps(enriched_rels), npc_id)
+        )
+        conn.commit()
+
+    contact_locations: dict[str, str] = {}
+    for r in enriched_rels:
+        rel_name = r.get("name")
+        if not rel_name:
+            continue
+        npc_id_row = conn.execute(
+            "SELECT n.id FROM npcs n WHERE n.case_id=? AND n.name=?",
+            (npc_row["case_id"], rel_name),
+        ).fetchone()
+        if not npc_id_row:
+            continue
+        schedule_rows = conn.execute(
+            "SELECT time_start, time_end, location_name FROM npc_schedules WHERE npc_id=?",
+            (npc_id_row["id"],)
+        ).fetchall()
+        if schedule_rows:
+            entries = [
+                f"{s['location_name']} from {s['time_start']//60:02d}:{s['time_start']%60:02d}"
+                f" to {s['time_end']//60:02d}:{s['time_end']%60:02d}"
+                for s in schedule_rows
+            ]
+            contact_locations[rel_name] = "; ".join(entries)
+
+    peer_descriptions: dict[str, str] = {}
+    if npc_row["case_id"] is not None:
+        for row in conn.execute(
+            "SELECT name, physical_description FROM npcs "
+            "WHERE case_id=? AND id!=? AND physical_description IS NOT NULL",
+            (npc_row["case_id"], npc_id),
+        ).fetchall():
+            peer_descriptions[row["name"]] = row["physical_description"]
 
     system_prompt = _build_npc_system_prompt(
         name=npc_row["name"],
@@ -156,10 +268,12 @@ def enrich_npc(conn, llm, npc_id: int) -> None:
         political_connections=suspect_row["political_connections"] or "",
         alibi=suspect_row["alibi"] or "",
         secret=suspect_row["secret"] or "",
-        relationships_json=suspect_row["relationships"] or "[]",
+        relationships_json=_j.dumps(enriched_rels),
         personality=personality,
         speech_style=speech_style,
         backstory=backstory,
+        contact_locations=contact_locations or None,
+        peer_descriptions=peer_descriptions or None,
     )
     update_npc_system_prompt(conn, npc_id=npc_id, system_prompt=system_prompt)
     if backstory:

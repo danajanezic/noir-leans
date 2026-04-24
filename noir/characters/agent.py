@@ -128,6 +128,8 @@ class Agent:
 
     _SUMMARY_SYSTEM = (
         "You are processing a conversation from a 1935 noir detective game. "
+        "CRITICAL: Only reference characters by name if they appear in the conversation transcript. "
+        "Do not invent names for any person not named in the transcript — use role only ('the coroner', 'the clerk'). "
         "Return ONLY valid JSON with four fields:\n"
         "\"summary\": 2-4 sentences covering personal facts the detective revealed about themselves, "
         "any commitments or plans mentioned, and key information exchanged. Factual and specific.\n"

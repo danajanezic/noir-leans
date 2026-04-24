@@ -354,16 +354,17 @@ def create_npc(conn: sqlite3.Connection, *, case_id: int | None, name: str, role
                pressure_tolerance: int = 5, kindness_weight: int = 5,
                empathy: int = 5, starting_guilt: int = 0,
                revelation_style: str = "staged", revelation_stages: int = 3,
-               corruption: int = 0) -> int:
+               corruption: int = 0, maiden_name: str | None = None,
+               physical_description: str | None = None) -> int:
     cur = conn.execute(
         """INSERT INTO npcs
            (case_id, name, role, system_prompt, current_location_id, alignment, age,
             pressure_tolerance, kindness_weight, empathy, starting_guilt,
-            revelation_style, revelation_stages, corruption)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            revelation_style, revelation_stages, corruption, maiden_name, physical_description)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (case_id, name, role, system_prompt, current_location_id, alignment, age,
          pressure_tolerance, kindness_weight, empathy, starting_guilt,
-         revelation_style, revelation_stages, corruption)
+         revelation_style, revelation_stages, corruption, maiden_name, physical_description)
     )
     conn.commit()
     return cur.lastrowid
@@ -371,6 +372,22 @@ def create_npc(conn: sqlite3.Connection, *, case_id: int | None, name: str, role
 
 def get_npc(conn: sqlite3.Connection, npc_id: int) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM npcs WHERE id=?", (npc_id,)).fetchone()
+
+
+def detain_npc(conn: sqlite3.Connection, npc_id: int) -> None:
+    conn.execute("UPDATE npcs SET detained=1 WHERE id=?", (npc_id,))
+    conn.commit()
+
+
+def release_npc(conn: sqlite3.Connection, npc_id: int) -> None:
+    conn.execute("UPDATE npcs SET detained=0 WHERE id=?", (npc_id,))
+    conn.commit()
+
+
+def get_detained_npcs(conn: sqlite3.Connection, case_id: int) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM npcs WHERE case_id=? AND detained=1", (case_id,)
+    ).fetchall()
 
 
 def update_npc_system_prompt(conn: sqlite3.Connection, *, npc_id: int, system_prompt: str) -> None:

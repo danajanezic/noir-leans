@@ -365,6 +365,9 @@ _MIGRATIONS = [
     "CREATE INDEX IF NOT EXISTS idx_skill_events_owner_root ON skill_events(owner, root)",
     "ALTER TABLE partner ADD COLUMN relationship_notes TEXT",
     "ALTER TABLE conversation_summaries ADD COLUMN case_id INTEGER",
+    "ALTER TABLE npcs ADD COLUMN maiden_name TEXT",
+    "ALTER TABLE npcs ADD COLUMN physical_description TEXT",
+    "ALTER TABLE npcs ADD COLUMN detained INTEGER DEFAULT 0",
 ]
 
 

@@ -51,11 +51,16 @@ class World:
 
         all_locs = self.list_locations()
         loc_name_to_id = {loc["name"]: loc["id"] for loc in all_locs}
+        precinct_id = loc_name_to_id.get("The Precinct")
 
-        return [
-            npc for npc in npcs
-            if self._resolve_npc_location_id(npc, game_time, loc_name_to_id) == location_id
-        ]
+        result = []
+        for npc in npcs:
+            if npc["detained"]:
+                if location_id == precinct_id:
+                    result.append(npc)
+            elif self._resolve_npc_location_id(npc, game_time, loc_name_to_id) == location_id:
+                result.append(npc)
+        return result
 
     def find_location(self, name_fragment: str) -> sqlite3.Row | None:
         needle = name_fragment.lower().strip()

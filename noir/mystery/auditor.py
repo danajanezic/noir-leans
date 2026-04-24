@@ -14,7 +14,7 @@ AUDITOR_SYSTEM_PROMPT = (
 
 @dataclass
 class Issue:
-    type: str      # ghost_name | killer_mismatch | bad_clue_location | bad_routine_location | npc_unreachable | location_unreachable | clue_unreachable | bad_relationship_ref | unsolvable | hidden_motive | alibi_contradiction | isolated_npc
+    type: str      # ghost_name | killer_mismatch | bad_clue_location | bad_routine_location | npc_unreachable | location_unreachable | clue_unreachable | bad_relationship_ref | unsolvable | hidden_motive | alibi_contradiction | isolated_npc | clue_clustering | clue_location_mismatch
     subject: str   # clue description, suspect name, etc.
     detail: str
     severity: str  # "patchable" | "fatal"
@@ -171,6 +171,43 @@ class CaseAuditor:
                         severity="patchable",
                         source="deterministic",
                     ))
+
+        body_loc = case.get("body_location", "")
+        crime_scene = case.get("victim", {}).get("found_at", "")
+        body_locations = {loc for loc in (body_loc if body_loc != "crime scene" else crime_scene, crime_scene, "City Morgue") if loc}
+        non_body_clues = [
+            c for c in case.get("clues", [])
+            if c.get("location") and c["location"] not in body_locations
+        ]
+        if non_body_clues:
+            from collections import Counter
+            loc_counts = Counter(c["location"] for c in non_body_clues)
+            most_common_loc, most_common_count = loc_counts.most_common(1)[0]
+            if most_common_count > len(non_body_clues) / 2:
+                issues.append(Issue(
+                    type="clue_clustering",
+                    subject=most_common_loc,
+                    detail=f"{most_common_count} of {len(non_body_clues)} non-body clues share location '{most_common_loc}' — distribute across case locations",
+                    severity="patchable",
+                    source="deterministic",
+                ))
+
+        for clue in case.get("clues", []):
+            clue_loc = clue.get("location", "")
+            desc = clue.get("description", "")
+            if not clue_loc or not desc:
+                continue
+            for loc in case.get("locations", []):
+                name = loc.get("name", "")
+                if name and name.lower() != clue_loc.lower() and name.lower() in desc.lower():
+                    issues.append(Issue(
+                        type="clue_location_mismatch",
+                        subject=desc[:80],
+                        detail=f"clue description mentions '{name}' but location field is '{clue_loc}'",
+                        severity="patchable",
+                        source="deterministic",
+                    ))
+                    break
 
         issues += self._check_reachability(case)
         return issues
@@ -410,6 +447,15 @@ class CaseAuditor:
                         "relationship": "known associate",
                         "shared_facts": [],
                     })
+
+            elif issue.type == "clue_location_mismatch":
+                m = re.search(r"mentions '([^']+)'", issue.detail)
+                correct_loc = m.group(1) if m else None
+                if correct_loc:
+                    for clue in case["clues"]:
+                        if clue.get("description", "").startswith(issue.subject):
+                            clue["location"] = correct_loc
+                            break
 
             elif issue.type == "alibi_contradiction":
                 for suspect in case["suspects"]:

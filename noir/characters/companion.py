@@ -32,6 +32,9 @@ DARK_PAST_SYSTEM_PROMPT = """You are generating a partner's dark past confession
 
 _COMPANION_SUMMARY_SYSTEM = (
     "You are processing a conversation between a detective and their partner in a 1935 noir game. "
+    "CRITICAL: Only reference characters by name if they appear in the conversation transcript. "
+    "Do not invent names for unnamed officials, coroners, doctors, clerks, or any other person. "
+    "If a character had no name in the conversation, refer to them by role only ('the coroner', 'the doctor'). "
     "Return ONLY valid JSON with five fields:\n"
     "\"summary\": 2-4 sentences covering investigation facts discussed, leads followed, case progress. Factual and specific.\n"
     "\"npc_opinion\": null\n"

@@ -51,7 +51,8 @@ from noir.persistence.repository import (
     get_npc_corruption, set_npc_corruption,
     get_organization_by_name, add_organization_member,
     get_player_org_memberships, collect_org_payroll,
-    get_history,
+    get_history, append_history,
+    detain_npc, release_npc, get_detained_npcs,
 )
 from noir.persistence.db import create_schema
 from noir.characters.companion import Companion
@@ -95,6 +96,15 @@ def _infer_npc_voice(system_prompt: str) -> str:
     if any(s in sp for s in female_signals):
         return "af_bella"
     return "am_adam"
+
+
+def _npc_display_name(npc) -> str:
+    """Return display name with 'née Maiden' suffix for married women who have a maiden name."""
+    name = npc["name"]
+    maiden = npc["maiden_name"] if "maiden_name" in npc.keys() else None
+    if maiden:
+        return f"{name} née {maiden}"
+    return name
 
 
 def _tod_to_absolute(current_game_time: int, tod_minutes: int) -> int:
@@ -514,6 +524,30 @@ FIXED_LOCATION_NPCS = [
             "PERIOD ACCURACY: It is 1935. No zip codes, no computers, no televisions, no credit cards."
         ),
     },
+    {
+        "name": "District Attorney Franklin Dupré",
+        "location": "The DA's Office",
+        "role": "District Attorney of Orleans Parish",
+        "org": "Orleans Parish District Attorney",
+        "org_role": "district attorney",
+        "corruption": 3,
+        "system_prompt": (
+            "You are Franklin Dupré, District Attorney of Orleans Parish, 1935. "
+            "You have held this office for seven years under the Long machine's patronage "
+            "and you have learned to hold two things simultaneously: a genuine belief in the law "
+            "and a clear-eyed understanding of which cases can be won and which should disappear. "
+            "You are not a coward. You prosecute real crime when the evidence is solid "
+            "and the victim isn't connected to someone who can hurt you. "
+            "You are ambitious in the way of men who know exactly how far they can go "
+            "and have decided that distance is enough. "
+            "You speak carefully, in the measured language of someone who has spent years choosing words for judges. "
+            "You have seen every kind of detective. You can tell within thirty seconds "
+            "whether someone is bringing you a real case or a political problem. "
+            "When you decline to prosecute, you make it sound like a procedural regret. "
+            "You are always referred to as 'Mr. Dupré' or 'the DA' — never by first name. "
+            "PERIOD ACCURACY: It is 1935. No computers, no televisions, no zip codes."
+        ),
+    },
 ]
 
 
@@ -551,10 +585,14 @@ _ALREADY_COLLECTED_QUIPS = (
 
 
 def _evidence_rejection_quip(companion_name: str, already_collected: bool,
-                              reason: str | None = None) -> None:
+                              reason: str | None = None,
+                              matched_desc: str | None = None) -> None:
     import random
     if already_collected:
-        show_partner_aside(companion_name, random.choice(_ALREADY_COLLECTED_QUIPS))
+        if matched_desc:
+            show_partner_aside(companion_name, f"We already have that — it's logged as: {matched_desc}")
+        else:
+            show_partner_aside(companion_name, random.choice(_ALREADY_COLLECTED_QUIPS))
     elif reason:
         show_partner_aside(companion_name, reason)
     else:
@@ -565,7 +603,7 @@ _SLASH_COMMANDS = (
     "/locations", "/location", "/leads", "/evidence", "/suspects", "/add", "/status",
     "/help", "/dossier", "/who", "/romance", "/cases", "/drink", "/rep", "/me",
     "/go", "/visit", "/talk", "/look", "/examine", "/collect", "/pick", "/arrest", "/link",
-    "/bribe", "/join",
+    "/bribe", "/join", "/detain", "/release", "/holding",
 )
 
 
@@ -823,6 +861,7 @@ class Game:
         self._observations: dict[int, list[str]] = {}
         self._pending_case: tuple[str, dict] | None = None
         self._pending_gen_thread: threading.Thread | None = None
+        self._recent_partner_lines: list[str] = []
 
     def setup_fixed_locations(self) -> dict[str, int]:
         from noir.organizations import seed_location_org_links
@@ -958,6 +997,8 @@ class Game:
                 starting_guilt=suspect.get("starting_guilt", 0),
                 revelation_style=suspect.get("revelation_style", "staged"),
                 revelation_stages=suspect.get("revelation_stages", 3),
+                maiden_name=suspect.get("maiden_name") or None,
+                physical_description=suspect.get("physical_description") or None,
             )
             set_character_location(self.conn, character_id=f"npc_{npc_id}", location_id=loc_id)
             initialize_npc_relationship(self.conn, npc_id, suspect.get("starting_guilt", 0))
@@ -1070,16 +1111,15 @@ class Game:
         )
 
         if self.companion:
-            locations = [loc["name"] for loc in case_data.get("locations", [])]
-            clues = [c["description"] for c in case_data.get("clues", []) if not c.get("is_red_herring")]
+            victim = case_data.get("victim", {})
+            crime_scene = victim.get("found_at", "the crime scene")
             brief_prompt = (
                 f"A new case has just come in. Brief your detective partner on what you know so far. "
                 f"Case: {case_data['title']}. "
-                f"Victim: {case_data['victim']['name']}, cause of death: {case_data['victim']['cause_of_death']}. "
-                f"Locations worth investigating: {', '.join(locations)}. "
-                f"Early leads (mention vaguely, don't over-explain): {', '.join(clues[:2]) if clues else 'nothing solid yet'}. "
+                f"Victim: {victim.get('name', 'Unknown')}, cause of death: {victim.get('cause_of_death', 'unknown')}. "
+                f"The body was found at: {crime_scene}. "
                 f"Physical setting: you are both INSIDE The Precinct, at the detective's desk. Indoors. No cars. "
-                f"Do NOT name any suspects — the detective needs to discover those. "
+                f"Do NOT name any suspects or other locations — the detective needs to discover those. "
                 f"Strongly imply the crime scene should be the first stop. "
                 f"Stay physically grounded in the precinct. Stay in character. 2-3 sentences."
             )
@@ -1111,7 +1151,7 @@ class Game:
         set_character_location(self.conn, character_id="player", location_id=loc["id"])
         advance_game_time(self.conn, delta=30)
         npcs = self.world.get_npcs_at(loc["id"])
-        npc_names = [npc["name"] for npc in npcs]
+        npc_names = [_npc_display_name(npc) for npc in npcs]
 
         if self.companion:
             import json as _json
@@ -1159,6 +1199,25 @@ class Game:
             show_location(loc["name"], loc["description"], npc_names,
                           game_time=get_game_time(self.conn), orgs=loc_orgs)
             arrival = None
+        if loc["name"] == "The Precinct" and self.companion and self.active_case_id:
+            held = get_detained_npcs(self.conn, self.active_case_id)
+            if held:
+                held_names = [n["name"] for n in held]
+                dossier = get_all_dossier(self.conn, case_id=self.active_case_id)
+                held_facts = []
+                for n in held:
+                    facts = dossier.get(n["name"], [])
+                    held_facts.append(f"{n['name']}: {'; '.join(facts[:3]) if facts else 'nothing yet'}")
+                strategy_prompt = (
+                    f"[You're back at The Precinct. You have {len(held)} suspect(s) in separate holding rooms: "
+                    f"{', '.join(held_names)}. "
+                    f"What you know about each: {' | '.join(held_facts)}. "
+                    f"Before the detective goes in, give a brief strategy note — who to press first, "
+                    f"whether to play them against each other, what angle to take. "
+                    f"One or two sentences. In character.]"
+                )
+                strategy = self.companion.narrate(strategy_prompt)
+                show_partner_aside(self.companion.name, strategy)
         if loc["name"] == "The Rusty Anchor":
             order = console.input("[dim]Order a drink? (y/n):[/dim] ").strip().lower()
             if order in ("y", "yes"):
@@ -1186,15 +1245,23 @@ class Game:
                     if npc_row:
                         break
         if npc_row is not None and self.world is not None:
-            all_locs = self.world.list_locations()
-            loc_name_to_id = {loc["name"]: loc["id"] for loc in all_locs}
-            game_time = get_game_time(self.conn)
-            resolved_loc_id = self.world._resolve_npc_location_id(npc_row, game_time, loc_name_to_id)
-            if resolved_loc_id != self.current_location_id:
-                loc = get_location(self.conn, resolved_loc_id) if resolved_loc_id else None
-                where = f" They're at {loc['name']}." if loc else ""
-                console.print(f"[dim]{npc_row['name']} isn't here.{where}[/dim]")
-                return
+            if npc_row["detained"]:
+                precinct_row = self.conn.execute(
+                    "SELECT id FROM locations WHERE name='The Precinct'"
+                ).fetchone()
+                if not precinct_row or self.current_location_id != precinct_row["id"]:
+                    console.print(f"[dim]{npc_row['name']} is in holding at The Precinct.[/dim]")
+                    return
+            else:
+                all_locs = self.world.list_locations()
+                loc_name_to_id = {loc["name"]: loc["id"] for loc in all_locs}
+                game_time = get_game_time(self.conn)
+                resolved_loc_id = self.world._resolve_npc_location_id(npc_row, game_time, loc_name_to_id)
+                if resolved_loc_id != self.current_location_id:
+                    loc = get_location(self.conn, resolved_loc_id) if resolved_loc_id else None
+                    where = f" They're at {loc['name']}." if loc else ""
+                    console.print(f"[dim]{npc_row['name']} isn't here.{where}[/dim]")
+                    return
         if npc_row is None:
             if self.companion:
                 result = self.companion.interpret(
@@ -1211,13 +1278,16 @@ class Game:
                     new_target = (result.get("target") or target).lower().strip()
                     _DA_TERMS = {"da", "district attorney", "da's office", "the da"}
                     if new_target in _DA_TERMS:
-                        self.handle_da()
+                        self.handle_go("The DA's Office")
                     elif new_target != target.lower().strip():
                         self.handle_talk(result.get("target") or target)
             else:
                 console.print(f"[red]Can't find '{target}' around here.[/red]")
             return
         mark_suspect_met(self.conn, npc_id=npc_row["id"])
+        if self.current_location_id and not npc_row["detained"]:
+            set_character_location(self.conn, character_id=f"npc_{npc_row['id']}",
+                                   location_id=self.current_location_id)
         npc = NPC.load(
             conn=self.conn,
             llm=self.llm,
@@ -1248,6 +1318,20 @@ class Game:
                     f"found at: {victim.get('found_at', 'unknown')}. "
                     f"When the detective asks about this case or this victim, respond with knowledge relevant to this investigation.] "
                 )
+                if "district attorney" in (npc_row["role"] or "").lower() and self.case_manager:
+                    ev_summary = self.case_manager.get_evidence_summary()
+                    suspects_row = self.conn.execute(
+                        "SELECT n.name, s.is_killer FROM suspects s JOIN npcs n ON s.npc_id=n.id WHERE s.case_id=?",
+                        (self.active_case_id,)
+                    ).fetchall()
+                    suspect_names = ", ".join(
+                        f"{r['name']}{'*' if r['is_killer'] else ''}" for r in suspects_row
+                    ) if suspects_row else "none identified"
+                    loc_ctx += (
+                        f"[CASE EVIDENCE FILE — what has been collected so far: {ev_summary or 'nothing collected yet'}. "
+                        f"Suspects on record: {suspect_names}. "
+                        f"You are the DA — evaluate this evidence like a prosecutor deciding whether it will hold up in court.] "
+                    )
                 if npc_row["name"] == "Dr. Randolph Frazier":
                     body_loc = cd.get("body_location", "City Morgue")
                     body_clues = cd.get("body_clues", [])
@@ -1258,7 +1342,62 @@ class Game:
                     loc_ctx += (
                         f"[FORENSIC DETAIL — body at: {body_loc}.{clue_text}] "
                     )
+        _npc_role_lower = (npc_row["role"] or "").lower()
+        if "judge" in _npc_role_lower or "magistrate" in _npc_role_lower:
+            import json as _jj
+            judge_cases = self.conn.execute(
+                "SELECT id, title, status, trial_outcome FROM cases WHERE assigned_judge_id=? ORDER BY id",
+                (npc_row["id"],)
+            ).fetchall()
+            if judge_cases:
+                case_summaries = []
+                for jc in judge_cases:
+                    if jc["trial_outcome"]:
+                        outcome_data = _jj.loads(jc["trial_outcome"])
+                        outcome = outcome_data.get("outcome", "unknown")
+                        brief = outcome_data.get("summary", "")[:200]
+                        case_summaries.append(f'"{jc["title"]}" — {outcome}: {brief}')
+                    else:
+                        case_summaries.append(f'"{jc["title"]}" — {jc["status"]}')
+                loc_ctx += (
+                    f"[YOUR JUDICIAL RECORD — cases you have presided over or are currently handling: "
+                    + " | ".join(case_summaries) + "] "
+                )
+            if "magistrate" in _npc_role_lower:
+                pending = self.conn.execute(
+                    "SELECT id, title FROM cases WHERE status='pending_magistrate' ORDER BY id DESC LIMIT 1"
+                ).fetchone()
+                if pending:
+                    loc_ctx += (
+                        f"[A case is currently awaiting your review for trial clearance: \"{pending['title']}\"] "
+                    )
+        if npc_row["detained"] and self.active_case_id:
+            other_held = [n for n in get_detained_npcs(self.conn, self.active_case_id)
+                          if n["id"] != npc_row["id"]]
+            if other_held:
+                dossier = get_all_dossier(self.conn, case_id=self.active_case_id)
+                other_summaries = []
+                for on in other_held:
+                    facts = dossier.get(on["name"], [])
+                    summary = "; ".join(facts[:3]) if facts else "nothing on record"
+                    other_summaries.append(f"{on['name']}: {summary}")
+                loc_ctx += (
+                    f"[INTERROGATION ROOM — you are in a holding room at The Precinct. "
+                    f"The detective can confront you with what others in holding have said. "
+                    f"Other suspects currently detained: {' | '.join(other_summaries)}. "
+                    f"You do not know exactly what the others have said, but you know they are here and talking.] "
+                )
+            else:
+                loc_ctx += (
+                    "[INTERROGATION ROOM — you are in a holding room at The Precinct. "
+                    "You are alone here. The detective has brought you in for formal questioning.] "
+                )
         show_conversation_header(npc_row["name"])
+        _is_da = "district attorney" in (npc_row["role"] or "").lower()
+        if _is_da and self.active_case_id and self.case_manager:
+            current_case = get_case(self.conn, self.active_case_id)
+            if current_case and current_case["status"] not in ("closed", "in_trial"):
+                console.print("[dim]submit · new · drop  — or just talk[/dim]\n")
         while True:
             _rel_stage = _affection_to_stage(
                 get_npc_affection(self.conn, npc_row["id"])
@@ -1271,6 +1410,8 @@ class Game:
                 )
             except (EOFError, KeyboardInterrupt):
                 break
+            if not player_input.strip():
+                continue
             if player_input.strip().startswith("!"):
                 self._handle_feedback(player_input.strip())
                 continue
@@ -1313,8 +1454,12 @@ class Game:
                     if result["ok"]:
                         show_evidence_collected(result["description"])
                     elif self.companion:
-                        _evidence_rejection_quip(self.companion.name, "Already collected" in result["message"], result.get("reason"))
+                        _evidence_rejection_quip(self.companion.name, "Already collected" in result["message"], result.get("reason"), result.get("matched_desc"))
                 continue
+            if _is_da and player_input.strip().lower() in ("submit", "new", "drop"):
+                show_conversation_footer(npc_row["name"])
+                self.handle_da()
+                return
             show_player_turn(player_input)
             state_ctx = self._player_state_context()
             identity_ctx = self._player_identity_context()
@@ -1326,14 +1471,21 @@ class Game:
                 f"[Earlier in this conversation you already admitted: \"{rev_summary}\". "
                 f"This is part of your history with this detective — do not forget or contradict it.] "
             ) if rev_summary else ""
-            ctx = loc_ctx + identity_ctx + (state_ctx or "") + (others_ctx or "") + rel_ctx + rep_ctx + org_ctx + rev_ctx
+            if _is_da:
+                from noir.cases.trial import _JUDGE_TRAITS as _JT
+                _jlines = [f"{n}: {t}" for n, t in _JT.items()]
+                _assigned_jctx = self._judge_context(player_input)
+                judge_ctx = f"[Orleans Parish bench — all judges are judicial officers, not police: {'; | '.join(_jlines)}. {_assigned_jctx}] "
+            else:
+                judge_ctx = ""
+            ctx = loc_ctx + identity_ctx + (state_ctx or "") + (others_ctx or "") + rel_ctx + rep_ctx + org_ctx + rev_ctx + judge_ctx
             psychology = get_npc_psychology(self.conn, npc_row["id"])
             events = classify_events(self.llm, player_input, "")
             update_npc_state(self.conn, npc_row["id"], events, psychology)
             psychology = get_npc_psychology(self.conn, npc_row["id"])
             revelation_prompt = _check_npc_revelation(
                 self.conn, self.llm, npc_row["id"], self.active_case_id,
-                npc_row["name"], events, psychology
+                npc_row["name"], events, psychology, player_input=player_input
             )
             speak_input = ctx + player_input
             if revelation_prompt:
@@ -1344,6 +1496,9 @@ class Game:
                 interject_ctx = self._partner_interject_context(player_input, npc_row["name"], response, "success")
                 interject_response = self.companion.speak(interject_ctx, store_as=f"[interjection re: {npc_row['name']}]")
                 show_dialogue(self.companion.name, interject_response)
+                partner_line = f"[{self.companion.name} says: {interject_response}]"
+                npc_reply = npc.speak(partner_line, store_as=partner_line)
+                show_dialogue(npc_row["name"], npc_reply)
             if revelation_prompt and "already admitted" in revelation_prompt:
                 # Restatement turn — NPC was forced to say it plainly, store this version
                 set_npc_revelation_summary(self.conn, npc_row["id"], response[:500])
@@ -1371,7 +1526,9 @@ class Game:
         if xp_awards:
             self._apply_skill_xp_and_check_unlocks("player", xp_awards)
         self._extract_dossier_facts(npc_row["name"], npc_row["id"])
-        self._extract_leads(npc_row["name"], npc_row["id"])
+        case_status = get_case(self.conn, self.active_case_id)["status"] if self.active_case_id else None
+        if case_status not in ("pending_magistrate", "in_trial"):
+            self._extract_leads(npc_row["name"], npc_row["id"])
         # Discover the NPC's home location — the player now knows where to find them
         if npc_row["current_location_id"] and self.active_case_id:
             discover_location(self.conn, npc_row["current_location_id"])
@@ -1426,14 +1583,15 @@ class Game:
                                     npc_response: str, outcome: str) -> str:
         approach_note = {
             "backfire": f"The detective's approach with {npc_name} just backfired. Cover for them or redirect.",
-            "success": f"{npc_name} is opening up. Reinforce it or surface what's still unsaid.",
+            "success": f"{npc_name} is opening up. Reinforce it or press on a specific thing they said.",
         }.get(outcome, f"There's an opening in what {npc_name} just said. Use it.")
         return (
             f"[You are in a conversation with {npc_name}. "
             f"The detective just said: \"{player_input[:200]}\". "
             f"{npc_name} responded: \"{npc_response[:300]}\". "
             f"{approach_note} "
-            f"One sentence, in character. Do not explain what you're doing — just do it.]"
+            f"One sentence, in character. React to what {npc_name} actually said — "
+            f"do not claim they were interrupted or left mid-sentence. Do not explain what you're doing — just do it.]"
         )
 
     def _companion_context(self, player_input: str) -> str:
@@ -1477,7 +1635,6 @@ class Game:
             if case:
                 cd = _json.loads(case["case_data"])
                 victim = cd.get("victim", {})
-                locations = [l["name"] for l in cd.get("locations", [])]
                 found_at = victim.get("found_at")
                 body_loc = cd.get("body_location", "City Morgue")
                 if body_loc == "crime scene" and found_at:
@@ -1486,8 +1643,16 @@ class Game:
                     body_note = f"Body was found at {found_at} and has been taken to the City Morgue."
                 else:
                     body_note = "The victim's body has been taken to the City Morgue."
+                met_names = {
+                    row["name"] for row in self.conn.execute(
+                        "SELECT n.name FROM suspects s JOIN npcs n ON s.npc_id=n.id "
+                        "WHERE s.case_id=? AND s.met=1", (self.active_case_id,)
+                    ).fetchall()
+                }
                 suspect_notes = []
                 for s in cd.get("suspects", []):
+                    if s["name"] not in met_names:
+                        continue
                     rels = s.get("relationships", [])
                     rel_to_victim = next(
                         (r["relationship"] for r in rels
@@ -1499,16 +1664,31 @@ class Game:
                     parts = [p for p in [rel_to_victim, race, political] if p and p.lower() != "none"]
                     suspect_notes.append(f"{s['name']} ({', '.join(parts)})")
                 suspects_str = (
-                    f" Known suspects: {', '.join(suspect_notes)}."
+                    f" Suspects you've met: {', '.join(suspect_notes)}."
                     if suspect_notes else ""
                 )
-                context_parts.append(
-                    f"Active case: {case['title']}. "
-                    f"Victim: {victim.get('name', '?')}, "
-                    f"cause of death: {victim.get('cause_of_death', '?')}. "
-                    f"{body_note}{suspects_str} You are working a processed crime scene. "
-                    f"Known locations (use these EXACT names when referring to places): {', '.join(locations)}."
-                )
+                trial_statuses = ("pending_magistrate", "in_trial")
+                if case["status"] in trial_statuses:
+                    status_label = "awaiting the magistrate's assignment" if case["status"] == "pending_magistrate" else "currently in trial"
+                    context_parts.append(
+                        f"Active case: {case['title']} — {status_label}. "
+                        f"The case is in the hands of the court. Do NOT press the detective to follow up on leads, "
+                        f"interview suspects, or collect evidence. The investigation is closed. "
+                        f"You may mention that they should check on the trial at the courthouse, but nothing more."
+                    )
+                else:
+                    discovered_locs = [
+                        l["name"] for l in get_discovered_locations_for_case(self.conn, self.active_case_id)
+                    ]
+                    locs_str = (f" Known locations (use these EXACT names): {', '.join(discovered_locs)}."
+                                if discovered_locs else "")
+                    context_parts.append(
+                        f"Active case: {case['title']}. "
+                        f"Victim: {victim.get('name', '?')}, "
+                        f"cause of death: {victim.get('cause_of_death', '?')}. "
+                        f"{body_note}{suspects_str} You are working a processed crime scene."
+                        f"{locs_str}"
+                    )
         if self.current_location_id and self.world:
             npcs = self.world.get_npcs_at(self.current_location_id)
             if npcs:
@@ -1560,6 +1740,17 @@ class Game:
                 context_parts.append(
                     f"What the detective has learned from interviews: {' | '.join(dossier_lines)}"
                 )
+            existing_leads = get_leads_for_case(self.conn, self.active_case_id)
+            if existing_leads:
+                lead_descs = [l["description"] for l in existing_leads]
+                context_parts.append(
+                    f"Leads already given to the detective (do NOT suggest these again): {'; '.join(lead_descs)}"
+                )
+        if self._recent_partner_lines:
+            context_parts.append(
+                f"What you already told the detective recently — do NOT repeat or restate these: "
+                + " | ".join(self._recent_partner_lines[-4:])
+            )
         states = get_player_states(self.conn)
         if states:
             intensity_map = {1: "slightly", 2: "noticeably", 3: "severely"}
@@ -1581,17 +1772,7 @@ class Game:
     def _judge_context(self, player_input: str) -> str:
         from noir.cases.trial import _JUDGE_TRAITS
         inp = player_input.lower()
-        if not any(w in inp for w in ("judge", "bench", "court", "trial", "assigned", "beaumont",
-                                       "arceneaux", "flannery", "callahan", "lacoste", "bergeron",
-                                       "hebert", "flynn", "tureaud", "broussard", "marino")):
-            return ""
-        # Find all judges whose names appear in the active case or in the input
-        matching = []
-        for name, traits in _JUDGE_TRAITS.items():
-            last = name.split()[-1].lower()
-            if last in inp or name.lower() in inp:
-                matching.append((name, traits))
-        # Also include the assigned judge for the active case if any
+        assigned_judge_name = None
         if self.active_case_id:
             case = get_case(self.conn, self.active_case_id)
             if case and case["assigned_judge_id"]:
@@ -1599,12 +1780,27 @@ class Game:
                     "SELECT name FROM npcs WHERE id=?", (case["assigned_judge_id"],)
                 ).fetchone()
                 if j:
-                    jname = j["name"]
-                    jtrait = _JUDGE_TRAITS.get(jname, "")
-                    if not any(m[0] == jname for m in matching):
-                        matching.append((jname, jtrait))
+                    assigned_judge_name = j["name"]
+
+        judge_keywords = ("judge", "bench", "court", "trial", "assigned",
+                          "arceneaux", "flannery", "callahan", "lacoste", "bergeron",
+                          "hebert", "flynn", "tureaud", "broussard", "marino")
+        input_mentions_judge = any(w in inp for w in judge_keywords)
+        if not input_mentions_judge and not assigned_judge_name:
+            return ""
+
+        matching = []
+        # Always include assigned judge first
+        if assigned_judge_name:
+            jtrait = _JUDGE_TRAITS.get(assigned_judge_name, "")
+            matching.append((assigned_judge_name, f"[ASSIGNED TO THIS CASE] {jtrait}"))
+        # Add any judges mentioned by name in the input
+        if input_mentions_judge:
+            for name, traits in _JUDGE_TRAITS.items():
+                last = name.split()[-1].lower()
+                if (last in inp or name.lower() in inp) and not any(m[0] == name for m in matching):
+                    matching.append((name, traits))
         if not matching:
-            # Generic judge query — load all
             matching = list(_JUDGE_TRAITS.items())
         lines = [f"{n}: {t}" for n, t in matching]
         return (
@@ -1753,6 +1949,8 @@ class Game:
                 )
             except (EOFError, KeyboardInterrupt):
                 break
+            if not player_input.strip():
+                continue
             if player_input.strip().startswith("!"):
                 self._handle_feedback(player_input.strip())
                 continue
@@ -1774,7 +1972,7 @@ class Game:
                     if result["ok"]:
                         show_evidence_collected(result["description"])
                     else:
-                        _evidence_rejection_quip(self.companion.name, "Already collected" in result["message"], result.get("reason"))
+                        _evidence_rejection_quip(self.companion.name, "Already collected" in result["message"], result.get("reason"), result.get("matched_desc"))
                 continue
             show_player_turn(player_input)
             self._check_partner_romance_milestone()
@@ -1783,6 +1981,9 @@ class Game:
                 self._trigger_dark_past_revelation()
                 break
             response = self.companion.speak(self._companion_context(player_input), store_as=player_input)
+            self._recent_partner_lines.append(response)
+            if len(self._recent_partner_lines) > 6:
+                self._recent_partner_lines.pop(0)
             show_dialogue(self.companion.name, response)
         show_conversation_footer(self.companion.name)
         hist = get_history(self.conn, character_id="partner", case_id=None)
@@ -1807,6 +2008,24 @@ class Game:
             return
         present = self.world.get_npcs_at(self.current_location_id)
         npc_row = next((n for n in present if target.lower() in n["name"].lower()), None)
+        if npc_row is None:
+            # Also check detained NPCs — they can be arrested from The Precinct
+            detained = get_detained_npcs(self.conn, self.active_case_id)
+            npc_row = next((n for n in detained if target.lower() in n["name"].lower()), None)
+        if npc_row is None:
+            # Fall back: check if NPC's stored character_location matches current location
+            # (handles case where time-based routing disagrees with where they actually are)
+            all_npcs = get_npcs_for_case(self.conn, self.active_case_id)
+            for n in all_npcs:
+                if target.lower() not in n["name"].lower():
+                    continue
+                row = self.conn.execute(
+                    "SELECT location_id FROM character_locations WHERE character_id=?",
+                    (f"npc_{n['id']}",)
+                ).fetchone()
+                if row and row["location_id"] == self.current_location_id:
+                    npc_row = n
+                    break
         if npc_row is None:
             all_npcs = get_npcs_for_case(self.conn, self.active_case_id)
             named = next((n for n in all_npcs if target.lower() in n["name"].lower()), None)
@@ -1835,6 +2054,79 @@ class Game:
         was_correct = npc_row["name"].strip().lower() == killer_name.strip().lower()
         self._check_dark_past_resolution(npc_row["name"], was_correct)
 
+    def handle_detain(self, target: str) -> None:
+        if self.active_case_id is None:
+            console.print("[dim]No active case.[/dim]")
+            return
+        if self.world is None or self.current_location_id is None:
+            console.print("[dim]You're not sure where you are.[/dim]")
+            return
+        present = self.world.get_npcs_at(self.current_location_id)
+        npc_row = next((n for n in present if target.lower() in n["name"].lower()), None)
+        if npc_row is None:
+            # Also check character_locations fallback (same as arrest)
+            all_npcs = get_npcs_for_case(self.conn, self.active_case_id)
+            for n in all_npcs:
+                if target.lower() not in n["name"].lower():
+                    continue
+                row = self.conn.execute(
+                    "SELECT location_id FROM character_locations WHERE character_id=?",
+                    (f"npc_{n['id']}",)
+                ).fetchone()
+                if row and row["location_id"] == self.current_location_id:
+                    npc_row = n
+                    break
+        if npc_row is None:
+            all_npcs = get_npcs_for_case(self.conn, self.active_case_id)
+            named = next((n for n in all_npcs if target.lower() in n["name"].lower()), None)
+            if named:
+                console.print(f"[red]{named['name']} isn't here.[/red]")
+            else:
+                console.print(f"[red]Don't know who '{target}' is.[/red]")
+            return
+        if npc_row["detained"]:
+            console.print(f"[dim]{npc_row['name']} is already in holding.[/dim]")
+            return
+        detain_npc(self.conn, npc_row["id"])
+        precinct_id = self.conn.execute(
+            "SELECT id FROM locations WHERE name='The Precinct'"
+        ).fetchone()
+        if precinct_id:
+            set_character_location(self.conn, character_id=f"npc_{npc_row['id']}",
+                                   location_id=precinct_id["id"])
+        console.print(f"[bold yellow]{npc_row['name']} has been brought in for questioning.[/bold yellow]")
+
+    def handle_release(self, target: str) -> None:
+        if self.active_case_id is None:
+            console.print("[dim]No active case.[/dim]")
+            return
+        all_npcs = get_npcs_for_case(self.conn, self.active_case_id)
+        npc_row = next((n for n in all_npcs if target.lower() in n["name"].lower()), None)
+        if npc_row is None:
+            console.print(f"[red]Don't know who '{target}' is.[/red]")
+            return
+        if not npc_row["detained"]:
+            console.print(f"[dim]{npc_row['name']} isn't in holding.[/dim]")
+            return
+        release_npc(self.conn, npc_row["id"])
+        console.print(f"[dim]{npc_row['name']} has been released.[/dim]")
+
+    def handle_slash_holding(self) -> None:
+        if self.active_case_id is None:
+            console.print("[dim]No active case.[/dim]")
+            return
+        held = get_detained_npcs(self.conn, self.active_case_id)
+        if not held:
+            console.print("[dim]No one in holding.[/dim]")
+            return
+        from rich.table import Table
+        t = Table(show_header=True, header_style="bold yellow", box=None)
+        t.add_column("Name")
+        t.add_column("Role")
+        for n in held:
+            t.add_row(n["name"], n["role"])
+        console.print(t)
+
     def handle_examine(self, target: str) -> None:
         if self.current_location_id is None or self.world is None:
             console.print("[dim]You're not sure where you are.[/dim]")
@@ -1843,7 +2135,7 @@ class Game:
         if loc is None:
             return
         npcs = self.world.get_npcs_at(self.current_location_id)
-        npc_names = [n["name"] for n in npcs]
+        npc_names = [_npc_display_name(n) for n in npcs]
         is_case_location = loc["is_fixed"] == 0
 
         collectible_clues = []
@@ -1854,7 +2146,7 @@ class Game:
             all_clues = get_clues_for_case(self.conn, self.active_case_id)
             collectible_clues = [
                 c["description"] for c in all_clues
-                if c["location"].lower() == loc["name"].lower()
+                if c["location"] and c["location"].lower() == loc["name"].lower()
                 and c["id"] not in collected_ids
             ]
 
@@ -2015,6 +2307,12 @@ class Game:
             self.handle_slash_who(raw.strip())
         elif slug in ("/help", "help"):
             show_help()
+        elif slug in ("/submit", "/drop", "/newcase"):
+            loc = get_location(self.conn, self.current_location_id) if self.current_location_id else None
+            if loc and loc["name"] == "The DA's Office":
+                self.handle_da()
+            else:
+                console.print("[dim]You need to be at The DA's Office for that.[/dim]")
         elif slug == "/drink":
             self.handle_slash_drink()
         elif slug == "/rep":
@@ -2040,9 +2338,9 @@ class Game:
             _DA_TERMS = {"da", "district attorney", "da's office", "the da"}
             _COURTHOUSE_TERMS = {"courthouse", "court", "the courthouse", "the court"}
             if t in _DA_TERMS:
-                self.handle_da()
+                self.handle_go("The DA's Office")
             elif t in _COURTHOUSE_TERMS:
-                self.handle_courthouse()
+                self.handle_go_courthouse()
             else:
                 self.handle_go(target)
         elif slug.startswith("/talk ") or slug.startswith("/talk to "):
@@ -2072,13 +2370,29 @@ class Game:
                 if result["ok"]:
                     show_evidence_collected(result["description"])
                 elif self.companion:
-                    _evidence_rejection_quip(self.companion.name, "Already collected" in result["message"], result.get("reason"))
+                    _evidence_rejection_quip(self.companion.name, "Already collected" in result["message"], result.get("reason"), result.get("matched_desc"))
         elif slug.startswith("/link "):
             self.handle_slash_link(raw.strip())
         elif slug.startswith("/arrest "):
             parts = raw.strip().split(None, 1)
             target = parts[1].strip() if len(parts) > 1 else ""
             self.handle_arrest(target)
+        elif slug.startswith("/detain "):
+            parts = raw.strip().split(None, 1)
+            target = parts[1].strip() if len(parts) > 1 else ""
+            if target:
+                self.handle_detain(target)
+            else:
+                console.print("[dim]Usage: /detain <name>[/dim]")
+        elif slug.startswith("/release "):
+            parts = raw.strip().split(None, 1)
+            target = parts[1].strip() if len(parts) > 1 else ""
+            if target:
+                self.handle_release(target)
+            else:
+                console.print("[dim]Usage: /release <name>[/dim]")
+        elif slug in ("/holding",):
+            self.handle_slash_holding()
         elif slug.startswith("/wait"):
             parts = raw.strip().split(None, 1)
             args = parts[1].strip() if len(parts) > 1 else ""
@@ -2163,7 +2477,7 @@ class Game:
                     new_loc_name = loc_id_to_name.get(new_loc_id, "somewhere")
                     movements.append((npc["name"], new_loc_name))
 
-        show_wait_result(new_gt, movements)
+        show_wait_result(new_gt)
 
     def _relocate_npc(self, npc_name: str, location_id: int) -> None:
         if not self.active_case_id:
@@ -2215,7 +2529,9 @@ class Game:
             for m in history[-20:]
         )
         known_locs = []
-        if self.world:
+        if self.active_case_id:
+            known_locs = [l["name"] for l in get_discovered_locations_for_case(self.conn, self.active_case_id)]
+        elif self.world:
             known_locs = [loc["name"] for loc in self.world.list_locations()]
         loc_constraint = (
             f" When a lead involves going somewhere, ONLY use these exact location names: {', '.join(known_locs)}."
@@ -2303,15 +2619,27 @@ class Game:
     def _update_street_rep(self, case_id: int, was_correct: bool) -> None:
         """Regenerate street reputation tags based on playstyle after a case closes."""
         try:
-            player = get_player(self.conn)
+            from noir.persistence.db import get_connection as _gc
+            conn = _gc()
+            try:
+                self._update_street_rep_inner(conn, case_id, was_correct)
+            finally:
+                conn.close()
+        except Exception:
+            import logging as _log
+            _log.getLogger(__name__).warning("Street rep update failed", exc_info=True)
+
+    def _update_street_rep_inner(self, conn, case_id: int, was_correct: bool) -> None:
+        try:
+            player = get_player(conn)
             cases_solved = player["cases_solved"] if player else 0
             wrong_arrests = player["wrong_arrests"] if player else 0
 
             # Aggregate pressure/guilt/revelation data from npc_relationships for this case
-            npcs = get_npcs_for_case(self.conn, case_id)
+            npcs = get_npcs_for_case(conn, case_id)
             pressure_total, guilt_total, revelations = 0, 0, 0
             for npc in npcs:
-                rel = self.conn.execute(
+                rel = conn.execute(
                     "SELECT pressure_score, guilt, revelation_stage FROM npc_relationships WHERE npc_id=?",
                     (npc["id"],)
                 ).fetchone()
@@ -2320,7 +2648,7 @@ class Game:
                     guilt_total += rel["guilt"] or 0
                     revelations += rel["revelation_stage"] or 0
 
-            existing = get_street_reputation(self.conn)
+            existing = get_street_reputation(conn)
             existing_tags = existing.get("tags", [])
 
             prompt = (
@@ -2349,7 +2677,7 @@ class Game:
             tags = result.get("tags", existing_tags)
             street_says = result.get("street_says", existing.get("street_says", ""))
             if tags:
-                update_street_reputation(self.conn, tags=tags, street_says=street_says)
+                update_street_reputation(conn, tags=tags, street_says=street_says)
         except Exception:
             import logging as _log
             _log.getLogger(__name__).warning("Street rep update failed", exc_info=True)
@@ -2364,14 +2692,21 @@ class Game:
         fixed = get_fixed_locations(self.conn)
         case_locs = []
         case_title = None
+        crime_scene = None
         if self.active_case_id:
             case_locs = get_discovered_locations_for_case(self.conn, self.active_case_id)
             case = get_case(self.conn, self.active_case_id)
             if case:
                 case_title = case["title"]
+                try:
+                    cd = json.loads(case["case_data"])
+                    crime_scene = cd.get("victim", {}).get("found_at")
+                except Exception:
+                    pass
         cur_loc = get_location(self.conn, self.current_location_id) if self.current_location_id else None
         show_locations(list(fixed), list(case_locs), case_title,
-                       current_location=cur_loc["name"] if cur_loc else None)
+                       current_location=cur_loc["name"] if cur_loc else None,
+                       crime_scene=crime_scene)
 
     def handle_slash_leads(self) -> None:
         if self.active_case_id is None:
@@ -2403,15 +2738,15 @@ class Game:
         show_suspects(list(npcs), list(player_suspects), evidence_by_npc=evidence_by_npc)
 
     def handle_slash_look(self) -> None:
-        if self.current_location_id and self.world:
+        if self.current_location_id:
             loc = get_location(self.conn, self.current_location_id)
-            npcs = self.world.get_npcs_at(self.current_location_id)
             if loc:
+                npcs = self.world.get_npcs_at(self.current_location_id) if self.world else []
                 loc_orgs = [r["name"] for r in get_organizations_for_location(self.conn, self.current_location_id)]
-                show_location(loc["name"], loc["description"], [n["name"] for n in npcs],
+                show_location(loc["name"], loc["description"], [_npc_display_name(n) for n in npcs],
                               game_time=get_game_time(self.conn), orgs=loc_orgs)
-        else:
-            console.print("[dim]You're not sure where you are.[/dim]")
+                return
+        console.print("[dim]You're not sure where you are.[/dim]")
 
     def handle_slash_suspects_remove(self, raw: str) -> None:
         if self.active_case_id is None:
@@ -2715,6 +3050,59 @@ class Game:
         else:
             console.print("[yellow]Case rejected. Gather more evidence.[/yellow]")
 
+    def handle_go_courthouse(self) -> None:
+        fixed = {loc["name"]: loc for loc in get_fixed_locations(self.conn)}
+        courthouse = fixed.get("The Courthouse")
+        if courthouse is None:
+            console.print("[red]The courthouse doesn't seem to be on the map.[/red]")
+            return
+
+        self.current_location_id = courthouse["id"]
+        set_character_location(self.conn, character_id="player", location_id=courthouse["id"])
+        advance_game_time(self.conn, delta=30)
+
+        npcs = (
+            self.world.get_npcs_at(courthouse["id"]) if self.world
+            else self.conn.execute(
+                "SELECT * FROM npcs WHERE current_location_id=? AND case_id IS NULL",
+                (courthouse["id"],)
+            ).fetchall()
+        )
+        npc_names = [_npc_display_name(npc) for npc in npcs]
+        loc_orgs = [r["name"] for r in get_organizations_for_location(self.conn, courthouse["id"])]
+
+        arrival = None
+        if self.companion:
+            npc_hint = (
+                f" People present: {', '.join(npc_names)}. ONLY mention people from this list — do not invent anyone else."
+                if npc_names else " No one else is here."
+            )
+            arrival_prompt = (
+                f"[Physical setting: you are both INSIDE The Courthouse. {courthouse['description']}"
+                f"{npc_hint}] "
+                f"You've just arrived. Notice one specific, concrete detail about the space. "
+                f"One or two sentences, in character."
+            )
+            self.llm.suppress_status = True
+            with travel_status():
+                arrival = self.companion.narrate(arrival_prompt)
+            self.llm.suppress_status = False
+
+        show_travel_animation()
+        show_location_rule()
+        show_location(courthouse["name"], courthouse["description"], npc_names,
+                      game_time=get_game_time(self.conn), orgs=loc_orgs)
+        if arrival:
+            show_dialogue(self.companion.name, arrival)
+
+        # Surface trial cases if any are pending
+        pipeline_statuses = ("pending_magistrate", "in_trial")
+        pending = self.conn.execute(
+            "SELECT COUNT(*) FROM cases WHERE status IN (?,?)", pipeline_statuses
+        ).fetchone()[0]
+        if pending:
+            self.handle_courthouse()
+
     def handle_courthouse(self) -> None:
         pipeline_statuses = ("pending_magistrate", "in_trial")
         rows = self.conn.execute(
@@ -2766,7 +3154,7 @@ class Game:
                 console.print("[yellow]Case dismissed by the magistrate.[/yellow]")
                 if case_id == self.active_case_id:
                     self.active_case_id = None
-                    self.world = None
+                    self.world = World(conn=self.conn, active_case_id=None)
                     self.case_manager = None
             return
 
@@ -2789,7 +3177,19 @@ class Game:
             _dc.print(Panel(body, title="[bold]Courthouse[/bold]", border_style="blue"))
         elif status_info["status"] == "closed":
             verdict = status_info.get("verdict", {})
-            show_trial_status(case["title"], "closed", None)
+            outcome_raw = verdict.get("outcome", "") if verdict else ""
+            if outcome_raw == "guilty":
+                from rich.panel import Panel as _P
+                console.print(_P("[bold green]GUILTY[/bold green]",
+                                 title=f"[bold]{case['title']}[/bold]",
+                                 border_style="green"))
+            elif outcome_raw in ("not_guilty", "not guilty"):
+                from rich.panel import Panel as _P
+                console.print(_P("[bold red]NOT GUILTY[/bold red]",
+                                 title=f"[bold]{case['title']}[/bold]",
+                                 border_style="red"))
+            else:
+                show_trial_status(case["title"], "closed", None)
             if verdict:
                 show_dialogue("Courthouse Clerk", verdict.get("summary", "The verdict is in."))
             arrest = self.conn.execute(
@@ -2800,15 +3200,27 @@ class Game:
             outcome = verdict.get("outcome", "") if verdict else ""
             corruption_loss = original_correct and outcome == "not_guilty"
             was_correct = original_correct and outcome != "not_guilty"
-            if corruption_loss and self.companion:
-                consolation_prompt = (
-                    f"[Case: {case['title']}. The detective arrested the right person but the verdict just came back not guilty — "
-                    "the system is corrupt, the fix was in, and the killer walks free.] "
-                    "Offer the detective a few words. Acknowledge the injustice directly — don't be abstract about it. "
-                    "Be in character. One or two sentences."
-                )
-                consolation = self.companion.narrate(consolation_prompt)
-                show_dialogue(self.companion.name, consolation)
+            if self.companion:
+                if corruption_loss:
+                    closing_prompt = (
+                        f"[Case: {case['title']}. The detective arrested the right person but the verdict just came back not guilty — "
+                        "the system is corrupt, the fix was in, and the killer walks free.] "
+                        "Offer the detective a few words. Acknowledge the injustice directly — don't be abstract about it. "
+                        "Be in character. One or two sentences."
+                    )
+                elif was_correct:
+                    closing_prompt = (
+                        f"[Case: {case['title']} is closed. Verdict: {outcome}. The right person was convicted.] "
+                        "Mark the moment in one or two sentences — in character, no stage directions. "
+                        "You can be satisfied, wry, relieved, or whatever fits who you are. Don't be effusive."
+                    )
+                else:
+                    closing_prompt = (
+                        f"[Case: {case['title']} is closed. The wrong person was arrested. Outcome: {outcome}.] "
+                        "React to the outcome in one or two sentences — in character. "
+                        "You may be grim, sardonic, or simply quiet about it."
+                    )
+                show_dialogue(self.companion.name, self.companion.narrate(closing_prompt))
             threading.Thread(
                 target=self._update_street_rep,
                 args=(case_id, was_correct),
@@ -2822,7 +3234,7 @@ class Game:
                 ).start()
             if case_id == self.active_case_id:
                 self.active_case_id = None
-                self.world = None
+                self.world = World(conn=self.conn, active_case_id=None)
                 self.case_manager = None
                 self._start_background_generation()
                 console.print("[dim]The case is behind you now. Head to the DA's office for a new one.[/dim]")
@@ -3471,11 +3883,11 @@ class Game:
                     f"Victim: {ctx['victim_name']}, cause of death: {ctx['cause_of_death']}, found at: {ctx['found_at']}. "
                     + (f"Evidence collected ({ctx['evidence_count']} items): {', '.join(evidence_lines)}. " if evidence_lines else "No evidence collected yet. ")
                     + (f"People you've spoken to: {', '.join(s['name'] for s in ctx['met_suspects'])}. " if ctx["met_suspects"] else "You haven't spoken to any suspects yet. ")
-                    + (f"Still haven't found: {', '.join(s['name'] for s in ctx['unmet_suspects'])}. " if ctx["unmet_suspects"] else "")
                     + (f"What you know about them: {'; '.join(dossier_lines)}. " if dossier_lines else "")
-                    + (f"Locations still to visit: {', '.join(l['name'] for l in ctx['locations_unvisited'])}. " if ctx["locations_unvisited"] else "")
                     + "] "
-                    f"Give a sharp, in-character recap — one specific thing we should do next. "
+                    f"Give a sharp, in-character recap based ONLY on what has already been discovered — "
+                    f"do not reference people, locations, or evidence not listed above. "
+                    f"One specific thing we should do next, drawn from what we already know. "
                     f"Physical setting: indoors at The Precinct. No cars, no outdoors. Stay in character. 2-3 sentences."
                 )
                 show_dialogue(self.companion.name, self.companion.narrate(recap_prompt))
@@ -3491,7 +3903,7 @@ class Game:
                 npcs = self.world.get_npcs_at(start_loc_id) if self.world else []
                 loc_orgs = [r["name"] for r in get_organizations_for_location(self.conn, start_loc_id)]
                 show_location(loc["name"], loc["description"],
-                              [n["name"] for n in npcs],
+                              [_npc_display_name(n) for n in npcs],
                               game_time=get_game_time(self.conn), orgs=loc_orgs)
 
         while True:
@@ -3575,9 +3987,9 @@ class Game:
             if cmd.intent == Intent.GO:
                 self.handle_go(cmd.target)
             elif cmd.intent == Intent.GO_DA:
-                self.handle_da()
+                self.handle_go("The DA's Office")
             elif cmd.intent == Intent.GO_COURTHOUSE:
-                self.handle_courthouse()
+                self.handle_go_courthouse()
             elif cmd.intent == Intent.TALK:
                 if self.companion and cmd.target.lower() in self.companion.name.lower():
                     self.handle_talk_partner()
@@ -3594,7 +4006,7 @@ class Game:
                     if loc:
                         loc_orgs = [r["name"] for r in get_organizations_for_location(self.conn, self.current_location_id)]
                         show_location(loc["name"], loc["description"],
-                                      [n["name"] for n in npcs],
+                                      [_npc_display_name(n) for n in npcs],
                                       game_time=get_game_time(self.conn), orgs=loc_orgs)
             elif cmd.intent == Intent.EXAMINE:
                 self.handle_examine(cmd.target)
@@ -3608,7 +4020,7 @@ class Game:
                     if result["ok"]:
                         show_evidence_collected(result["description"])
                     elif self.companion:
-                        _evidence_rejection_quip(self.companion.name, "Already collected" in result["message"], result.get("reason"))
+                        _evidence_rejection_quip(self.companion.name, "Already collected" in result["message"], result.get("reason"), result.get("matched_desc"))
             elif cmd.intent == Intent.SHOOT_PARTNER:
                 self._handle_shoot_partner()
             elif cmd.intent == Intent.HELP:
@@ -3623,9 +4035,9 @@ class Game:
                         _DA_TERMS = {"da", "district attorney", "da's office", "the da"}
                         _COURTHOUSE_TERMS = {"courthouse", "the courthouse", "court", "the court"}
                         if action == "GO" and target.lower().strip() in _DA_TERMS:
-                            self.handle_da()
+                            self.handle_go("The DA's Office")
                         elif action == "GO" and target.lower().strip() in _COURTHOUSE_TERMS:
-                            self.handle_courthouse()
+                            self.handle_go_courthouse()
                         elif action == "GO":
                             self.handle_go(target)
                             if result.get("moved_npc") and self.current_location_id:
@@ -3642,7 +4054,7 @@ class Game:
                                 if res["ok"]:
                                     show_evidence_collected(res["description"])
                                 elif self.companion:
-                                    _evidence_rejection_quip(self.companion.name, "Already collected" in res["message"], res.get("reason"))
+                                    _evidence_rejection_quip(self.companion.name, "Already collected" in res["message"], res.get("reason"), res.get("matched_desc"))
                         elif action == "TALK":
                             _TALK_TRIGGERS = ("/talk", "talk to", "go talk", "let's talk", "speak to", "find ")
                             if any(cmd.raw.lower().startswith(t) for t in _TALK_TRIGGERS):
