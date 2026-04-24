@@ -2463,8 +2463,42 @@ class Game:
         except Exception:
             pass  # appointment detection is best-effort
 
+    def _wait_for_npc_delta(self, name: str, current_gt: int) -> tuple[int, str] | None:
+        """Return (delta_minutes, npc_name) for the next time `name` arrives here, or None."""
+        if not self.active_case_id or not self.current_location_id or not self.world:
+            return None
+        npcs = get_npcs_for_case(self.conn, self.active_case_id)
+        target = next((n for n in npcs if name.lower() in n["name"].lower()), None)
+        if target is None:
+            return None
+        all_locs = self.world.list_locations()
+        loc_name_to_id = {loc["name"]: loc["id"] for loc in all_locs}
+        # Check if already here
+        if self.world._resolve_npc_location_id(target, current_gt, loc_name_to_id) == self.current_location_id:
+            return (0, target["name"])
+        # Scan forward up to 24 h in 15-min steps
+        for delta in range(15, 1441, 15):
+            gt = current_gt + delta
+            if self.world._resolve_npc_location_id(target, gt, loc_name_to_id) == self.current_location_id:
+                return (delta, target["name"])
+        return None
+
     def handle_slash_wait(self, args: str) -> None:
         current_gt = get_game_time(self.conn)
+
+        # "wait for <name>" — advance until that person arrives here
+        if args.lower().startswith("for "):
+            target_name = args[4:].strip()
+            result = self._wait_for_npc_delta(target_name, current_gt)
+            if result is None:
+                console.print(f"[dim]{target_name} isn't coming here. Try somewhere else.[/dim]")
+                return
+            delta, npc_name = result
+            if delta == 0:
+                console.print(f"[dim]{npc_name} is already here.[/dim]")
+                return
+            args = str(delta)  # fall through to normal wait logic with computed delta
+
         delta = _parse_wait_delta(args, current_gt)
         if delta <= 0:
             console.print("[dim]That time has already passed.[/dim]")

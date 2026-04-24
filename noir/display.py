@@ -829,6 +829,7 @@ def show_help() -> None:
         "  /go [location] · /visit [location]\n"
         "  /wait — wait 1 hour\n"
         "  /wait 2 hours · /wait 30 minutes · /wait until midnight\n"
+        "  /wait for [name] — wait here until that person arrives\n"
         "  /time — show current time\n\n"
         "[bold]Interaction:[/bold]\n"
         "  /talk [character] · /talk to [character]\n"
