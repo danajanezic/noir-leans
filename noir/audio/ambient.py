@@ -90,7 +90,9 @@ class AmbientManager:
             outdata[:] = 0
             if self._audio is None:
                 return
-            self._volume += (self._target_volume - self._volume) * 0.05
+            vol_start = self._volume
+            vol_end = vol_start + (self._target_volume - vol_start) * 0.05
+            self._volume = vol_end
             chunk = np.zeros(frames, dtype=np.float32)
             n = len(self._audio)
             remaining = n - self._pos
@@ -104,4 +106,6 @@ class AmbientManager:
                 tiled = np.tile(self._audio, loops)
                 chunk[remaining:] = tiled[:leftover]
                 self._pos = leftover % n
-            outdata[:, 0] = chunk * self._volume
+            # Per-sample volume ramp eliminates the amplitude step at block boundaries.
+            vol_ramp = np.linspace(vol_start, vol_end, frames, dtype=np.float32)
+            outdata[:, 0] = chunk * vol_ramp
