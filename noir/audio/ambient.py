@@ -80,7 +80,6 @@ class AmbientManager:
                 log.warning("ambient clip %r has sr=%d, stream opened at sr=%d; pitch will be wrong", clip_name, sr, self._sr)
             with self._lock:
                 self._audio = audio
-                self._sr = sr
                 self._pos = 0
                 self._target_volume = 0.35
         except Exception as e:
