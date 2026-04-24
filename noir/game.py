@@ -89,11 +89,20 @@ def _parse_hhmm(s: str) -> int:
         return 0
 
 
-def _infer_npc_voice(system_prompt: str) -> str:
-    """Infer Kokoro voice ID from NPC system prompt pronouns."""
-    sp = system_prompt.lower()
-    female_signals = [" she ", " her ", " herself ", "woman", "lady", "mrs.", "miss "]
-    if any(s in sp for s in female_signals):
+def _infer_npc_voice(npc_row) -> str:
+    """Infer Kokoro voice ID from NPC row fields."""
+    text = " ".join(filter(None, [
+        npc_row["system_prompt"],
+        npc_row["physical_description"] if "physical_description" in npc_row.keys() else None,
+        npc_row["maiden_name"] if "maiden_name" in npc_row.keys() else None,
+    ])).lower()
+    female = ["woman", "lady", "mrs.", "miss ", "girl", " she ", " her ", " herself ",
+              "waitress", "actress", "hostess", "widow", "wife", "nun", "madam", "maid"]
+    male = ["man", "mr.", "sir ", "guy ", " he ", " him ", " himself ",
+            "waiter", "actor", "host ", "widower", "husband", "priest", "barman", "cop"]
+    female_hits = sum(1 for s in female if s in text)
+    male_hits = sum(1 for s in male if s in text)
+    if female_hits > male_hits:
         return "af_bella"
     return "am_adam"
 
@@ -1297,7 +1306,7 @@ class Game:
         import noir.audio as audio
         audio.register_voice(
             npc_row["name"],
-            _infer_npc_voice(npc_row["system_prompt"]),
+            _infer_npc_voice(npc_row),
         )
         others_ctx = self._copresent_npc_context(npc_row["id"])
         loc_ctx = ""
