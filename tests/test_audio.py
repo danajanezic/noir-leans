@@ -132,3 +132,79 @@ def test_ambient_filter_no_compression():
     ambient_result = apply_ambient_filter(audio, sr, seed=0)
     # ambient skips compression → its peak must be higher than voice (which is compressed)
     assert np.max(np.abs(ambient_result)) > np.max(np.abs(voice_result))
+
+
+import threading
+from noir.audio.queue_worker import SpeechQueueWorker, SpeechItem
+
+
+def test_worker_calls_speak_fn_for_enqueued_item():
+    calls = []
+
+    def fake_speak(text, voice_id):
+        calls.append((text, voice_id))
+
+    worker = SpeechQueueWorker(speak_fn=fake_speak)
+    worker.enqueue(SpeechItem(text="hello", voice_id="am_adam"))
+    worker.shutdown()
+    assert ("hello", "am_adam") in calls
+
+
+def test_worker_processes_multiple_items_in_order():
+    calls = []
+
+    def fake_speak(text, voice_id):
+        calls.append(text)
+
+    worker = SpeechQueueWorker(speak_fn=fake_speak)
+    for word in ["one", "two", "three"]:
+        worker.enqueue(SpeechItem(text=word, voice_id="am_adam"))
+    worker.shutdown()
+    assert calls == ["one", "two", "three"]
+
+
+def test_flush_discards_queued_items():
+    gate = threading.Event()
+    processed = []
+
+    def slow_speak(text, voice_id):
+        gate.wait()
+        processed.append(text)
+
+    worker = SpeechQueueWorker(speak_fn=slow_speak)
+    worker.enqueue(SpeechItem(text="first", voice_id="am_adam"))
+    worker.enqueue(SpeechItem(text="second", voice_id="am_adam"))
+    worker.enqueue(SpeechItem(text="third", voice_id="am_adam"))
+    worker.flush()
+    gate.set()
+    worker.shutdown()
+    assert "second" not in processed
+    assert "third" not in processed
+
+
+def test_flush_items_after_flush_are_processed():
+    calls = []
+
+    def fake_speak(text, voice_id):
+        calls.append(text)
+
+    worker = SpeechQueueWorker(speak_fn=fake_speak)
+    worker.flush()
+    worker.enqueue(SpeechItem(text="after_flush", voice_id="am_adam"))
+    worker.shutdown()
+    assert "after_flush" in calls
+
+
+def test_worker_continues_after_speak_exception():
+    calls = []
+
+    def flaky_speak(text, voice_id):
+        if text == "crash":
+            raise RuntimeError("device error")
+        calls.append(text)
+
+    worker = SpeechQueueWorker(speak_fn=flaky_speak)
+    worker.enqueue(SpeechItem(text="crash", voice_id="am_adam"))
+    worker.enqueue(SpeechItem(text="recovered", voice_id="am_adam"))
+    worker.shutdown()
+    assert "recovered" in calls
