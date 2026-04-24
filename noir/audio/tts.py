@@ -2,7 +2,6 @@ import logging
 from pathlib import Path
 
 import numpy as np
-from scipy.signal import butter, sosfilt
 
 log = logging.getLogger(__name__)
 
@@ -13,42 +12,25 @@ _MODEL_DIR = Path.home() / ".cache" / "noir-detective" / "kokoro"
 _MODEL_PATH = _MODEL_DIR / "kokoro-v1.0.onnx"
 _VOICES_PATH = _MODEL_DIR / "voices-v1.0.bin"
 
-
-def _bandpass_filter(audio: np.ndarray, sr: int) -> np.ndarray:
-    sos = butter(4, [300, 3400], btype="bandpass", fs=sr, output="sos")
-    return sosfilt(sos, audio).astype(np.float32)
+_FADE_SAMPLES = 256  # ~10ms at 24kHz — eliminates click transients at clip edges
 
 
-def _soft_compress(audio: np.ndarray) -> np.ndarray:
-    peak = np.max(np.abs(audio))
-    if peak < 1e-8:
+def _fade_edges(audio: np.ndarray) -> np.ndarray:
+    if len(audio) < _FADE_SAMPLES * 2:
         return audio
-    normalized = audio / peak * 0.8
-    return (np.tanh(normalized * 3) * peak / 3).astype(np.float32)
-
-
-def _add_crackle(audio: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     result = audio.copy()
-    # ~2-3 pops per second; 0.002 was 48/s which sounds like digital clipping
-    n_bursts = max(1, int(len(audio) / _SR * 3))
-    if len(audio) <= 10:
-        return result
-    positions = rng.integers(0, len(audio) - 10, size=n_bursts)
-    for pos in positions:
-        burst = rng.standard_normal(10).astype(np.float32) * 0.05
-        result[pos : pos + 10] += burst
+    fade = np.linspace(0.0, 1.0, _FADE_SAMPLES, dtype=np.float32)
+    result[:_FADE_SAMPLES] *= fade
+    result[-_FADE_SAMPLES:] *= fade[::-1]
     return result
 
 
 def apply_voice_filter(audio: np.ndarray, sr: int, seed: int = 0) -> np.ndarray:
-    audio = _bandpass_filter(audio, sr)
-    audio = _soft_compress(audio)
-    return audio
+    return _fade_edges(audio)
 
 
 def apply_ambient_filter(audio: np.ndarray, sr: int, seed: int = 0) -> np.ndarray:
-    audio = _bandpass_filter(audio, sr)
-    return audio
+    return _fade_edges(audio)
 
 
 def generate_audio(text: str, voice_id: str) -> np.ndarray:

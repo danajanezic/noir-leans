@@ -22,7 +22,6 @@ audio = [
     "kokoro-onnx>=0.4",
     "sounddevice>=0.5",
     "soundfile>=0.13",
-    "scipy>=1.13",
 ]
 
 [tool.setuptools.packages.find]

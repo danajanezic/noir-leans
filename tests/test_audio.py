@@ -64,82 +64,48 @@ def test_env_var_forces_noop(monkeypatch):
 
 
 import numpy as np
-from scipy.fft import fft, fftfreq
-from noir.audio.tts import (
-    apply_voice_filter,
-    apply_ambient_filter,
-    _bandpass_filter,
-    _soft_compress,
-    _add_crackle,
-)
+from noir.audio.tts import apply_voice_filter, apply_ambient_filter, _fade_edges, _FADE_SAMPLES
 
 
-def _white_noise(n: int = 24000, sr: int = 24000):
-    return np.random.default_rng(0).standard_normal(n).astype(np.float32), sr
+def _ones(n: int = 24000) -> np.ndarray:
+    return np.ones(n, dtype=np.float32)
 
 
-def _power_at_freq_range(audio: np.ndarray, sr: int, low: float, high: float) -> float:
-    freqs = fftfreq(len(audio), 1 / sr)
-    spectrum = np.abs(fft(audio))
-    mask = (np.abs(freqs) >= low) & (np.abs(freqs) <= high)
-    return float(spectrum[mask].mean())
+def test_fade_edges_silences_start():
+    result = _fade_edges(_ones())
+    assert result[0] == 0.0
+    assert result[_FADE_SAMPLES - 1] == pytest.approx(1.0, abs=0.01)
 
 
-def test_bandpass_attenuates_low_frequencies():
-    audio, sr = _white_noise()
-    before = _power_at_freq_range(audio, sr, 0, 100)
-    after = _power_at_freq_range(_bandpass_filter(audio, sr), sr, 0, 100)
-    assert after < before * 0.1
+def test_fade_edges_silences_end():
+    result = _fade_edges(_ones())
+    assert result[-1] == 0.0
+    assert result[-_FADE_SAMPLES] == pytest.approx(1.0, abs=0.01)
 
 
-def test_bandpass_attenuates_high_frequencies():
-    audio, sr = _white_noise()
-    before = _power_at_freq_range(audio, sr, 4000, 8000)
-    after = _power_at_freq_range(_bandpass_filter(audio, sr), sr, 4000, 8000)
-    assert after < before * 0.1
+def test_fade_edges_preserves_middle():
+    audio = _ones()
+    result = _fade_edges(audio)
+    mid = len(audio) // 2
+    assert result[mid] == pytest.approx(1.0)
 
 
-def test_bandpass_preserves_midrange():
-    audio, sr = _white_noise()
-    before = _power_at_freq_range(audio, sr, 500, 2000)
-    after = _power_at_freq_range(_bandpass_filter(audio, sr), sr, 500, 2000)
-    assert after > before * 0.3
+def test_fade_edges_short_clip_unchanged():
+    short = np.ones(10, dtype=np.float32)
+    result = _fade_edges(short)
+    np.testing.assert_array_equal(result, short)
 
 
-def test_soft_compress_limits_peak():
-    loud = np.ones(1000, dtype=np.float32) * 2.0
-    result = _soft_compress(loud)
-    assert np.max(np.abs(result)) < 0.95
+def test_apply_voice_filter_returns_float32():
+    result = apply_voice_filter(_ones(), sr=24000)
+    assert result.dtype == np.float32
 
 
-def test_voice_filter_adds_crackle_to_silence():
-    silent = np.zeros(24000, dtype=np.float32)
-    result = _add_crackle(silent, np.random.default_rng(42))
-    assert np.any(result != 0.0)
+def test_apply_ambient_filter_returns_float32():
+    result = apply_ambient_filter(_ones(), sr=24000)
+    assert result.dtype == np.float32
 
 
-def test_different_seeds_give_different_crackle():
-    audio = np.zeros(24000, dtype=np.float32)
-    r1 = _add_crackle(audio, np.random.default_rng(0))
-    r2 = _add_crackle(audio, np.random.default_rng(1))
-    assert not np.array_equal(r1, r2)
-
-
-def test_voice_filter_applies_all_stages():
-    audio, sr = _white_noise()
-    result = apply_voice_filter(audio, sr, seed=0)
-    # compressed → peak well below original amplitude
-    assert np.max(np.abs(result)) < np.max(np.abs(audio))
-
-
-def test_ambient_filter_no_compression():
-    # A bandpassed signal should retain higher amplitude through ambient filter
-    # than through voice filter, because ambient skips _soft_compress.
-    audio, sr = _white_noise()
-    voice_result = apply_voice_filter(audio, sr, seed=0)
-    ambient_result = apply_ambient_filter(audio, sr, seed=0)
-    # ambient skips compression → its peak must be higher than voice (which is compressed)
-    assert np.max(np.abs(ambient_result)) > np.max(np.abs(voice_result))
 
 
 import threading
