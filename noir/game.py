@@ -89,28 +89,38 @@ def _parse_hhmm(s: str) -> int:
         return 0
 
 
-def _infer_npc_voice(npc_row) -> str:
+def _infer_npc_voice(npc_row, conn=None) -> str:
     """Return a deterministic Kokoro voice ID for an NPC row."""
     import noir.audio as audio
     keys = npc_row.keys()
     name = npc_row["name"]
+
+    # Fetch race from suspects table when conn is available.
+    race: str | None = None
+    if conn is not None:
+        suspect = conn.execute(
+            "SELECT race FROM suspects WHERE npc_id=?", (npc_row["id"],)
+        ).fetchone()
+        if suspect:
+            race = suspect["race"]
+
     sex = (npc_row["sex"] if "sex" in keys else None) or ""
     if sex in ("female", "nonbinary"):
-        return audio._pick_voice(name, female=True)
+        return audio._pick_voice(name, female=True, race=race)
     if sex == "male":
-        return audio._pick_voice(name, female=False)
+        return audio._pick_voice(name, female=False, race=race)
     # Fallback for pre-sex rows: score keyword hits across all text fields.
     text = " ".join(filter(None, [
         npc_row["system_prompt"],
         npc_row["physical_description"] if "physical_description" in keys else None,
         npc_row["maiden_name"] if "maiden_name" in keys else None,
     ])).lower()
-    female = ["woman", "lady", "mrs.", "miss ", "girl", " she ", " her ", " herself ",
-              "waitress", "actress", "hostess", "widow", "wife", "nun", "madam", "maid"]
-    male = ["man", "mr.", "sir ", "guy ", " he ", " him ", " himself ",
-            "waiter", "actor", "host ", "widower", "husband", "priest", "barman", "cop"]
-    is_female = sum(1 for s in female if s in text) > sum(1 for s in male if s in text)
-    return audio._pick_voice(name, female=is_female)
+    female_kw = ["woman", "lady", "mrs.", "miss ", "girl", " she ", " her ", " herself ",
+                 "waitress", "actress", "hostess", "widow", "wife", "nun", "madam", "maid"]
+    male_kw = ["man", "mr.", "sir ", "guy ", " he ", " him ", " himself ",
+               "waiter", "actor", "host ", "widower", "husband", "priest", "barman", "cop"]
+    is_female = sum(1 for s in female_kw if s in text) > sum(1 for s in male_kw if s in text)
+    return audio._pick_voice(name, female=is_female, race=race)
 
 
 def _npc_display_name(npc) -> str:
@@ -1313,7 +1323,7 @@ class Game:
         import noir.audio as audio
         audio.register_voice(
             npc_row["name"],
-            _infer_npc_voice(npc_row),
+            _infer_npc_voice(npc_row, conn=self.conn),
         )
         others_ctx = self._copresent_npc_context(npc_row["id"])
         loc_ctx = ""
