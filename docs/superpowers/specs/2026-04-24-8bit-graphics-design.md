@@ -40,6 +40,8 @@ Three new components:
 
 ## LLM Prompt
 
+The prompt uses few-shot examples to anchor style and output format.
+
 ```
 Draw an 8-bit pixel art sprite in the style of a 1935 noir detective game.
 Subject: {description}
@@ -47,9 +49,26 @@ Return a JSON object with:
   - "palette": array of up to 16 hex color strings (dark, moody noir palette)
   - "pixels": 2D array of integers 0–15 indexing the palette
 Size: {width}×{height}
+
+Here are reference examples of good output:
+{examples}
 ```
 
 Validation: dimensions must match declared size; all pixel values must be valid palette indices. Invalid output → `None` → silent skip.
+
+---
+
+## Reference Examples
+
+Fixed example sprites ship with the game as JSON files in `noir/data/sprites/examples/`. They are loaded at startup and injected into every sprite generation prompt.
+
+**Bootstrap process (one-time, pre-ship):**
+1. Build the renderer first so output is visible in the terminal.
+2. Run a standalone script (`scripts/gen_example_sprites.py`) that generates candidate sprites for a small set of archetypal subjects (e.g., a hard-boiled detective, a femme fatale, a rain-soaked alley, a smoky bar).
+3. Iterate on the prompt and review rendered output until quality is acceptable.
+4. Promote the best results to `noir/data/sprites/examples/` as static JSON files.
+
+Examples are separated by size: `examples/portrait/` and `examples/scene/`. The generator loads 1–2 examples of the matching size for each prompt. Examples are never regenerated at runtime.
 
 ---
 
