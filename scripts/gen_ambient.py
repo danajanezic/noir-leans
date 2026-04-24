@@ -38,10 +38,14 @@ def bandpass(audio: np.ndarray, low: float, high: float) -> np.ndarray:
 def gen_rain() -> np.ndarray:
     n = SR * DURATION
     rain = pink_noise(n)
+    rain = bandpass(rain, 400, 8000)  # high-passed so the base sounds like steady rain hiss
     rng = np.random.default_rng(42)
-    for _ in range(40):
-        pos = rng.integers(0, n - 300)
-        rain[pos : pos + 300] += (rng.standard_normal(300) * 0.3).astype(np.float32)
+    drop_len = SR // 20  # ~50ms per drop
+    env = np.exp(-np.linspace(0, 8, drop_len)).astype(np.float32)  # sharp attack, fast decay
+    for _ in range(80):
+        pos = rng.integers(0, n - drop_len)
+        drop = rng.standard_normal(drop_len).astype(np.float32) * env * 0.4
+        rain[pos : pos + drop_len] += drop
     return normalize(rain, 0.35)
 
 
