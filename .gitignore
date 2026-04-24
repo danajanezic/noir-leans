@@ -30,3 +30,6 @@ env/
 *~
 .DS_Store
 .worktrees/
+
+# synthetic ambient audio clips (generated locally)
+noir/data/audio/ambient/*.wav
