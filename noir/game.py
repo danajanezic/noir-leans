@@ -885,6 +885,7 @@ class Game:
         self.case_manager: CaseManager | None = None
         self._observations: dict[int, list[str]] = {}
         self._pending_case: tuple[str, dict] | None = None
+        self._pending_slash: str | None = None
         self._pending_gen_thread: threading.Thread | None = None
         self._recent_partner_lines: list[str] = []
 
@@ -1444,6 +1445,10 @@ class Game:
             if player_input.strip().startswith("/"):
                 if _is_exit(player_input):
                     break
+                slug = player_input.strip().split()[0].lower()
+                if slug in ("/go", "/visit", "/talk"):
+                    self._pending_slash = player_input.strip()
+                    break
                 self._dispatch_slash(player_input)
                 continue
             if _is_exit(player_input):
@@ -1558,6 +1563,11 @@ class Game:
         # Discover the NPC's home location — the player now knows where to find them
         if npc_row["current_location_id"] and self.active_case_id:
             discover_location(self.conn, npc_row["current_location_id"])
+        # Execute any /go or /talk command the player issued mid-conversation
+        if self._pending_slash:
+            cmd = self._pending_slash
+            self._pending_slash = None
+            self._dispatch_slash(cmd)
 
     def _apply_skill_xp_and_check_unlocks(self, owner: str, xp_awards: dict,
                                             partner_name: str | None = None) -> None:
