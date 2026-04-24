@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import os
 import threading
@@ -11,13 +12,33 @@ _registry_lock = threading.Lock()
 
 NARRATOR_VOICE = "bm_george"
 
+# English-only voices appropriate for 1935 Noirleans.
+# Excluded: am_santa, em_santa (too jolly), non-English prefixes.
+_FEMALE_VOICES = [
+    "af_bella", "af_heart", "af_jessica", "af_nicole", "af_sarah",
+    "af_alloy", "af_nova", "af_river", "af_kore",
+    "bf_alice", "bf_emma", "bf_lily", "bf_isabella",
+]
+_MALE_VOICES = [
+    "am_adam", "am_eric", "am_liam", "am_michael", "am_onyx",
+    "am_echo", "am_fenrir",
+    "bm_daniel", "bm_fable", "bm_lewis",
+]
+
 _ROLE_VOICES: dict[str, str] = {
     "police": "bm_george",
     "detective": "am_michael",
-    "district attorney": "bm_george",
-    "judge": "bm_george",
-    "magistrate": "bm_george",
+    "district attorney": "bm_lewis",
+    "judge": "bm_daniel",
+    "magistrate": "bm_daniel",
 }
+
+
+def _pick_voice(name: str, female: bool) -> str:
+    """Deterministically pick a voice from the pool using the speaker's name as seed."""
+    pool = _FEMALE_VOICES if female else _MALE_VOICES
+    idx = int(hashlib.md5(name.lower().encode()).hexdigest(), 16) % len(pool)
+    return pool[idx]
 
 
 def init(no_audio: bool = False) -> None:

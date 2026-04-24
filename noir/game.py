@@ -90,13 +90,15 @@ def _parse_hhmm(s: str) -> int:
 
 
 def _infer_npc_voice(npc_row) -> str:
-    """Return Kokoro voice ID for an NPC row."""
+    """Return a deterministic Kokoro voice ID for an NPC row."""
+    import noir.audio as audio
     keys = npc_row.keys()
+    name = npc_row["name"]
     sex = (npc_row["sex"] if "sex" in keys else None) or ""
     if sex in ("female", "nonbinary"):
-        return "af_bella"
+        return audio._pick_voice(name, female=True)
     if sex == "male":
-        return "am_adam"
+        return audio._pick_voice(name, female=False)
     # Fallback for pre-sex rows: score keyword hits across all text fields.
     text = " ".join(filter(None, [
         npc_row["system_prompt"],
@@ -107,9 +109,8 @@ def _infer_npc_voice(npc_row) -> str:
               "waitress", "actress", "hostess", "widow", "wife", "nun", "madam", "maid"]
     male = ["man", "mr.", "sir ", "guy ", " he ", " him ", " himself ",
             "waiter", "actor", "host ", "widower", "husband", "priest", "barman", "cop"]
-    if sum(1 for s in female if s in text) > sum(1 for s in male if s in text):
-        return "af_bella"
-    return "am_adam"
+    is_female = sum(1 for s in female if s in text) > sum(1 for s in male if s in text)
+    return audio._pick_voice(name, female=is_female)
 
 
 def _npc_display_name(npc) -> str:
@@ -3853,11 +3854,13 @@ class Game:
         if not is_returning:
             self.run_onboarding()
             import noir.audio as audio
-            audio.register_voice(self.companion.name, "af_bella")
+            _sex = getattr(self.companion, "sex", "female")
+            audio.register_voice(self.companion.name, audio._pick_voice(self.companion.name, female=_sex != "male"))
         else:
             self.companion = Companion.load(conn=self.conn, llm=self.llm)
             import noir.audio as audio
-            audio.register_voice(self.companion.name, "af_bella")
+            _sex = getattr(self.companion, "sex", "female")
+            audio.register_voice(self.companion.name, audio._pick_voice(self.companion.name, female=_sex != "male"))
             console.print("\n[bold yellow]Welcome back, detective.[/bold yellow]")
 
         active_cases = get_active_cases(self.conn)
