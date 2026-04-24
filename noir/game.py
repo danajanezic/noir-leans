@@ -3322,7 +3322,7 @@ class Game:
             "Respond in character. Accept or refuse based on who you are."
         )
 
-        from noir.characters.agent import CharacterAgent
+        from noir.characters.agent import Agent as CharacterAgent
         agent = CharacterAgent(
             character_id=f"npc_{npc_row['id']}",
             system_prompt=bribe_system,
@@ -3523,7 +3523,7 @@ class Game:
             "Respond in character."
         )
 
-        from noir.characters.agent import CharacterAgent
+        from noir.characters.agent import Agent as CharacterAgent
         agent = CharacterAgent(
             character_id=f"npc_{leader_row['id']}",
             system_prompt=join_system,
