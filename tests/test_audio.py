@@ -125,16 +125,10 @@ def test_voice_filter_applies_all_stages():
 
 
 def test_ambient_filter_no_compression():
-    # uniform amplitude → tanh compression would flatten it, but ambient has none
-    # Verify that ambient filter path does not apply compression by checking
-    # intermediate results without the dominant crackle effect
-    uniform = np.full(24000, 0.5, dtype=np.float32)
-    bandpassed = _bandpass_filter(uniform, 24000)
-    compressed = _soft_compress(bandpassed)
-    # Compression should reduce the peak significantly
-    assert np.max(np.abs(compressed)) < np.max(np.abs(bandpassed)) * 0.5
-    # But both filters should produce some output with crackle
-    voice_result = apply_voice_filter(uniform, 24000, seed=0)
-    ambient_result = apply_ambient_filter(uniform, 24000, seed=0)
-    assert len(voice_result) == len(uniform)
-    assert len(ambient_result) == len(uniform)
+    # A bandpassed signal should retain higher amplitude through ambient filter
+    # than through voice filter, because ambient skips _soft_compress.
+    audio, sr = _white_noise()
+    voice_result = apply_voice_filter(audio, sr, seed=0)
+    ambient_result = apply_ambient_filter(audio, sr, seed=0)
+    # ambient skips compression → its peak must be higher than voice (which is compressed)
+    assert np.max(np.abs(ambient_result)) > np.max(np.abs(voice_result))
