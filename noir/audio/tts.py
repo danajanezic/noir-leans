@@ -13,6 +13,7 @@ _MODEL_PATH = _MODEL_DIR / "kokoro-v1.0.onnx"
 _VOICES_PATH = _MODEL_DIR / "voices-v1.0.bin"
 
 _FADE_SAMPLES = 256  # ~10ms at 24kHz — eliminates click transients at clip edges
+_XFADE_SAMPLES = 2048  # ~85ms crossfade for seamless ambient looping
 
 
 def _fade_edges(audio: np.ndarray) -> np.ndarray:
@@ -25,12 +26,26 @@ def _fade_edges(audio: np.ndarray) -> np.ndarray:
     return result
 
 
+def make_loop_seamless(audio: np.ndarray) -> np.ndarray:
+    """Crossfade tail into head so the loop point is click-free."""
+    n = len(audio)
+    xf = min(_XFADE_SAMPLES, n // 4)
+    if xf < 2:
+        return audio
+    result = audio.copy()
+    fade_out = np.linspace(1.0, 0.0, xf, dtype=np.float32)
+    fade_in = np.linspace(0.0, 1.0, xf, dtype=np.float32)
+    # blend tail samples into the head
+    result[:xf] = audio[:xf] * fade_in + audio[-xf:] * fade_out
+    return result[:-xf]  # trim the blended tail to avoid duplicating it
+
+
 def apply_voice_filter(audio: np.ndarray, sr: int, seed: int = 0) -> np.ndarray:
     return _fade_edges(audio)
 
 
 def apply_ambient_filter(audio: np.ndarray, sr: int, seed: int = 0) -> np.ndarray:
-    return _fade_edges(audio)
+    return make_loop_seamless(audio)
 
 
 def generate_audio(text: str, voice_id: str) -> np.ndarray:

@@ -64,7 +64,7 @@ def test_env_var_forces_noop(monkeypatch):
 
 
 import numpy as np
-from noir.audio.tts import apply_voice_filter, apply_ambient_filter, _fade_edges, _FADE_SAMPLES
+from noir.audio.tts import apply_voice_filter, apply_ambient_filter, _fade_edges, _FADE_SAMPLES, make_loop_seamless
 
 
 def _ones(n: int = 24000) -> np.ndarray:
@@ -104,6 +104,28 @@ def test_apply_voice_filter_returns_float32():
 def test_apply_ambient_filter_returns_float32():
     result = apply_ambient_filter(_ones(), sr=24000)
     assert result.dtype == np.float32
+
+
+def test_make_loop_seamless_smooths_loop_point():
+    # Clip that jumps from 1.0 → -1.0 at the loop point; crossfade should reduce it.
+    n = 24000
+    audio = np.ones(n, dtype=np.float32)
+    audio[n // 2:] = -1.0  # discontinuity in the middle so loop point is bad
+    result = make_loop_seamless(audio)
+    # The first sample of the looped result should be blended (not the raw head value).
+    assert result[0] != audio[0]
+
+
+def test_make_loop_seamless_shortens_clip():
+    audio = _ones(24000)
+    result = make_loop_seamless(audio)
+    assert len(result) < len(audio)
+
+
+def test_make_loop_seamless_very_short_clip_unchanged():
+    short = np.ones(4, dtype=np.float32)
+    result = make_loop_seamless(short)
+    np.testing.assert_array_equal(result, short)
 
 
 
