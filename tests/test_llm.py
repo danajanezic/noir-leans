@@ -31,8 +31,9 @@ def test_query_structured_retries_on_bad_json(capsys):
 
 
 def test_query_structured_exits_on_double_failure(capsys):
+    from noir.llm.base import FatalLLMError
     llm = MockLLMBackend(responses=["bad", "also bad"])
-    with pytest.raises(SystemExit):
+    with pytest.raises(FatalLLMError):
         llm.query_structured("sys", [], "generate")
 
 

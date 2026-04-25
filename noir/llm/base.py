@@ -9,6 +9,11 @@ from rich.panel import Panel
 log = logging.getLogger(__name__)
 
 
+class FatalLLMError(BaseException):
+    """Raised when the LLM fails unrecoverably. Inherits BaseException so bare
+    `except Exception` blocks cannot suppress it."""
+
+
 def _strip_fences(text: str) -> str:
     text = text.strip()
     # extract content from a fenced block anywhere in the text
@@ -76,4 +81,4 @@ class LLMBackend(ABC):
             title="[red]CRITICAL ERROR[/red]",
             border_style="red",
         ))
-        raise SystemExit(1)
+        raise FatalLLMError()

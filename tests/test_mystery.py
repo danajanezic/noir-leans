@@ -122,11 +122,12 @@ def test_generate_includes_archetype_seed_in_prompt(db, mock_llm):
 
 
 def test_generate_raises_on_missing_required_fields(db, mock_llm):
+    from noir.llm.base import FatalLLMError
     create_player(db)
     bad_case = {"title": "incomplete"}
     mock_llm._responses = cycle([json.dumps(bad_case), json.dumps(bad_case)])
     gen = MysteryGenerator(llm=mock_llm, conn=db)
-    with pytest.raises(SystemExit):
+    with pytest.raises(FatalLLMError):
         gen.generate(archetype_name="Agatha Christie")
 
 
@@ -162,9 +163,10 @@ def test_generate_raises_if_age_is_string(db, mock_llm):
             {**VALID_CASE["suspects"][1]},
         ]
     }
+    from noir.llm.base import FatalLLMError
     mock_llm._responses = _cycle([json.dumps(bad_case), json.dumps(bad_case)])
     gen = MysteryGenerator(llm=mock_llm, conn=db)
-    with pytest.raises(SystemExit):
+    with pytest.raises(FatalLLMError):
         gen.generate(archetype_name="Agatha Christie")
 
 

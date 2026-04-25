@@ -17,7 +17,7 @@ from noir.display import (
     show_wait_result, fmt_game_time, console, enable_game_padding
 )
 from noir.parser import parse_command, Intent
-from noir.llm.base import LLMBackend
+from noir.llm.base import LLMBackend, FatalLLMError
 from noir.persistence.repository import (
     create_player, get_player, get_partner, create_location,
     get_location, get_active_cases, get_all_cases, set_case_active, get_case, get_fixed_locations,
@@ -2429,6 +2429,8 @@ class Game:
                 console.print("[dim]Usage: /release <name>[/dim]")
         elif slug in ("/holding",):
             self.handle_slash_holding()
+        elif slug in ("/court", "/trial", "/courthouse"):
+            self.handle_courthouse()
         elif slug.startswith("/wait"):
             parts = raw.strip().split(None, 1)
             args = parts[1].strip() if len(parts) > 1 else ""
@@ -2580,7 +2582,7 @@ class Game:
                 [],
                 f"Person: {npc_name}\n\nConversation:\n{transcript}"
             )
-        except SystemExit:
+        except FatalLLMError:
             import logging as _log; _log.getLogger(__name__).warning("Dossier extraction failed for %s", npc_name)
             return
         facts = result.get("facts", [])
@@ -2618,7 +2620,7 @@ class Game:
                 [],
                 f"Source NPC: {npc_name}\n\nConversation:\n{transcript}"
             )
-        except SystemExit:
+        except FatalLLMError:
             import logging as _log; _log.getLogger(__name__).warning("Lead extraction failed for %s", npc_name)
             return
         case_locs = get_locations_for_case(self.conn, self.active_case_id)

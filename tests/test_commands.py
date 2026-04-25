@@ -214,10 +214,10 @@ class TestDispatchSlash:
             game._dispatch_slash("/visit the diner")
             mock.assert_called_once_with("the diner")
 
-    def test_go_da_routes_to_handle_da(self, game):
-        with patch.object(game, "handle_da") as mock:
+    def test_go_da_routes_to_handle_go(self, game):
+        with patch.object(game, "handle_go") as mock:
             game._dispatch_slash("/go da")
-            mock.assert_called_once()
+            mock.assert_called_once_with("The DA's Office")
 
     def test_go_courthouse_routes_to_handle_go_courthouse(self, game):
         with patch.object(game, "handle_go_courthouse") as mock:

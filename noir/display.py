@@ -847,7 +847,7 @@ def show_help() -> None:
         "  /go da — go to the DA's Office\n"
         "  /submit — submit case for trial (from anywhere)\n"
         "  /drop — drop current case\n"
-        "  /go courthouse — check trial status\n\n"
+        "  /court — check trial status (from anywhere)\n\n"
         "[bold]Detective status:[/bold]\n"
         "  /status — view active conditions\n"
         "  /status add <state> — add a condition (drunk, sleepy, etc.)\n"
