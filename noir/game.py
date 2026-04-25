@@ -556,6 +556,10 @@ FIXED_LOCATION_NPCS = [
         "org": "Orleans Parish District Attorney",
         "org_role": "district attorney",
         "corruption": 3,
+        "routine": [
+            {"location": "The DA's Office", "time_start": "08:00", "time_end": "18:00"},
+            {"location": "The Rusty Anchor", "time_start": "18:30", "time_end": "22:00"},
+        ],
         "system_prompt": (
             "You are Franklin Dupré, District Attorney of Orleans Parish, 1935. "
             "You have held this office for seven years under the Long machine's patronage "
@@ -2280,6 +2284,18 @@ class Game:
                 if org:
                     _add_member(self.conn, organization_id=org["id"], member_type="npc",
                                 member_id=npc_id, role=fnpc.get("org_role"), is_static=True)
+            for entry in fnpc.get("routine", []):
+                existing_sched = self.conn.execute(
+                    "SELECT id FROM npc_schedules WHERE npc_id=? AND time_start=? AND location_name=?",
+                    (npc_id, _parse_hhmm(entry["time_start"]), entry["location"])
+                ).fetchone()
+                if not existing_sched:
+                    create_npc_schedule(
+                        self.conn, npc_id=npc_id,
+                        time_start=_parse_hhmm(entry["time_start"]),
+                        time_end=_parse_hhmm(entry["time_end"]),
+                        location_name=entry["location"],
+                    )
 
         _BAR_KEYWORDS = (
             "bar", "lounge", "saloon", "club", "speakeasy", "tavern", "cabaret",
