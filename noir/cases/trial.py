@@ -489,15 +489,29 @@ class TrialSystem:
             update_player_stats(self.conn, wrong_arrests_delta=1)
 
         case_data = json.loads(case["case_data"])
+
+        defendant_name = "the defendant"
+        defendant_role = ""
+        if arrest:
+            def_row = self.conn.execute(
+                "SELECT name, role FROM npcs WHERE id=?", (arrest["npc_id"],)
+            ).fetchone()
+            if def_row:
+                defendant_name = def_row["name"]
+                defendant_role = def_row["role"] or ""
+
+        victim = case_data.get("victim", {})
         judge_context = (
             f"Presiding judge: {judge_name}."
             + (f" Character: {judge_traits}." if judge_traits else "")
         )
         prompt = (
             f"Case: {case['title']}\n"
-            f"Case details: {json.dumps(case_data, indent=2)}\n\n"
+            f"Victim: {victim.get('name', 'unknown')}, cause of death: {victim.get('cause_of_death', 'unknown')}.\n"
+            f"THE DEFENDANT ON TRIAL IS: {defendant_name} ({defendant_role}). "
+            f"Use this name — do not substitute any other character from the case.\n\n"
             f"{judge_context}\n"
-            f"The arrested person was {'the actual killer' if was_correct else 'innocent'}."
+            f"The defendant ({defendant_name}) was {'the actual killer' if was_correct else 'innocent'}."
             f"{fabrication_note}{org_protection_note}{bribe_note} "
             "Generate a trial verdict with absurdist noir courtroom drama. "
             "The judge's character should flavor the narration and their conduct during the trial. "
