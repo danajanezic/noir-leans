@@ -104,8 +104,8 @@ class Companion(Agent):
         ]
         return prefix + history
 
-    def speak(self, player_input: str, record: bool = True, store_as: str | None = None) -> str:
-        history = self._history_with_summaries(query=player_input)
+    def speak(self, player_input: str, record: bool = True, store_as: str | None = None, *, query: str | None = None) -> str:
+        history = self._history_with_summaries(query=query if query is not None else player_input)
         response = self._query_with_retry(player_input, history)
         if record:
             append_history(self.conn, character_id=self.character_id,

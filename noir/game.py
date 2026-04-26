@@ -1534,7 +1534,7 @@ class Game:
             show_dialogue(npc_row["name"], response)
             if self.companion and self._should_partner_interject(player_input, response, "success"):
                 interject_ctx = self._partner_interject_context(player_input, npc_row["name"], response, "success")
-                interject_response = self.companion.speak(interject_ctx, store_as=f"[interjection re: {npc_row['name']}]")
+                interject_response = self.companion.speak(interject_ctx, store_as=f"[You observed the detective speaking with {npc_row['name']} and added:]", query=response)
                 show_dialogue(self.companion.name, interject_response)
                 partner_line = f"[{self.companion.name} says: {interject_response}]"
                 npc_reply = npc.speak(partner_line, store_as=partner_line)
