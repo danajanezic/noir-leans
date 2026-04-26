@@ -33,3 +33,7 @@ env/
 
 # synthetic ambient audio clips (generated locally)
 noir/data/audio/ambient/*.wav
+
+# scratch databases and reports (never commit)
+*.db
+report_*.json
