@@ -8,9 +8,10 @@ console = Console()
 
 W, H = 94, 31
 
-canvas       = [[' ']   * W for _ in range(H)]
-styles       = [[None]  * W for _ in range(H)]
-box_interior = [[False] * W for _ in range(H)]
+canvas          = [[' ']   * W for _ in range(H)]
+styles          = [[None]  * W for _ in range(H)]
+box_interior    = [[False] * W for _ in range(H)]
+active_interior = [[False] * W for _ in range(H)]
 
 FACTION_COLORS = {
     'P': 'bold blue',       # NOPD
@@ -41,7 +42,7 @@ def vline(c, r1, r2, ch='│', style='white'):
         put(r, c, ch, style)
 
 
-def box(r, c, h, w, style='white', double=False):
+def box(r, c, h, w, style='white', double=False, title=None):
     if double:
         tl, tr, bl, br, h_ch, v_ch = '╔', '╗', '╚', '╝', '═', '║'
     else:
@@ -52,6 +53,10 @@ def box(r, c, h, w, style='white', double=False):
     hline(r + h - 1, c + 1, c + w - 2, h_ch, style)
     vline(c,         r + 1, r + h - 2, v_ch, style)
     vline(c + w - 1, r + 1, r + h - 2, v_ch, style)
+    if title:
+        label = f' {title} '[: w - 2]
+        pad = max(0, (w - 2 - len(label)) // 2)
+        txt(r, c + 1 + pad, label, style)
 
 
 def txt(r, c, s, style=None):
@@ -67,23 +72,33 @@ def center_in(r, c, w, s, style=None):
 BW, BH = 16, 5  # neighborhood box width / height
 
 
-def neighborhood(r, c, name, factions, danger_level, here=False):
-    box(r, c, BH, BW, style='bold white' if here else 'dim white', double=here)
+LOCATION_MARKER_COLORS = {
+    '✦': 'bold red',        # crime scene
+    '⌂': 'white',           # premises
+    '⚑': 'bold yellow',     # stakeout
+    '◉': 'bold cyan',       # evidence
+    '☎': 'bold green',      # contact
+    '✝': 'dim white',       # church/mortuary
+    '⚜': 'bold yellow',     # bar/lounge/tavern
+}
+
+
+def neighborhood(r, c, name, factions, danger_level, here=False, markers=None):
+    box(r, c, BH, BW, style='bold white' if here else 'dim white', double=here, title=name)
     for ri in range(r + 1, r + BH - 1):
         for ci in range(c + 1, c + BW - 1):
             box_interior[ri][ci] = True
+            if here:
+                active_interior[ri][ci] = True
 
-    # Name row
-    center_in(r + 1, c + 1, BW - 2, name, 'bold white')
-
-    # Faction codes — centered in the box interior, stepping by 2
+    # Faction codes — centered, row r+1
     factions_width = max(0, len(factions) * 2 - 1)
     fc = c + 1 + (BW - 2 - factions_width) // 2
     for code in factions:
-        put(r + 2, fc, code, FACTION_COLORS.get(code, 'white'))
+        put(r + 1, fc, code, FACTION_COLORS.get(code, 'white'))
         fc += 2
 
-    # Danger bar on its own row (r+3)
+    # Danger bar — centered, row r+2
     if danger_level <= 2:
         bar_ch, bar_style = '░', 'green'
     elif danger_level <= 3:
@@ -94,23 +109,31 @@ def neighborhood(r, c, name, factions, danger_level, here=False):
     bar_start = c + 1 + (BW - 2 - 5) // 2
     for i in range(5):
         if i < danger_level:
-            put(r + 3, bar_start + i, bar_ch, bar_style)
+            put(r + 2, bar_start + i, bar_ch, bar_style)
         else:
-            put(r + 3, bar_start + i, '·', 'dim white')
+            put(r + 2, bar_start + i, '·', 'dim white')
+
+    # Location markers — centered, row r+3
+    if markers:
+        markers_width = max(0, len(markers) * 2 - 1)
+        mc = c + 1 + (BW - 2 - markers_width) // 2
+        for sym in markers:
+            put(r + 3, mc, sym, LOCATION_MARKER_COLORS.get(sym, 'white'))
+            mc += 2
 
 
 # ── Outer frame ───────────────────────────────────────────────────────────────
 
-hline(0,     0, W - 1, '═', 'bold white')
-hline(H - 1, 0, W - 1, '═', 'bold white')
-put(0,     0,     '╔', 'bold white'); put(0,     W - 1, '╗', 'bold white')
-put(H - 1, 0,     '╚', 'bold white'); put(H - 1, W - 1, '╝', 'bold white')
+hline(0,     0, W - 1, '═', 'dim yellow')
+hline(H - 1, 0, W - 1, '═', 'dim yellow')
+put(0,     0,     '╔', 'dim yellow'); put(0,     W - 1, '╗', 'dim yellow')
+put(H - 1, 0,     '╚', 'dim yellow'); put(H - 1, W - 1, '╝', 'dim yellow')
 for r in range(1, H - 1):
-    put(r, 0,     '║', 'bold white')
-    put(r, W - 1, '║', 'bold white')
+    put(r, 0,     '║', 'dim yellow')
+    put(r, W - 1, '║', 'dim yellow')
 
 title = "  N O I R L E A N S  ·  1 9 3 5  "
-txt(0, (W - len(title)) // 2, title, 'bold yellow')
+txt(0, (W - len(title)) // 2, title, 'dim yellow')
 
 # ── Water ─────────────────────────────────────────────────────────────────────
 
@@ -120,7 +143,7 @@ inner = W - 2  # 92
 lake_label = " Lake Pontchartrain "
 waves = (inner - len(lake_label)) // 2
 lake_line = "≋" * waves + lake_label + "≋" * (inner - waves - len(lake_label))
-txt(1, 1, lake_line[:inner], 'bold cyan')
+txt(1, 1, lake_line[:inner], 'cyan')
 
 # Mississippi River — curved path approximating the real crescent.
 # The crescent means the river reaches its northernmost point (lowest row number)
@@ -154,12 +177,12 @@ GLOBAL_TOP = 20
 for col in range(1, W - 1):
     r = river_row_at(col)
     for rr in range(GLOBAL_TOP, r + 3):
-        put(rr, col, '≋', 'bold cyan')
+        put(rr, col, '≋', 'cyan')
 
 # River label — centred in the solid band
 river_label = " Mississippi River "
 lc = (W - len(river_label)) // 2
-txt(GLOBAL_TOP + 1, lc, river_label, 'bold cyan')
+txt(GLOBAL_TOP + 1, lc, river_label, 'cyan')
 
 # ── Neighborhoods (r, c, name, factions, danger 1-5, here?) ──────────────────
 #
@@ -187,11 +210,11 @@ neighborhood(R2, D, "7TH WARD",    ["P", "L"],         3)
 
 neighborhood(R3, A, "GARDEN DIST", ["P", "T"],         1)
 neighborhood(R3, B, "CBD",         ["P", "R", "S"],    2)
-neighborhood(R3, C, "FRENCH QTR",  ["P", "R", "A"],    2, here=True)
+neighborhood(R3, C, "FRENCH QTR",  ["P", "R", "A"],    2, here=True, markers=['✦', '⚜', '☎'])
 neighborhood(R3, D, "MARIGNY",     ["C"],              3)
 
 neighborhood(R4, A, "UPTOWN",      ["P", "T"],         2)
-neighborhood(R4, B, "IRISH CH.",   ["I", "P"],         4)
+neighborhood(R4, B, "IRISH CH.",   ["I", "P"],         4, markers=['⚜', '⌂'])
 neighborhood(R4, D, "BYWATER",     ["I", "L"],         3)
 neighborhood(R4, E, "LOWER 9TH",   ["L", "P"],         5)
 
@@ -202,17 +225,49 @@ neighborhood(25, C, "ALGIERS",     ["P", "I"],         4)
 LAND_BG = 'on rgb(28,12,2)'    # darkened brown — land between neighborhoods
 BOX_BG  = 'on black'           # inside neighborhood boxes
 
+# Danger key rendered to the right of the map, centered vertically
+def _danger_row(symbol, label, style):
+    t = Text()
+    t.append('   ')
+    t.append(symbol, style=style)
+    t.append(f' {label}', style='dim white')
+    return t
+
+_key_items = [
+    Text('   Danger:', style='bold white'),
+    Text(''),
+    _danger_row('░', 'low',    'green'),
+    Text(''),
+    _danger_row('▒', 'medium', 'yellow'),
+    Text(''),
+    _danger_row('▓', 'high',   'bold red'),
+]
+_key_start = (H - len(_key_items)) // 2
+DANGER_SIDE = {_key_start + i: t for i, t in enumerate(_key_items)}
+
+def _dim(st):
+    if st is None:
+        return None
+    return st.replace('bold ', '')
+
 result = Text()
 for r in range(H):
+    row = Text()
     for c in range(W):
         ch = canvas[r][c]
         st = styles[r][c]
         if 1 <= r < H - 1 and 1 <= c < W - 1 and ch != '≋':
             bg = BOX_BG if box_interior[r][c] else LAND_BG
             st = f'{st} {bg}' if st else bg
-        result.append(ch, style=st)
+            if box_interior[r][c] and not active_interior[r][c]:
+                st = _dim(st)
+        row.append(ch, style=st)
+    if r in DANGER_SIDE:
+        row.append_text(DANGER_SIDE[r])
+    result.append_text(row)
     result.append('\n')
 
+console.print()
 console.print(result, end='')
 console.print()
 console.print(
@@ -225,4 +280,13 @@ console.print(
     "[bold white]T[/] Tallboys  "
     "[yellow]A[/] Archdiocese"
 )
-console.print("  Danger: [green]░[/] low  [yellow]▒[/] medium  [bold red]▓[/] high")
+console.print(
+    "  [bold red]✦[/] Crime scene  "
+    "[white]⌂[/] Premises  "
+    "[bold yellow]⚑[/] Stakeout  "
+    "[bold cyan]◉[/] Evidence  "
+    "[bold green]☎[/] Contact  "
+    "[dim white]✝[/] Church/mortuary  "
+    "[bold yellow]⚜[/] Bar/tavern"
+)
+console.print()
