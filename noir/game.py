@@ -4499,9 +4499,9 @@ class Game:
 
     def loop(self) -> None:
         show_splash()
-        enable_game_padding()
         create_schema(self.conn)
         self._check_terminal_width()
+        enable_game_padding()
         from noir.neighborhoods import seed_bartenders
         seed_bartenders(self.conn, self.llm)
         fixed_locs = self.setup_fixed_locations()
