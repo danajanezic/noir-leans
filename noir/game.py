@@ -4475,15 +4475,20 @@ class Game:
 
     def _check_terminal_width(self) -> None:
         import shutil
+        import sys
+        from rich.console import Console
         MAP_WIDTH = 94
         if shutil.get_terminal_size().columns > MAP_WIDTH:
             return
         label = "NOIRLEANS"
         ruler = "─" * ((MAP_WIDTH - len(label)) // 2) + label + "─" * ((MAP_WIDTH - len(label) + 1) // 2)
         while shutil.get_terminal_size().columns <= MAP_WIDTH:
-            console.print(f"\n[dim yellow]{ruler}[/dim yellow]\n")
-            console.print(
-                f"[yellow]Your terminal is too narrow for the map. "
+            # Fresh console each time so Rich reads the current terminal width
+            c = Console()
+            c.clear()
+            c.print(f"\n[dim yellow]{ruler}[/dim yellow]\n")
+            c.print(
+                "[yellow]Your terminal is too narrow for the map. "
                 "Widen your window until the line above fits on one row, then press Enter.[/yellow]"
             )
             input()
