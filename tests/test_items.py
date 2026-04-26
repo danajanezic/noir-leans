@@ -165,3 +165,42 @@ def test_check_job_requirements_no_reqs(db):
     inventory = {}
     missing = check_job_requirements("skip_trace", inventory)
     assert missing == []
+
+
+# --- handle_slash_use tests ---
+
+def _make_game(db):
+    from noir.game import Game
+    from noir.llm.mock import MockLLMBackend
+    return Game(conn=db, llm=MockLLMBackend())
+
+
+def test_handle_slash_use_too_few_args(db):
+    game = _make_game(db)
+    # Should not raise even with empty args
+    game.handle_slash_use("")
+
+
+def test_handle_slash_use_item_not_owned(db):
+    game = _make_game(db)
+    # Player has no items — should not raise
+    assert get_player_items(db) == {}
+    game.handle_slash_use("camera photograph")
+
+
+def test_handle_slash_use_consumes_film(db):
+    game = _make_game(db)
+    add_player_item(db, slug="camera", quantity=1)
+    add_player_item(db, slug="film", quantity=3)
+    game.handle_slash_use("camera photograph")
+    items = get_player_items(db)
+    assert items.get("film", 0) == 2
+
+
+def test_handle_slash_use_missing_consumable(db):
+    game = _make_game(db)
+    add_player_item(db, slug="camera", quantity=1)
+    # no film — action should be blocked, film quantity stays 0
+    game.handle_slash_use("camera photograph")
+    items = get_player_items(db)
+    assert items.get("film", 0) == 0
