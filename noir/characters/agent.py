@@ -141,7 +141,7 @@ class Agent:
             return history
         parts = []
         if summaries:
-            parts.append("Prior conversations with this detective (summarized):\n" + "\n---\n".join(summaries))
+            parts.append("How prior exchanges with this detective felt (emotional record only — not case facts):\n" + "\n---\n".join(summaries))
         if opinion:
             parts.append(f"Your current impression of this detective: {opinion}")
         memory_block = "\n\n".join(parts)
@@ -163,8 +163,11 @@ class Agent:
         "\n\n"
         "You are processing a conversation from a 1935 noir detective game. "
         "Return ONLY valid JSON with four fields:\n"
-        "\"summary\": 2-4 sentences covering personal facts the detective revealed about themselves, "
-        "any commitments or plans mentioned, and key information exchanged. Factual and specific.\n"
+        "\"summary\": 1-2 sentences about the emotional tone of this exchange — "
+        "how the detective carried themselves, what their approach revealed about their character, "
+        "whether trust or wariness moved. "
+        "NO factual claims: no names of third parties, no case details, no locations, no events. "
+        "Emotional and relational content only.\n"
         "\"npc_opinion\": 1-2 sentences in the NPC's voice describing their current read on this detective — "
         "their gut feeling, what they trust or distrust, what they find useful or irritating. "
         "If a prior opinion is provided, evolve it based on this conversation rather than starting fresh. "

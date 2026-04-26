@@ -42,7 +42,11 @@ _COMPANION_SUMMARY_SYSTEM = (
     "\n\n"
     "You are processing a conversation between a detective and their partner in a 1935 noir game. "
     "Return ONLY valid JSON with five fields:\n"
-    "\"summary\": 2-4 sentences covering investigation facts discussed, leads followed, case progress. Factual and specific.\n"
+    "\"summary\": 1-2 sentences about the emotional current of this exchange — "
+    "how the detective and partner related to each other, what was spoken or unspoken between them, "
+    "whether the connection deepened or strained. "
+    "NO factual claims: no invented names, no case details, no locations, no events. "
+    "Emotional and relational content only.\n"
     "\"npc_opinion\": null\n"
     "\"affection_delta\": an integer from -5 to 10 representing how this conversation moved the relationship. "
     "Positive means warmer. Negative means colder. Most conversations: 0-3. "
@@ -97,7 +101,7 @@ class Companion(Agent):
 
         parts = []
         if case_summaries:
-            parts.append("This case so far (summarized):\n" + "\n---\n".join(case_summaries))
+            parts.append("How your exchanges with the detective have felt (emotional record only — not case facts):\n" + "\n---\n".join(case_summaries))
         if relationship:
             parts.append(f"Your private feelings about this detective: {relationship}")
 
