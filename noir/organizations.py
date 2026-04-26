@@ -162,6 +162,71 @@ SEEDED_ORGANIZATIONS = [
         "is_hierarchical": 1,
         "influence": 7,
     },
+    {
+        "name": "Shorties",
+        "type": "political",
+        "description": (
+            "Supporters of the Short machine — the populist political network built by Governor Short "
+            "and maintained by his successors. Provides patronage jobs, infrastructure contracts, and "
+            "political protection to its members. Deliberately race-neutral in its public programs, "
+            "which is both its strength and the source of its enemies. Membership spans class and "
+            "neighborhood lines in a way unusual for New Orleans politics."
+        ),
+        "is_hierarchical": 1,
+        "influence": 8,
+    },
+    {
+        "name": "Tallboys",
+        "type": "political",
+        "description": (
+            "The anti-Short coalition — a loose alliance of old-guard political families, business "
+            "interests, and reactionary elements who feel the Short machine stole what was rightfully "
+            "theirs. The coalition includes former KKK members who lost power during the Short years "
+            "and have not forgotten it. Unified by resentment more than ideology. Predominantly white, "
+            "Catholic, and drawn from families with pre-Short political ties."
+        ),
+        "is_hierarchical": 0,
+        "influence": 6,
+    },
+    {
+        "name": "Chamber of Commerce",
+        "type": "political",
+        "description": (
+            "The organized voice of New Orleans business interests. Aggressively anti-union, "
+            "hostile to labor organizing, and focused on keeping wages low and regulations light. "
+            "Corrupt in the way of influence peddling and favorable contracts rather than street-level "
+            "graft. Members are merchants, manufacturers, and property owners. Membership is exclusively "
+            "white."
+        ),
+        "is_hierarchical": 1,
+        "influence": 7,
+    },
+    {
+        "name": "NAACP New Orleans Chapter",
+        "type": "civic",
+        "description": (
+            "The New Orleans chapter of the National Association for the Advancement of Colored People. "
+            "Focused on legal challenges to segregation, voter suppression, and police brutality. "
+            "Operates with limited resources under constant pressure. Membership is Black and includes "
+            "professionals, clergy, and community leaders. Works through legal channels where possible; "
+            "maintains community networks where it cannot."
+        ),
+        "is_hierarchical": 1,
+        "influence": 5,
+    },
+    {
+        "name": "The Press",
+        "type": "press",
+        "description": (
+            "The loose network of journalists, editors, and publishers working in Noirleans — "
+            "primarily the white dailies but including the Black press. The press has the power to "
+            "expose and to bury, and everyone in the city knows it. Journalists are poorly paid, "
+            "often corrupt, and occasionally brave. Membership is informal — anyone with press "
+            "credentials and a story."
+        ),
+        "is_hierarchical": 0,
+        "influence": 5,
+    },
 ]
 
 

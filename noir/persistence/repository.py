@@ -61,6 +61,80 @@ def get_all_faction_reps(conn: sqlite3.Connection) -> dict[str, int]:
     return {r["faction"]: r["reputation"] for r in rows}
 
 
+def create_job(conn: sqlite3.Connection, *, faction: str, tier: int,
+               title: str, payout: int, case_data: dict) -> int:
+    cur = conn.execute(
+        """INSERT INTO cases (archetype, title, case_data, status, case_type, faction, tier, payout)
+           VALUES ('job', ?, ?, 'pending', 'job', ?, ?, ?)""",
+        (title, json.dumps(case_data), faction, tier, payout)
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def get_active_jobs(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM cases WHERE case_type='job' AND status='active' ORDER BY created_at"
+    ).fetchall()
+
+
+def get_available_jobs(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    from noir.jobs.factions import TIER_REP_THRESHOLDS
+    rows = conn.execute(
+        """SELECT c.*, COALESCE(fr.reputation, 0) as faction_rep
+           FROM cases c
+           LEFT JOIN faction_reputation fr ON c.faction = fr.faction
+           WHERE c.case_type='job' AND c.status='pending'
+           ORDER BY c.tier, c.created_at"""
+    ).fetchall()
+    return [r for r in rows if (r["faction_rep"] or 0) >= TIER_REP_THRESHOLDS.get(r["tier"] or 1, 0)]
+
+
+def create_job_offer(conn: sqlite3.Connection, *, npc_id: int) -> int:
+    cur = conn.execute("INSERT INTO job_offers (npc_id) VALUES (?)", (npc_id,))
+    conn.commit()
+    return cur.lastrowid
+
+
+def accept_job_offer(conn: sqlite3.Connection, *, offer_id: int, case_id: int) -> None:
+    conn.execute(
+        "UPDATE job_offers SET accepted=1, case_id=? WHERE id=?",
+        (case_id, offer_id)
+    )
+    conn.commit()
+
+
+def decline_job_offer(conn: sqlite3.Connection, *, offer_id: int) -> None:
+    conn.execute("UPDATE job_offers SET accepted=-1 WHERE id=?", (offer_id,))
+    conn.commit()
+
+
+def get_pending_job_offers(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(
+        """SELECT jo.*, n.name as npc_name FROM job_offers jo
+           JOIN npcs n ON jo.npc_id = n.id
+           WHERE jo.accepted=0 ORDER BY jo.offered_at DESC"""
+    ).fetchall()
+
+
+def complete_job(conn: sqlite3.Connection, *, case_id: int,
+                 payout: int, faction: str, tier: int) -> None:
+    from noir.jobs.factions import TIER_REP_GAINS, get_opposition_penalties
+    conn.execute("UPDATE cases SET status='completed' WHERE id=?", (case_id,))
+    conn.commit()
+    update_player_cash(conn, delta=payout)
+    update_faction_rep(conn, faction, TIER_REP_GAINS[tier])
+    for opp_faction, penalty in get_opposition_penalties(faction):
+        update_faction_rep(conn, opp_faction, -penalty)
+
+
+def fail_job(conn: sqlite3.Connection, *, case_id: int, faction: str, tier: int) -> None:
+    from noir.jobs.factions import TIER_REP_LOSSES
+    conn.execute("UPDATE cases SET status='failed' WHERE id=?", (case_id,))
+    conn.commit()
+    update_faction_rep(conn, faction, -TIER_REP_LOSSES[tier])
+
+
 def update_player_stats(conn: sqlite3.Connection, *,
                         cases_solved_delta: int = 0, wrong_arrests_delta: int = 0) -> None:
     conn.execute(
