@@ -12,6 +12,8 @@ MODEL_NAME = "all-MiniLM-L6-v2"
 
 def init(db_path: str, *, no_embeddings: bool = False) -> None:
     global _no_embeddings, _model, _worker
+    if _model is not None or _no_embeddings:
+        return
     if no_embeddings:
         _no_embeddings = True
         return
@@ -27,13 +29,15 @@ def init(db_path: str, *, no_embeddings: bool = False) -> None:
 
 
 def shutdown() -> None:
-    global _worker
+    global _worker, _model, _no_embeddings
     if _worker is not None:
         _worker.shutdown()
         _worker = None
+    _model = None
+    _no_embeddings = False
 
 
-def embed(text: str):
+def embed(text: str) -> "np.ndarray | None":
     if _no_embeddings or _model is None:
         return None
     try:
@@ -50,7 +54,7 @@ def enqueue(*, row_id: int, text: str) -> None:
 
 
 def is_available() -> bool:
-    return not _no_embeddings and _model is not None
+    return not _no_embeddings and _model is not None and _worker is not None
 
 
 def _encode(text: str):
@@ -59,15 +63,17 @@ def _encode(text: str):
 
 def _schedule_backfill(db_path: str) -> None:
     import threading
-    from noir.memory.backfill import run_backfill
 
     def _run():
         try:
+            from noir.memory.backfill import run_backfill
             import sqlite3 as _sqlite3
             conn = _sqlite3.connect(db_path)
             conn.row_factory = _sqlite3.Row
-            run_backfill(conn)
-            conn.close()
+            try:
+                run_backfill(conn)
+            finally:
+                conn.close()
         except Exception as e:
             _log.warning("backfill failed: %s", e)
 

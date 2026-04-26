@@ -25,7 +25,7 @@ def run_backfill(conn: sqlite3.Connection) -> None:
                 vec = _mem._encode(row["content"])
                 conn.execute(
                     "UPDATE conversation_history SET embedding=? WHERE id=?",
-                    (vec.tobytes(), row["id"])
+                    (vec.astype("float32").tobytes(), row["id"])
                 )
             except Exception as e:
                 _log.warning("backfill failed for row %d: %s", row["id"], e)

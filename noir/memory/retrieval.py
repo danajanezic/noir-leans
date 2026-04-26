@@ -26,9 +26,10 @@ def retrieve_relevant_history(
 
     rows = conn.execute(
         "SELECT id, role, content, embedding FROM conversation_history "
-        "WHERE character_id=? AND embedding IS NOT NULL ORDER BY id",
+        "WHERE character_id=? AND embedding IS NOT NULL ORDER BY id DESC LIMIT 500",
         (character_id,)
     ).fetchall()
+    rows = list(reversed(rows))
 
     if not rows:
         return []
