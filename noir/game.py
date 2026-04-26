@@ -70,7 +70,7 @@ from noir.cases.trial import TrialSystem
 from noir.onboarding.quiz import Quiz, QUIZ_QUESTIONS
 from noir.onboarding.cold_open import ColdOpen
 from noir.world import World
-from noir.items import ITEM_CATALOG, get_item_def, detect_item_action
+from noir.items import ITEM_CATALOG, get_item_def, detect_item_action, check_job_requirements
 from noir.persistence.repository import use_item
 from noir.map import render_map, FACTION_LEGEND, MARKER_LEGEND
 
@@ -1418,6 +1418,15 @@ class Game:
 
         if arrival:
             show_dialogue(self.companion.name, arrival)
+        missing = self._get_missing_required_items_for_active_job()
+        if missing and self.companion:
+            missing_str = " and ".join(missing)
+            nudge_prompt = (
+                f"[The detective is heading to work on a job and is missing: {missing_str}. "
+                f"Remind them in one in-character sentence — don't say 'the job', be specific about what they need.]"
+            )
+            nudge = self.companion.narrate(nudge_prompt, record=False)
+            show_partner_aside(self.companion.name, nudge)
         self._check_faction_tension()
 
     def handle_talk(self, target: str) -> None:
@@ -3698,6 +3707,22 @@ class Game:
             console.print(f"[dim]-${price}. {item_def['name']} added.[/dim]")
         else:
             console.print(f"[dim]-${price}. {item_def['name']} is yours.[/dim]")
+
+    def _get_missing_required_items_for_active_job(self) -> list[str]:
+        job = self.conn.execute(
+            "SELECT case_data FROM cases WHERE case_type='job' AND status='active' LIMIT 1"
+        ).fetchone()
+        if not job:
+            return []
+        try:
+            data = json.loads(job["case_data"]) if isinstance(job["case_data"], str) else job["case_data"]
+            archetype_slug = data.get("job_archetype", "")
+        except Exception:
+            return []
+        if not archetype_slug:
+            return []
+        inventory = get_player_items(self.conn)
+        return check_job_requirements(archetype_slug, inventory)
 
     def handle_slash_done(self) -> None:
         """Mark an active job complete after confirming the objective was met."""
