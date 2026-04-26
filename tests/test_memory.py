@@ -132,3 +132,35 @@ def test_memory_enqueue_noop_when_unavailable():
     mem._no_embeddings = True
     mem._worker = None
     mem.enqueue(row_id=1, text="test")  # must not raise
+
+
+def test_backfill_embeds_null_rows(tmp_path):
+    """run_backfill embeds all rows with embedding IS NULL."""
+    import sqlite3
+    import numpy as np
+    import noir.memory as mem
+    from noir.memory.backfill import run_backfill
+
+    conn = sqlite3.connect(str(tmp_path / "test.db"))
+    conn.row_factory = sqlite3.Row
+    conn.execute("""
+        CREATE TABLE conversation_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            character_id TEXT, role TEXT, content TEXT, case_id INTEGER, embedding BLOB
+        )
+    """)
+    conn.execute("INSERT INTO conversation_history (character_id, role, content) VALUES ('p', 'user', 'hello world')")
+    conn.execute("INSERT INTO conversation_history (character_id, role, content) VALUES ('p', 'assistant', 'already embedded')")
+    already = np.zeros(3, dtype=np.float32).tobytes()
+    conn.execute("UPDATE conversation_history SET embedding=? WHERE id=2", (already,))
+    conn.commit()
+
+    # Patch the model to use a fake encoder
+    mem._no_embeddings = False
+    mem._model = type("M", (), {"encode": staticmethod(lambda t, **kw: np.ones(3, dtype=np.float32))})()
+
+    run_backfill(conn)
+
+    rows = conn.execute("SELECT id, embedding FROM conversation_history ORDER BY id").fetchall()
+    assert rows[0]["embedding"] is not None  # was NULL, now filled
+    assert rows[1]["embedding"] == already   # pre-existing, unchanged
