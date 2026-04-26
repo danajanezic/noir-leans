@@ -74,6 +74,10 @@ def get_neighborhood_id(conn: sqlite3.Connection, slug: str) -> int | None:
     return row["id"] if row else None
 
 
+def travel_time_minutes(*, distance: int, is_ferry: bool) -> int:
+    return distance * 15 + (15 if is_ferry else 0)
+
+
 def is_algiers_crossing(from_slug: str, to_slug: str) -> bool:
     return (from_slug in _ALGIERS_SIDE) != (to_slug in _ALGIERS_SIDE)
 

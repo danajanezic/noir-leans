@@ -1297,9 +1297,22 @@ class Game:
         if loc["case_id"] is not None and not loc["discovered"]:
             console.print(f"[red]'{target}' doesn't ring any bells. Try somewhere else.[/red]")
             return
+        _prev_location_id = self.current_location_id
         self.current_location_id = loc["id"]
         set_character_location(self.conn, character_id="player", location_id=loc["id"])
-        advance_game_time(self.conn, delta=30)
+        _travel_delta = 30  # default: same neighborhood or no adjacency data
+        from noir.persistence.repository import get_neighborhood_for_location as _get_hood
+        _dest_hood = _get_hood(self.conn, loc["id"])
+        if _dest_hood and _prev_location_id is not None:
+            _orig_hood = _get_hood(self.conn, _prev_location_id)
+            if _orig_hood and _orig_hood["slug"] != _dest_hood["slug"]:
+                from noir.neighborhoods import travel_time_minutes, is_algiers_crossing
+                from noir.persistence.repository import get_travel_distance
+                _dist = get_travel_distance(self.conn, _orig_hood["slug"], _dest_hood["slug"])
+                if _dist is not None:
+                    _ferry = is_algiers_crossing(_orig_hood["slug"], _dest_hood["slug"])
+                    _travel_delta = travel_time_minutes(distance=_dist, is_ferry=_ferry)
+        advance_game_time(self.conn, delta=_travel_delta)
         npcs = self.world.get_npcs_at(loc["id"])
         npc_names = [_npc_display_name(npc) for npc in npcs]
 

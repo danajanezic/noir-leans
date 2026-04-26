@@ -1,4 +1,4 @@
-from noir.neighborhoods import seed_neighborhoods, get_neighborhood_id, compute_danger, recompute_all_danger
+from noir.neighborhoods import seed_neighborhoods, get_neighborhood_id, compute_danger, recompute_all_danger, travel_time_minutes
 from noir.persistence.repository import (
     get_neighborhood_for_location,
     get_travel_distance,
@@ -159,3 +159,15 @@ def test_recompute_all_danger_updates_db(db):
         "SELECT danger FROM neighborhoods WHERE slug='french_quarter'"
     ).fetchone()
     assert 1 <= row["danger"] <= 5
+
+
+def test_travel_time_adjacent():
+    assert travel_time_minutes(distance=1, is_ferry=False) == 15
+
+
+def test_travel_time_two_blocks():
+    assert travel_time_minutes(distance=2, is_ferry=False) == 30
+
+
+def test_travel_time_ferry_surcharge():
+    assert travel_time_minutes(distance=2, is_ferry=True) == 45
