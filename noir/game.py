@@ -1575,6 +1575,7 @@ class Game:
                 set_npc_revelation_summary(self.conn, npc_row["id"], response[:500])
             advance_game_time(self.conn, delta=5)
             self._check_npc_bribe_offer(npc_row, response)
+            self._check_npc_job_offer(npc_row, response)
             self._check_npc_appointment(npc_row["id"], npc_row["name"], player_input, response)
             self._check_npc_romance_milestone(npc_row["id"], npc)
             # Re-classify events with the actual response now that it's available
@@ -3625,6 +3626,81 @@ class Game:
             console.print(f"[dim]${amount} in your pocket. You know what they expect.[/dim]")
         else:
             console.print(f"[dim]You've agreed. They'll expect you to follow through.[/dim]")
+
+    _JOB_KEYWORDS = frozenset([
+        "job", "work for me", "errand", "task", "assignment",
+        "need someone", "need a man", "reliable person", "discreet",
+        "money in it", "paid well", "compensate you",
+        "little work", "small job", "favor for me",
+    ])
+
+    def _check_npc_job_offer(self, npc_row, response: str) -> None:
+        """Detect if NPC just offered the player a job and prompt acceptance."""
+        resp_lower = response.lower()
+        if not any(kw in resp_lower for kw in self._JOB_KEYWORDS):
+            return
+
+        offer = self.llm.query_structured(
+            "Determine if the NPC dialogue contains an offer of paid work or a job for the player. "
+            "Do not flag general conversation about work or jobs — only a specific offer to the player. "
+            "Return ONLY valid JSON: "
+            "{\"job_offered\": true|false, \"job_type\": \"string or null\", "
+            "\"faction_hint\": \"string or null\"}",
+            [],
+            f"NPC said: \"{response[:400]}\""
+        )
+        if not offer.get("job_offered"):
+            return
+
+        console.print(f"\n[yellow dim]{npc_row['name']} has work for you. Interested? (yes/no)[/yellow dim]")
+        resp = console.input("[bold white]> [/bold white]").strip().lower()
+        offer_id = create_job_offer(self.conn, npc_id=npc_row["id"])
+        if resp != "yes":
+            decline_job_offer(self.conn, offer_id=offer_id)
+            console.print("[dim]You pass.[/dim]")
+            return
+        self._activate_npc_job_offer(npc_row, offer_id, offer.get("faction_hint"))
+
+    def _activate_npc_job_offer(self, npc_row, offer_id: int,
+                                 faction_hint: str | None) -> None:
+        """Generate and activate a job offered by an NPC."""
+        from noir.jobs.generator import JobGenerator
+        from noir.jobs.factions import faction_slug_for_npc, TIER_REP_THRESHOLDS
+
+        npc_faction = faction_slug_for_npc(self.conn, npc_row["id"])
+        faction = npc_faction or "private"
+
+        tier = 1
+        if faction != "private":
+            rep = get_faction_rep(self.conn, faction)
+            if rep >= TIER_REP_THRESHOLDS[2]:
+                tier = 2
+
+        gen = JobGenerator(self.llm, self.conn)
+        job = gen.generate(faction=faction, tier=tier)
+        if not job:
+            console.print("[dim]They seem to have changed their mind.[/dim]")
+            decline_job_offer(self.conn, offer_id=offer_id)
+            return
+
+        job_id = create_job(
+            self.conn,
+            faction=job["faction"],
+            tier=job["tier"],
+            title=job["title"],
+            payout=job["payout"],
+            case_data=job["case_data"],
+        )
+        self.conn.execute("UPDATE cases SET status='active' WHERE id=?", (job_id,))
+        self.conn.commit()
+        accept_job_offer(self.conn, offer_id=offer_id, case_id=job_id)
+
+        try:
+            data = job["case_data"]
+            objective = data.get("objective", "") if isinstance(data, dict) else ""
+        except Exception:
+            objective = ""
+        console.print(f"[dim]Job taken. {objective}[/dim]")
 
     def _determine_bribe_effect(self, npc_id: int) -> dict:
         """Figure out what a bribe to this NPC would affect, given the current case state."""
