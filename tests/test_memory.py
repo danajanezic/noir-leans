@@ -387,3 +387,15 @@ def test_set_active_case_syncs_companion_case_id():
     g._set_active_case(None)
     assert g.active_case_id is None
     assert g.companion.case_id is None
+
+
+def test_memory_init_and_shutdown_no_crash(tmp_path):
+    """init() and shutdown() complete without error when no_embeddings=True."""
+    import noir.memory as mem
+    mem._no_embeddings = False
+    mem._model = None
+    mem._worker = None
+
+    mem.init(str(tmp_path / "m.db"), no_embeddings=True)
+    assert mem.is_available() is False
+    mem.shutdown()  # must not raise
