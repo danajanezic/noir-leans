@@ -4,6 +4,8 @@ from noir.persistence.repository import (
     get_travel_distance,
     get_neighborhood_factions,
     get_all_neighborhoods,
+    get_neighborhood_by_slug,
+    update_neighborhood_danger,
 )
 
 
@@ -107,3 +109,22 @@ def test_get_neighborhood_for_location(db):
     result = get_neighborhood_for_location(db, loc_id)
     assert result is not None
     assert result["slug"] == "french_quarter"
+
+
+def test_get_neighborhood_by_slug(db):
+    seed_neighborhoods(db)
+    row = get_neighborhood_by_slug(db, "french_quarter")
+    assert row is not None
+    assert row["slug"] == "french_quarter"
+
+
+def test_get_neighborhood_by_slug_missing(db):
+    seed_neighborhoods(db)
+    assert get_neighborhood_by_slug(db, "nonexistent") is None
+
+
+def test_update_neighborhood_danger(db):
+    seed_neighborhoods(db)
+    update_neighborhood_danger(db, "french_quarter", 4)
+    row = get_neighborhood_by_slug(db, "french_quarter")
+    assert row["danger"] == 4
