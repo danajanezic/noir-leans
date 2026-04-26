@@ -29,7 +29,8 @@ def test_embedding_worker_processes_task(tmp_path):
     import sqlite3
     from noir.memory.worker import EmbeddingQueueWorker
 
-    conn = sqlite3.connect(str(tmp_path / "test.db"), check_same_thread=False)
+    db_path = str(tmp_path / "test.db")
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.execute("""
         CREATE TABLE conversation_history (
@@ -53,7 +54,7 @@ def test_embedding_worker_processes_task(tmp_path):
         results.append(text)
         return vec
 
-    worker = EmbeddingQueueWorker(conn=conn, embed_fn=fake_embed)
+    worker = EmbeddingQueueWorker(db_path=db_path, embed_fn=fake_embed)
     worker.enqueue(row_id=row_id, text="hello")
     worker.shutdown()
 
@@ -70,7 +71,8 @@ def test_embedding_worker_shutdown_drains_queue(tmp_path):
     from noir.memory.worker import EmbeddingQueueWorker
     import numpy as np
 
-    conn = sqlite3.connect(str(tmp_path / "test.db"))
+    db_path = str(tmp_path / "test.db")
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.execute("""
         CREATE TABLE conversation_history (
@@ -87,9 +89,16 @@ def test_embedding_worker_shutdown_drains_queue(tmp_path):
         processed.append(text)
         return np.zeros(3, dtype=np.float32)
 
-    worker = EmbeddingQueueWorker(conn=conn, embed_fn=fake_embed)
+    worker = EmbeddingQueueWorker(db_path=db_path, embed_fn=fake_embed)
     for i in range(1, 6):
         worker.enqueue(row_id=i, text=f"msg{i-1}")
     worker.shutdown()
 
     assert len(processed) == 5
+
+    # Verify embeddings were actually written to DB
+    rows = conn.execute("SELECT id, embedding FROM conversation_history ORDER BY id").fetchall()
+    for row in rows:
+        assert row["embedding"] is not None, f"Row {row['id']} embedding not stored"
+        stored = np.frombuffer(row["embedding"], dtype=np.float32)
+        assert np.allclose(stored, np.zeros(3, dtype=np.float32))

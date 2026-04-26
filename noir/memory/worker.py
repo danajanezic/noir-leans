@@ -12,8 +12,8 @@ _STOP = object()
 class EmbeddingQueueWorker:
     """Background daemon thread that embeds text and writes vectors back to conversation_history."""
 
-    def __init__(self, conn: sqlite3.Connection, embed_fn: Callable[[str], np.ndarray]) -> None:
-        self._conn = conn
+    def __init__(self, db_path: str, embed_fn: Callable[[str], np.ndarray]) -> None:
+        self._db_path = db_path
         self._embed_fn = embed_fn
         self._q: queue.Queue = queue.Queue()
         self._thread = threading.Thread(target=self._run, daemon=True, name="embedding-queue")
@@ -29,17 +29,21 @@ class EmbeddingQueueWorker:
             _log.warning("embedding-queue worker did not stop within timeout")
 
     def _run(self) -> None:
-        while True:
-            item = self._q.get()
-            if item is _STOP:
-                break
-            row_id, text = item
-            try:
-                vec = self._embed_fn(text)
-                self._conn.execute(
-                    "UPDATE conversation_history SET embedding=? WHERE id=?",
-                    (vec.astype(np.float32).tobytes(), row_id)
-                )
-                self._conn.commit()
-            except Exception as e:
-                _log.warning("embedding worker error for row %d: %s", row_id, e)
+        conn = sqlite3.connect(self._db_path)
+        try:
+            while True:
+                item = self._q.get()
+                if item is _STOP:
+                    break
+                row_id, text = item
+                try:
+                    vec = self._embed_fn(text)
+                    conn.execute(
+                        "UPDATE conversation_history SET embedding=? WHERE id=?",
+                        (vec.astype(np.float32).tobytes(), row_id)
+                    )
+                    conn.commit()
+                except Exception as e:
+                    _log.warning("embedding worker error for row %d: %s", row_id, e)
+        finally:
+            conn.close()
