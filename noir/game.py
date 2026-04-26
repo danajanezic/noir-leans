@@ -14,7 +14,7 @@ from noir.display import (
     show_conversation_header, show_conversation_footer, show_evidence, show_partner_aside,
     show_relationships, show_dossier, show_dossier_all, show_cases, show_player_profile,
     npc_input_prompt, show_player_turn,
-    show_wait_result, fmt_game_time, console, enable_game_padding
+    show_wait_result, fmt_game_time, console, enable_game_padding, show_items
 )
 from noir.parser import parse_command, Intent
 from noir.llm.base import LLMBackend, FatalLLMError
@@ -46,7 +46,7 @@ from noir.persistence.repository import (
     initialize_npc_relationship,
     get_npc_revelation_summary, set_npc_revelation_summary,
     get_organizations_for_npc, get_organizations_for_location,
-    get_player_cash, update_player_cash,
+    get_player_cash, update_player_cash, get_player_items,
     record_bribe, get_accepted_bribes_for_case,
     get_npc_corruption, set_npc_corruption,
     get_organization_by_name, add_organization_member,
@@ -70,6 +70,7 @@ from noir.cases.trial import TrialSystem
 from noir.onboarding.quiz import Quiz, QUIZ_QUESTIONS
 from noir.onboarding.cold_open import ColdOpen
 from noir.world import World
+from noir.items import ITEM_CATALOG
 from noir.map import render_map, FACTION_LEGEND, MARKER_LEGEND
 
 
@@ -3583,9 +3584,6 @@ class Game:
             console.print("[dim]Nobody knows your name yet. Do some work.[/dim]")
 
     def handle_slash_items(self) -> None:
-        from noir.items import ITEM_CATALOG
-        from noir.persistence.repository import get_player_items
-        from noir.display import show_items
         inventory = get_player_items(self.conn)
         show_items(inventory, ITEM_CATALOG)
 
