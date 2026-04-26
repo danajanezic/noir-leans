@@ -64,12 +64,19 @@ def get_partner(conn: sqlite3.Connection) -> sqlite3.Row | None:
 
 
 def append_history(conn: sqlite3.Connection, *, character_id: str, role: str,
-                   content: str, case_id: int | None) -> None:
-    conn.execute(
+                   content: str, case_id: int | None) -> int:
+    cursor = conn.execute(
         "INSERT INTO conversation_history (character_id, role, content, case_id) VALUES (?, ?, ?, ?)",
         (character_id, role, content, case_id)
     )
     conn.commit()
+    row_id: int = cursor.lastrowid
+    try:
+        import noir.memory as _mem
+        _mem.enqueue(row_id=row_id, text=content)
+    except Exception:
+        pass
+    return row_id
 
 
 def get_history(conn: sqlite3.Connection, *, character_id: str,

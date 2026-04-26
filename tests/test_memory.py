@@ -264,3 +264,29 @@ def test_retrieve_returns_empty_when_no_embeddings(tmp_path):
 
     results = retrieve_relevant_history(conn, character_id="partner", query="hello", k=8, recency=4)
     assert results == []
+
+
+def test_append_history_posts_embed_task(tmp_path, monkeypatch):
+    """append_history enqueues an embed task and returns the row_id."""
+    import sqlite3
+    import noir.memory as mem
+    from noir.persistence.repository import append_history
+
+    conn = sqlite3.connect(str(tmp_path / "ah.db"))
+    conn.row_factory = sqlite3.Row
+    conn.execute("""
+        CREATE TABLE conversation_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            character_id TEXT, role TEXT, content TEXT, case_id INTEGER, embedding BLOB
+        )
+    """)
+
+    enqueued = []
+    monkeypatch.setattr(mem, "_no_embeddings", False)
+    monkeypatch.setattr(mem, "_worker", type("W", (), {"enqueue": staticmethod(lambda **kw: enqueued.append(kw))})())
+
+    row_id = append_history(conn, character_id="partner", role="user", content="hello", case_id=None)
+
+    assert isinstance(row_id, int)
+    assert row_id > 0
+    assert enqueued == [{"row_id": row_id, "text": "hello"}]
