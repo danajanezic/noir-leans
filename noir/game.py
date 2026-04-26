@@ -1267,10 +1267,12 @@ class Game:
 
         markers: dict[str, list[str]] = {}
 
+        import sys
         rendered = render_map(self.conn, current_slug, markers)
-        console.print()
-        console.print(rendered, end='')
-        console.print()
+        sys.stdout.write('\n')
+        sys.stdout.write(rendered)
+        sys.stdout.write('\n')
+        sys.stdout.flush()
         console.print(FACTION_LEGEND)
         console.print(MARKER_LEGEND)
         console.print()
