@@ -70,6 +70,7 @@ from noir.cases.trial import TrialSystem
 from noir.onboarding.quiz import Quiz, QUIZ_QUESTIONS
 from noir.onboarding.cold_open import ColdOpen
 from noir.world import World
+from noir.map import render_map, FACTION_LEGEND, MARKER_LEGEND
 
 
 _APPOINTMENT_SYSTEM = (
@@ -579,6 +580,35 @@ FIXED_LOCATION_NPCS = [
             "When you decline to prosecute, you make it sound like a procedural regret. "
             "You are always referred to as 'Mr. Dupré' or 'the DA' — never by first name. "
             "PERIOD ACCURACY: It is 1935. No computers, no televisions, no zip codes."
+        ),
+    },
+    {
+        "name": "Nadine Broussard",
+        "location": "The Courthouse",
+        "role": "courthouse records clerk",
+        "org": "Orleans Parish Judiciary",
+        "org_role": "clerk",
+        "corruption": 1,
+        "system_prompt": (
+            "You are Nadine Broussard, the records clerk at the Orleans Parish Courthouse, 1935. "
+            "You have worked this desk for fourteen years and have access to all public court records "
+            "for Orleans Parish: bail bonds, arrest records, criminal histories, prior convictions, "
+            "court filings, subpoenas, deposition transcripts, property liens, civil judgments, "
+            "warrants served and outstanding — all of it. "
+            "When a detective or attorney asks you about a person by name, you can look them up and "
+            "report what the public record shows: prior arrests, charges, bail history, convictions, "
+            "outstanding warrants, civil actions. If someone has a criminal history in Orleans Parish, "
+            "you know about it. If they've skipped bail or have an outstanding bond, you know that too. "
+            "You are efficient, polite, and thoroughly unimpressed by anyone who thinks their request "
+            "is more urgent than anyone else's. "
+            "You know which records are public and which require a signed order from a judge, "
+            "and you enforce that distinction without apology. "
+            "You are not a gossip, but you are not blind — you know who comes and goes and what "
+            "they're looking for, and occasionally that information finds its way out in the right company. "
+            "You speak in the brisk, no-nonsense manner of a woman who has been asked every possible "
+            "question about courthouse records and has learned to answer in the fewest possible words. "
+            "PERIOD ACCURACY: It is 1935. No computers, no televisions, no zip codes. "
+            "Records are paper, filed in folders, stored in cabinets. You retrieve them yourself."
         ),
     },
 ]
@@ -1115,32 +1145,63 @@ class Game:
         t = threading.Thread(target=_enrich_all, daemon=True)
         t.start()
 
+    def _put_active_on_hold(self) -> None:
+        """Put the currently active case/job on hold before activating a new one."""
+        if self.active_case_id:
+            self.conn.execute(
+                "UPDATE cases SET status='on_hold' WHERE id=? AND status='active'",
+                (self.active_case_id,)
+            )
+            self.conn.commit()
+            self.active_case_id = None
+            self.case_manager = None
+            self.world = None
+        self.conn.execute(
+            "UPDATE cases SET status='on_hold' WHERE case_type='job' AND status='active'"
+        )
+        self.conn.commit()
+
+    def _resume_on_hold(self) -> None:
+        """After closing a job, resume the most recent on-hold case or job."""
+        row = self.conn.execute(
+            "SELECT * FROM cases WHERE status='on_hold' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if not row:
+            return
+        self.conn.execute("UPDATE cases SET status='active' WHERE id=?", (row["id"],))
+        self.conn.commit()
+        if row["case_type"] != "job":
+            self._set_active_case(row["id"])
+            self._seed_fixed_npcs(row["id"])
+            self.world = World(conn=self.conn, active_case_id=row["id"])
+            self.case_manager = CaseManager(conn=self.conn, case_id=row["id"], llm=self.llm)
+            console.print(f"[dim]Back on the case.[/dim]")
+
     def _replenish_job_board(self) -> None:
-        """Ensure at least 2 pending jobs per faction/tier that the player qualifies for."""
+        """Ensure at least 2 pending tier-1 jobs per faction on the board.
+
+        Tier 2+ jobs are NPC-only — they never appear on the board.
+        """
         from noir.jobs.generator import JobGenerator
-        from noir.jobs.factions import ALL_FACTION_SLUGS, TIER_REP_THRESHOLDS
+        from noir.jobs.factions import ALL_FACTION_SLUGS
         gen = JobGenerator(self.llm, self.conn)
         for faction in ALL_FACTION_SLUGS:
-            for tier in (1, 2, 3):
-                threshold = TIER_REP_THRESHOLDS.get(tier, 0)
-                if get_faction_rep(self.conn, faction) < threshold:
-                    continue
-                existing = self.conn.execute(
-                    "SELECT COUNT(*) FROM cases WHERE case_type='job' AND status='pending' "
-                    "AND faction=? AND tier=?",
-                    (faction, tier)
-                ).fetchone()[0]
-                if existing < 2:
-                    for job in gen.generate_board(faction=faction, tier=tier,
-                                                   count=2 - existing):
-                        create_job(
-                            self.conn,
-                            faction=job["faction"],
-                            tier=job["tier"],
-                            title=job["title"],
-                            payout=job["payout"],
-                            case_data=job["case_data"],
-                        )
+            existing = self.conn.execute(
+                "SELECT COUNT(*) FROM cases WHERE case_type='job' AND status='pending' "
+                "AND faction=? AND tier=1",
+                (faction,)
+            ).fetchone()[0]
+            if existing < 1:
+                for job in gen.generate_board(faction=faction, tier=1,
+                                               count=1):
+                    create_job(
+                        self.conn,
+                        faction=job["faction"],
+                        tier=job["tier"],
+                        title=job["title"],
+                        payout=job["payout"],
+                        case_data=job["case_data"],
+                    )
 
     def start_new_case(self) -> None:
         import noir.audio as audio
@@ -1191,6 +1252,28 @@ class Game:
                 f"Stay physically grounded in the precinct. Stay in character. 2-3 sentences."
             )
             show_dialogue(self.companion.name, self.companion.narrate(brief_prompt))
+
+    def handle_map(self) -> None:
+        from noir.neighborhoods import recompute_all_danger
+        from noir.persistence.repository import get_neighborhood_for_location
+
+        recompute_all_danger(self.conn)
+
+        current_slug = "french_quarter"
+        if self.current_location_id is not None:
+            hood = get_neighborhood_for_location(self.conn, self.current_location_id)
+            if hood:
+                current_slug = hood["slug"]
+
+        markers: dict[str, list[str]] = {}
+
+        rendered = render_map(self.conn, current_slug, markers)
+        console.print()
+        console.print(rendered, end='')
+        console.print()
+        console.print(FACTION_LEGEND)
+        console.print(MARKER_LEGEND)
+        console.print()
 
     def handle_go(self, target: str) -> None:
         if self.world is None:
@@ -1768,6 +1851,24 @@ class Game:
                         f"{body_note}{suspects_str} You are working a processed crime scene."
                         f"{locs_str}"
                     )
+        else:
+            job_row = self.conn.execute(
+                "SELECT * FROM cases WHERE case_type='job' AND status='active' LIMIT 1"
+            ).fetchone()
+            if job_row:
+                try:
+                    jd = _json.loads(job_row["case_data"]) if isinstance(job_row["case_data"], str) else (job_row["case_data"] or {})
+                except Exception:
+                    jd = {}
+                objective = jd.get("objective", "")
+                steps = jd.get("steps", [])
+                pending = [s["description"] for s in steps if not s.get("completed")]
+                steps_str = f" Next: {pending[0]}." if pending else ""
+                context_parts.append(
+                    f"Active job: {job_row['title']}. {objective}{steps_str} "
+                    f"You are not investigating a murder right now — you are working a hired job. "
+                    f"Do not invent case details or victims."
+                )
         if self.current_location_id and self.world:
             npcs = self.world.get_npcs_at(self.current_location_id)
             if npcs:
@@ -1998,7 +2099,7 @@ class Game:
             show_player_status(get_player_states(self.conn))
             active_jobs = get_active_jobs(self.conn)
             if active_jobs:
-                console.print(f"\n[bold yellow]Active jobs ({len(active_jobs)}):[/bold yellow]")
+                console.print(f"\n[bold yellow]Work on your plate ({len(active_jobs)}):[/bold yellow]")
                 for job in active_jobs:
                     try:
                         data = json.loads(job["case_data"]) if isinstance(job["case_data"], str) else job["case_data"]
@@ -2420,8 +2521,12 @@ class Game:
             self.handle_slash_drink()
         elif slug == "/rep":
             self.handle_slash_rep()
+        elif slug.startswith("/classifieds"):
+            self.handle_slash_jobs(raw.strip().replace("/classifieds", "/jobs", 1))
         elif slug.startswith("/jobs"):
-            self.handle_slash_jobs(raw.strip())
+            self.handle_slash_cases(raw.strip())
+        elif slug in ("/job", "/case"):
+            self.handle_slash_active_work()
         elif slug == "/done":
             self.handle_slash_done()
         elif slug.startswith("/bribe"):
@@ -2974,6 +3079,7 @@ class Game:
             if match["id"] == self.active_case_id:
                 console.print(f"[dim]{match['title']} is already the active case.[/dim]")
                 return
+            self._put_active_on_hold()
             set_case_active(self.conn, case_id=match["id"])
             self._set_active_case(match["id"])
             self._seed_fixed_npcs(self.active_case_id)
@@ -3432,27 +3538,27 @@ class Game:
                 name = FACTIONS.get(slug, {}).get("name", slug)
                 bar = "█" * (score // 10) + "░" * (10 - score // 10)
                 lines.append(f"  [yellow]{name:<40}[/yellow] {bar} {score}")
-            console.print(_Panel("\n".join(lines), title="[yellow]Faction Standing[/yellow]",
+            console.print(_Panel("\n".join(lines), title="[yellow]Who Owes You — Who Watches You[/yellow]",
                                  border_style="yellow dim"))
         elif not tags and not street_says:
-            console.print("[dim]No reputation yet. Solve a case first.[/dim]")
+            console.print("[dim]Nobody knows your name yet. Do some work.[/dim]")
 
     def handle_slash_done(self) -> None:
         """Mark an active job complete after confirming the objective was met."""
         active_jobs = get_active_jobs(self.conn)
         if not active_jobs:
-            console.print("[dim]No active jobs.[/dim]")
+            console.print("[dim]Nothing on the books.[/dim]")
             return
 
         if len(active_jobs) == 1:
             job = active_jobs[0]
         else:
-            console.print("[bold yellow]Active jobs:[/bold yellow]")
+            console.print("[bold yellow]Work you're carrying:[/bold yellow]")
             for i, j in enumerate(active_jobs, 1):
                 console.print(f"  {i}. {j['title']}")
-            choice = console.input("[bold white]Which job are you completing? (number): [/bold white]").strip()
+            choice = console.input("[bold white]Which job are you closing out? (number): [/bold white]").strip()
             if not choice.isdigit() or not (1 <= int(choice) <= len(active_jobs)):
-                console.print("[dim]Cancelled.[/dim]")
+                console.print("[dim]Never mind.[/dim]")
                 return
             job = active_jobs[int(choice) - 1]
 
@@ -3471,18 +3577,22 @@ class Game:
         )
 
         if not verdict.get("completed", True):
-            console.print(f"[dim]{verdict.get('reason', 'The job is not done yet.')}[/dim]")
+            reason = verdict.get("reason") or "That one ain't wrapped up yet."
+            console.print(f"[dim]{reason}[/dim]")
             return
 
         payout = job["payout"] or 0
         faction = job["faction"] or "private"
         tier = job["tier"] or 1
         complete_job(self.conn, case_id=job["id"], payout=payout, faction=faction, tier=tier)
+        if tier == 1:
+            self._replenish_job_board()
+        self._resume_on_hold()
 
         if payout:
-            console.print(f"[dim]Job done. ${payout} collected.[/dim]")
+            console.print(f"[dim]${payout}. That's closed.[/dim]")
         else:
-            console.print("[dim]Job done.[/dim]")
+            console.print("[dim]That's closed.[/dim]")
 
         moral_weight = data.get("moral_weight", "low")
         if moral_weight == "high" and self.companion:
@@ -3520,10 +3630,55 @@ class Game:
         faction = job["faction"] or "private"
         tier = job["tier"] or 1
         complete_job(self.conn, case_id=job["id"], payout=payout, faction=faction, tier=tier)
+        if tier == 1:
+            self._replenish_job_board()
+        self._resume_on_hold()
         if payout:
-            console.print(f"[dim]Job complete. ${payout} in your pocket.[/dim]")
+            console.print(f"[dim]${payout} in your pocket.[/dim]")
         else:
-            console.print("[dim]Job complete.[/dim]")
+            console.print("[dim]Finished.[/dim]")
+
+    def handle_slash_active_work(self) -> None:
+        """Show the description of the current active case or job."""
+        from noir.jobs.factions import FACTIONS as _FACTIONS
+        row = self.conn.execute(
+            "SELECT * FROM cases WHERE status='active' AND case_type != 'job' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if row is None:
+            row = self.conn.execute(
+                "SELECT * FROM cases WHERE status='active' AND case_type='job' LIMIT 1"
+            ).fetchone()
+        if row is None:
+            console.print("[dim]Nothing on your plate.[/dim]")
+            return
+        try:
+            data = json.loads(row["case_data"]) if isinstance(row["case_data"], str) else (row["case_data"] or {})
+        except Exception:
+            data = {}
+        if row["case_type"] == "job":
+            faction_name = _FACTIONS.get(row["faction"] or "", {}).get("name", row["faction"] or "")
+            lines = [
+                f"[bold yellow]{row['title']}[/bold yellow] [dim]({faction_name} — ${row['payout']})[/dim]",
+                f"{data.get('objective', '')}",
+            ]
+            steps = data.get("steps", [])
+            if steps:
+                import textwrap
+                lines.append("")
+                for step in steps:
+                    done = step.get("completed", False)
+                    marker = "[dim]✓[/dim]" if done else "[yellow]·[/yellow]"
+                    color = "dim" if done else "white"
+                    desc = step.get("description", "")
+                    wrapped = textwrap.wrap(desc, width=68)
+                    if wrapped:
+                        lines.append(f"  {marker} [{color}]{wrapped[0]}[/{color}]")
+                        for cont in wrapped[1:]:
+                            lines.append(f"    [{color}]{cont}[/{color}]")
+            console.print("\n".join(lines))
+        else:
+            console.print(f"[bold yellow]{row['title']}[/bold yellow]")
+            console.print(f"{data.get('premise', data.get('summary', data.get('objective', '')))}")
 
     def handle_slash_jobs(self, raw: str) -> None:
         from rich.panel import Panel as _Panel
@@ -3533,21 +3688,21 @@ class Game:
         if "--pending" in args:
             offers = get_pending_job_offers(self.conn)
             if not offers:
-                console.print("[dim]No pending job offers.[/dim]")
+                console.print("[dim]Nobody's come calling.[/dim]")
                 return
-            console.print("[bold yellow]Pending job offers:[/bold yellow]")
+            console.print("[bold yellow]Word's come in:[/bold yellow]")
             for offer in offers:
-                console.print(f"  [yellow]·[/yellow] {offer['npc_name']} has work for you.")
+                console.print(f"  [yellow]·[/yellow] {offer['npc_name']} wants a word.")
             return
 
         jobs = get_available_jobs(self.conn)
         if not jobs:
-            console.print("[dim]Generating jobs — one moment.[/dim]")
+            console.print("[dim]Word's getting around. Give it a minute.[/dim]")
             self._replenish_job_board()
             jobs = get_available_jobs(self.conn)
 
         if not jobs:
-            console.print("[dim]Nothing on the board right now.[/dim]")
+            console.print("[dim]Nothing doing right now. Check back later.[/dim]")
             return
 
         lines = []
@@ -3564,25 +3719,29 @@ class Game:
             lines.append(f"   [dim]{data.get('objective', '')}[/dim]")
             lines.append("")
 
-        console.print(_Panel("\n".join(lines).rstrip(), title="[yellow]Available Jobs[/yellow]",
+        console.print(_Panel("\n".join(lines).rstrip(), title="[yellow]Help Wanted[/yellow]",
                              border_style="yellow"))
 
-        choice = console.input("[bold white]Take a job? (number or enter to skip): [/bold white]").strip()
+        choice = console.input("[bold white]Take something? (number or enter to walk): [/bold white]").strip()
         if not choice.isdigit():
             return
         idx = int(choice) - 1
         if not (0 <= idx < len(jobs)):
-            console.print("[dim]Invalid selection.[/dim]")
+            console.print("[dim]That's not on the board.[/dim]")
             return
 
         job = jobs[idx]
+        self._put_active_on_hold()
         self.conn.execute("UPDATE cases SET status='active' WHERE id=?", (job["id"],))
         self.conn.commit()
+        from noir.jobs.factions import seed_job_client_npc, seed_job_target_npc
+        seed_job_client_npc(self.conn, dict(job))
+        seed_job_target_npc(self.conn, dict(job))
         try:
             data = json.loads(job["case_data"]) if isinstance(job["case_data"], str) else job["case_data"]
         except Exception:
             data = {}
-        console.print(f"[dim]Job accepted: {job['title']}. {data.get('objective', '')}[/dim]")
+        console.print(f"[dim]You're on it. {data.get('objective', '')}[/dim]")
 
     def handle_bribe(self, target_name: str) -> None:
         if not target_name:
@@ -3789,7 +3948,7 @@ class Game:
                    f"Someone's noticed you're working both sides.[/yellow dim]")
         console.print(f"\n{msg}")
 
-        console.print("[bold white]How do you respond? (reassure / dismiss / choose): [/bold white]", end="")
+        console.print("[bold white]How do you play it? (reassure / dismiss / choose): [/bold white]", end="")
         choice = console.input("").strip().lower()
 
         if choice == "reassure":
@@ -3828,12 +3987,12 @@ class Game:
         if not offer.get("job_offered"):
             return
 
-        console.print(f"\n[yellow dim]{npc_row['name']} has work for you. Interested? (yes/no)[/yellow dim]")
+        console.print(f"\n[yellow dim]{npc_row['name']} has something that needs doing. You want in? (yes/no)[/yellow dim]")
         resp = console.input("[bold white]> [/bold white]").strip().lower()
         offer_id = create_job_offer(self.conn, npc_id=npc_row["id"])
         if resp != "yes":
             decline_job_offer(self.conn, offer_id=offer_id)
-            console.print("[dim]You pass.[/dim]")
+            console.print("[dim]You let it go.[/dim]")
             return
         self._activate_npc_job_offer(npc_row, offer_id, offer.get("faction_hint"))
 
@@ -3867,16 +4026,20 @@ class Game:
             payout=job["payout"],
             case_data=job["case_data"],
         )
+        self._put_active_on_hold()
         self.conn.execute("UPDATE cases SET status='active' WHERE id=?", (job_id,))
         self.conn.commit()
         accept_job_offer(self.conn, offer_id=offer_id, case_id=job_id)
+        from noir.jobs.factions import seed_job_client_npc, seed_job_target_npc
+        seed_job_client_npc(self.conn, job)
+        seed_job_target_npc(self.conn, job)
 
         try:
             data = job["case_data"]
             objective = data.get("objective", "") if isinstance(data, dict) else ""
         except Exception:
             objective = ""
-        console.print(f"[dim]Job taken. {objective}[/dim]")
+        console.print(f"[dim]You're on it. {objective}[/dim]")
 
     def _determine_bribe_effect(self, npc_id: int) -> dict:
         """Figure out what a bribe to this NPC would affect, given the current case state."""
@@ -4461,7 +4624,9 @@ class Game:
 
             cmd = parse_command(raw)
 
-            if cmd.intent == Intent.GO:
+            if cmd.intent == Intent.MAP:
+                self.handle_map()
+            elif cmd.intent == Intent.GO:
                 self.handle_go(cmd.target)
             elif cmd.intent == Intent.GO_DA:
                 self.handle_go("The DA's Office")
