@@ -204,3 +204,21 @@ def test_handle_slash_use_missing_consumable(db):
     game.handle_slash_use("camera photograph")
     items = get_player_items(db)
     assert items.get("film", 0) == 0
+
+
+def test_maybe_trigger_item_action_consumes_film(db):
+    game = _make_game(db)
+    add_player_item(db, slug="camera", quantity=1)
+    add_player_item(db, slug="film", quantity=3)
+    game._maybe_trigger_item_action("I take a picture of them")
+    items = get_player_items(db)
+    assert items.get("film", 0) == 2  # decremented by 1
+
+
+def test_maybe_trigger_item_action_blocked_without_consumable(db):
+    game = _make_game(db)
+    add_player_item(db, slug="camera", quantity=1)
+    # no film
+    game._maybe_trigger_item_action("I take a picture of them")
+    items = get_player_items(db)
+    assert items.get("film", 0) == 0  # still 0 — action was blocked
