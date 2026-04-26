@@ -38,11 +38,12 @@ def retrieve_relevant_history(
         np.frombuffer(r["embedding"], dtype=np.float32) for r in rows
     ])
 
-    query_norm = query_vec / (np.linalg.norm(query_vec) + 1e-10)
+    query_norm = np.asarray(query_vec).ravel()
+    query_norm = query_norm / (np.linalg.norm(query_norm) + 1e-10)
     norms = np.linalg.norm(matrix, axis=1, keepdims=True) + 1e-10
     scores = matrix / norms @ query_norm
 
-    top_k_indices = set(np.argsort(scores)[-k:].tolist())
+    top_k_indices = set(np.argsort(scores, kind="stable")[-k:].tolist())
     recency_indices = set(range(max(0, len(rows) - recency), len(rows)))
 
     selected = sorted(top_k_indices | recency_indices)
