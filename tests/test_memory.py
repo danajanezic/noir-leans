@@ -362,3 +362,28 @@ def test_companion_history_falls_back_to_recency_when_unavailable(tmp_path, monk
     dialogue_msgs = [m for m in result if m["role"] in ("user", "assistant")]
     assert len(dialogue_msgs) <= 12
     assert dialogue_msgs[-1]["content"] == "msg19"
+
+
+def test_set_active_case_syncs_companion_case_id():
+    """_set_active_case updates both self.active_case_id and self.companion.case_id."""
+    from unittest.mock import MagicMock
+
+    class FakeGame:
+        def __init__(self):
+            self.active_case_id = None
+            self.companion = MagicMock()
+            self.companion.case_id = None
+
+        def _set_active_case(self, case_id):
+            self.active_case_id = case_id
+            if self.companion is not None:
+                self.companion.case_id = case_id
+
+    g = FakeGame()
+    g._set_active_case(42)
+    assert g.active_case_id == 42
+    assert g.companion.case_id == 42
+
+    g._set_active_case(None)
+    assert g.active_case_id is None
+    assert g.companion.case_id is None

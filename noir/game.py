@@ -893,6 +893,11 @@ class Game:
         self._pending_gen_thread: threading.Thread | None = None
         self._recent_partner_lines: list[str] = []
 
+    def _set_active_case(self, case_id: int | None) -> None:
+        self.active_case_id = case_id
+        if self.companion is not None:
+            self.companion.case_id = case_id
+
     def setup_fixed_locations(self) -> dict[str, int]:
         from noir.organizations import seed_location_org_links
         existing = {loc["name"]: loc["id"] for loc in get_fixed_locations(self.conn)}
@@ -1129,7 +1134,7 @@ class Game:
 
         case_id = create_case(self.conn, archetype=archetype,
                               title=case_data["title"], case_data=case_data)
-        self.active_case_id = case_id
+        self._set_active_case(case_id)
 
         self._seed_case_locations_and_npcs(case_id, case_data, fixed)
         self._seed_fixed_npcs(case_id)
@@ -2400,7 +2405,11 @@ class Game:
             target = parts[1].strip() if len(parts) > 1 else ""
             if target.lower().startswith("to "):
                 target = target[3:].strip()
-            if target and self.companion and target.lower() in self.companion.name.lower():
+            _partner_words = {"partner", "my partner", "companion"}
+            if target and self.companion and (
+                target.lower() in _partner_words
+                or target.lower() in self.companion.name.lower()
+            ):
                 self.handle_talk_partner()
             elif target:
                 self.handle_talk(target)
@@ -2454,6 +2463,26 @@ class Game:
         elif slug in ("/time",):
             gt = get_game_time(self.conn)
             console.print(f"[dim]It is {fmt_game_time(gt)}.[/dim]")
+        elif slug in ("/audio", "/audio on", "/audio off", "/sound", "/sound on", "/sound off"):
+            try:
+                import noir.audio as _audio
+                if slug in ("/audio on", "/sound on"):
+                    wanted = True
+                elif slug in ("/audio off", "/sound off"):
+                    wanted = False
+                else:
+                    wanted = not _audio.is_audio_active()
+                if wanted:
+                    _audio._no_audio = False
+                    if _audio._worker is None:
+                        _audio.init(no_audio=False)
+                    console.print("[dim]Audio on.[/dim]")
+                else:
+                    _audio._no_audio = True
+                    _audio.flush()
+                    console.print("[dim]Audio off.[/dim]")
+            except Exception as e:
+                console.print(f"[dim]Audio toggle failed: {e}[/dim]")
 
     def _check_npc_appointment(self, npc_id: int, npc_name: str,
                                player_input: str, response: str) -> None:
@@ -2896,7 +2925,7 @@ class Game:
                 console.print(f"[dim]{match['title']} is already the active case.[/dim]")
                 return
             set_case_active(self.conn, case_id=match["id"])
-            self.active_case_id = match["id"]
+            self._set_active_case(match["id"])
             self._seed_fixed_npcs(self.active_case_id)
             self.world = World(conn=self.conn, active_case_id=self.active_case_id)
             self.case_manager = CaseManager(conn=self.conn, case_id=self.active_case_id, llm=self.llm)
@@ -3047,7 +3076,7 @@ class Game:
             console.print("[dim]start — open a new case[/dim]")
             choice = console.input("[bold white]>[/bold white] ").strip().lower()
             if choice.startswith("start"):
-                self.active_case_id = None
+                self._set_active_case(None)
                 self.world = None
                 self.case_manager = None
                 self.start_new_case()
@@ -3057,7 +3086,7 @@ class Game:
                           "start — take a new case while you wait[/dim]\n")
             choice = console.input("[bold white]>[/bold white] ").strip().lower()
             if choice.startswith("start"):
-                self.active_case_id = None
+                self._set_active_case(None)
                 self.world = None
                 self.case_manager = None
                 self.start_new_case()
@@ -3069,7 +3098,7 @@ class Game:
         )
         choice = console.input("[bold white]>[/bold white] ").strip().lower()
         if choice.startswith("new"):
-            self.active_case_id = None
+            self._set_active_case(None)
             self.world = None
             self.case_manager = None
             console.print("[dim]The DA files it under 'pending'. You walk out for something fresher.[/dim]\n")
@@ -3120,7 +3149,7 @@ class Game:
                     "UPDATE cases SET status='closed' WHERE id=?", (self.active_case_id,)
                 )
                 self.conn.commit()
-                self.active_case_id = None
+                self._set_active_case(None)
                 self.world = None
                 self.case_manager = None
                 console.print("[dim]The DA watches you leave. Another one unsolved.[/dim]\n")
@@ -3241,7 +3270,7 @@ class Game:
             else:
                 console.print("[yellow]Case dismissed by the magistrate.[/yellow]")
                 if case_id == self.active_case_id:
-                    self.active_case_id = None
+                    self._set_active_case(None)
                     self.world = World(conn=self.conn, active_case_id=None)
                     self.case_manager = None
             return
@@ -3321,7 +3350,7 @@ class Game:
                     daemon=True,
                 ).start()
             if case_id == self.active_case_id:
-                self.active_case_id = None
+                self._set_active_case(None)
                 self.world = World(conn=self.conn, active_case_id=None)
                 self.case_manager = None
                 self._start_background_generation()
@@ -3839,7 +3868,7 @@ class Game:
             )
             self.conn.commit()
 
-        self.active_case_id = case_id
+        self._set_active_case(case_id)
         self._seed_case_locations_and_npcs(case_id, case_data, fixed)
         self._seed_fixed_npcs(case_id)
         self._start_background_enrichment(case_id)
@@ -3946,7 +3975,7 @@ class Game:
         if not active_cases:
             self.start_new_case()
         else:
-            self.active_case_id = active_cases[0]["id"]
+            self._set_active_case(active_cases[0]["id"])
             self._seed_fixed_npcs(self.active_case_id)
             self.world = World(conn=self.conn, active_case_id=self.active_case_id)
             self.case_manager = CaseManager(conn=self.conn, case_id=self.active_case_id, llm=self.llm)
