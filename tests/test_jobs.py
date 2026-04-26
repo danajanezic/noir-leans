@@ -39,21 +39,29 @@ def test_create_job_stores_faction_tier_payout(db):
     assert row["status"] == "pending"
 
 
-def test_get_available_jobs_filters_by_faction_rep(db):
+def test_get_available_jobs_returns_only_tier1(db):
     create_job(db, faction="rossi", tier=1, title="Tier1 Job", payout=50, case_data={})
     create_job(db, faction="naacp", tier=2, title="Tier2 Job", payout=150, case_data={})
     jobs = get_available_jobs(db)
     titles = [j["title"] for j in jobs]
     assert "Tier1 Job" in titles
-    assert "Tier2 Job" not in titles  # rep=0 < threshold=25
+    assert "Tier2 Job" not in titles  # tier 2+ are NPC-only, never on the board
 
 
-def test_get_available_jobs_includes_tier2_when_rep_sufficient(db):
+def test_get_available_jobs_excludes_tier2_even_with_rep(db):
     update_faction_rep(db, "naacp", 30)
-    create_job(db, faction="naacp", tier=2, title="Tier2 Unlocked", payout=150, case_data={})
+    create_job(db, faction="naacp", tier=2, title="Tier2 Job", payout=150, case_data={})
     jobs = get_available_jobs(db)
     titles = [j["title"] for j in jobs]
-    assert "Tier2 Unlocked" in titles
+    assert "Tier2 Job" not in titles  # tier 2+ only surface through NPC offers
+
+
+def test_on_hold_job_not_returned_by_get_active_jobs(db):
+    job_id = create_job(db, faction="rossi", tier=1, title="On Hold Job", payout=50, case_data={})
+    db.execute("UPDATE cases SET status='on_hold' WHERE id=?", (job_id,))
+    db.commit()
+    jobs = get_active_jobs(db)
+    assert len(jobs) == 0
 
 
 def test_get_active_jobs_returns_accepted_jobs(db):

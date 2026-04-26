@@ -810,8 +810,9 @@ def show_cases(cases: list, active_case_id: int | None) -> None:
     t.add_column("Status", style="dim")
     for c in cases:
         marker = "[bold yellow]★[/bold yellow]" if c["id"] == active_case_id else " "
-        status_color = {"active": "green", "in_trial": "yellow", "closed": "dim"}.get(c["status"], "dim")
-        t.add_row(marker, c["title"], f"[{status_color}]{c['status']}[/{status_color}]")
+        status_label = {"on_hold": "on hold"}.get(c["status"], c["status"])
+        status_color = {"active": "green", "in_trial": "yellow", "closed": "dim", "on_hold": "dim"}.get(c["status"], "dim")
+        t.add_row(marker, c["title"], f"[{status_color}]{status_label}[/{status_color}]")
     console.print(Panel(t, title="[bold red]Case Files[/bold red]", border_style="red"))
     console.print("[dim]/cases activate <title> — switch active case[/dim]\n")
 
@@ -867,8 +868,10 @@ def show_help() -> None:
         "  /add <name> as suspect — add someone to your list\n"
         "  /drink — have a drink (at a bar or near one)\n"
         "  /rep — your street reputation and faction standings\n"
-        "  /jobs — browse available jobs\n"
-        "  /jobs --pending — job offers from NPCs\n"
+        "  /job or /case — current active case or job\n"
+        "  /jobs — all cases and active jobs\n"
+        "  /classifieds — browse the job board\n"
+        "  /classifieds --pending — job offers from NPCs\n"
         "  /done — mark an active job complete\n"
         "  /romance — relationship status\n"
         "  /me — your detective profile\n\n"

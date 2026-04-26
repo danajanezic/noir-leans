@@ -1,0 +1,152 @@
+{
+  "persona": "methodical",
+  "turns": 40,
+  "verdict": null,
+  "flags": [
+    {
+      "type": "spatial_contradiction",
+      "character": "Lilith LaPierre",
+      "time_ref": "now",
+      "claim_a": "courthouse",
+      "claim_b": "Capitol building"
+    },
+    {
+      "type": "spatial_contradiction",
+      "character": "Lilith LaPierre",
+      "time_ref": "around the time of the shooting",
+      "claim_a": "",
+      "claim_b": "Capitol building"
+    },
+    {
+      "type": "spatial_contradiction",
+      "character": "Lilith LaPierre",
+      "time_ref": "now",
+      "claim_a": "",
+      "claim_b": "courthouse"
+    },
+    {
+      "type": "spatial_contradiction",
+      "character": "Lilith LaPierre",
+      "time_ref": "around the time of the shooting",
+      "claim_a": "near the steps of the Capitol",
+      "claim_b": "Capitol building"
+    },
+    {
+      "type": "spatial_contradiction",
+      "character": "Lilith LaPierre",
+      "time_ref": "now",
+      "claim_a": "courthouse",
+      "claim_b": "near the steps of the Capitol"
+    },
+    {
+      "type": "spatial_contradiction",
+      "character": "Lilith LaPierre",
+      "time_ref": "",
+      "claim_a": "near the steps of the Capitol",
+      "claim_b": "back entrance"
+    },
+    {
+      "type": "spatial_contradiction",
+      "character": "Lilith LaPierre",
+      "time_ref": "around the time of the shooting",
+      "claim_a": "Capitol building",
+      "claim_b": "back entrance"
+    },
+    {
+      "type": "spatial_contradiction",
+      "character": "street performer",
+      "time_ref": "after the shooting",
+      "claim_a": "Capitol building",
+      "claim_b": ""
+    },
+    {
+      "type": "same_location_different_description",
+      "character": "Lilith LaPierre",
+      "time_ref": "",
+      "claim_a": "back entrance",
+      "claim_b": "near the steps of the Capitol"
+    },
+    {
+      "type": "spatial_contradiction",
+      "character": "Lilith LaPierre",
+      "time_ref": "after the shooting",
+      "claim_a": "Capitol building",
+      "claim_b": "courthouse"
+    },
+    {
+      "type": "spatial_contradiction",
+      "character": "Lilith LaPierre",
+      "time_ref": "after the shooting",
+      "claim_a": "Capitol building",
+      "claim_b": "over there"
+    },
+    {
+      "type": "spatial_contradiction",
+      "character": "Lilith LaPierre",
+      "time_ref": "",
+      "claim_a": "courthouse",
+      "claim_b": "back entrance"
+    },
+    {
+      "type": "spatial_contradiction",
+      "character": "Lilith LaPierre",
+      "time_ref": "around the time of the shooting",
+      "claim_a": "Capitol building",
+      "claim_b": ""
+    },
+    {
+      "type": "spatial_contradiction",
+      "character": "Lilith LaPierre",
+      "time_ref": "present",
+      "claim_a": "over there",
+      "claim_b": ""
+    },
+    {
+      "type": "spatial_contradiction",
+      "character": "Lilith LaPierre",
+      "time_ref": "after the shooting",
+      "claim_a": "Capitol building",
+      "claim_b": ""
+    }
+  ],
+  "case_notes": {
+    "partner": [
+      "Emil Voss didn't even get off a shot before he went down",
+      "The shooting occurred near the Capitol building",
+      "There was a witness who claims to have seen someone in a black suit near the Capitol building around the time of the shooting",
+      "Lilith LaPierre spoke to courthouse clerk Mrs. Thibodeaux",
+      "Mrs. Thibodeaux mentioned a street performer that saw something suspicious",
+      "The statement about the incident was taken by an officer",
+      "Voss was shot",
+      "Voss muttered something about 'Shorts'",
+      "Lilith LaPierre is not aware of all the questions that have been asked yet",
+      "Voss was at the Capitol",
+      "Lilith LaPierre saw an argument between Voss and someone else at the Capitol",
+      "There was a shooting at the Capitol",
+      "officer sat at a desk over there",
+      "there is an office or workspace that can be seen from where Lilith LaPierre is talking",
+      "The victim's eyes seemed unusual to Lilith LaPierre",
+      "The victim looked almost relieved to Lilith LaPierre",
+      "men in suits were seen lurking around the back entrance of a location",
+      "a street performer made a statement",
+      "the statement caught partner's eye",
+      "the street performer saw someone in a long coat with a fedora",
+      "they saw this person walking away from the Capitol building",
+      "this occurred after the shooting",
+      "A man in a long coat with a fedora was seen walking away from the Capitol building after the shooting",
+      "The man wore a silver pin on his lapel",
+      "told to Lilith LaPierre that there was a suspicious incident involving a kid"
+    ]
+  },
+  "location_notes": {
+    "witness|around the time of the shooting": "Capitol building",
+    "Lilith LaPierre|now": "courthouse",
+    "Lilith LaPierre|": "",
+    "Voss|": "near the steps of the Capitol",
+    "Lilith LaPierre|present": "over there",
+    "street performer|after the shooting": "Capitol building",
+    "Lilith LaPierre|after the shooting": "Capitol building"
+  },
+  "pending_meetings": [],
+  "jailbreak_attempts": null
+}
