@@ -3874,6 +3874,27 @@ class Game:
                         lines.append(f"  {marker} [{color}]{wrapped[0]}[/{color}]")
                         for cont in wrapped[1:]:
                             lines.append(f"    [{color}]{cont}[/{color}]")
+            archetype_slug = data.get("job_archetype", "")
+            if archetype_slug:
+                reqs = get_job_required_items(archetype_slug)
+                if reqs:
+                    inventory = get_player_items(self.conn)
+                    req_parts = []
+                    for req in reqs:
+                        item_def = get_item_def(req["slug"])
+                        if not item_def:
+                            continue
+                        has_item = inventory.get(req["slug"], 0) >= 1
+                        color = "dim" if has_item else "yellow"
+                        req_parts.append(f"[{color}]{item_def['name']}[/{color}]")
+                        if req.get("needs_consumable") and item_def.get("requires_slug"):
+                            consumable_def = get_item_def(item_def["requires_slug"])
+                            if consumable_def:
+                                has_consumable = inventory.get(item_def["requires_slug"], 0) >= 1
+                                color = "dim" if has_consumable else "yellow"
+                                req_parts.append(f"[{color}]{consumable_def['name']}[/{color}]")
+                    if req_parts:
+                        lines.append(f"\n[dim]Required:[/dim] {', '.join(req_parts)}")
             console.print("\n".join(lines))
         else:
             console.print(f"[bold yellow]{row['title']}[/bold yellow]")
@@ -3916,6 +3937,21 @@ class Game:
                 f"— {faction_name} — [green]${job['payout']}[/green]"
             )
             lines.append(f"   [dim]{data.get('objective', '')}[/dim]")
+            archetype_slug = data.get("job_archetype", "")
+            if archetype_slug:
+                reqs = get_job_required_items(archetype_slug)
+                if reqs:
+                    req_names = []
+                    for req in reqs:
+                        item_def = get_item_def(req["slug"])
+                        if item_def:
+                            req_names.append(item_def["name"])
+                            if req.get("needs_consumable") and item_def.get("requires_slug"):
+                                consumable_def = get_item_def(item_def["requires_slug"])
+                                if consumable_def:
+                                    req_names.append(consumable_def["name"])
+                    if req_names:
+                        lines.append(f"   [dim]Requires: {', '.join(req_names)}[/dim]")
             lines.append("")
 
         console.print(_Panel("\n".join(lines).rstrip(), title="[yellow]Help Wanted[/yellow]",
