@@ -1296,6 +1296,7 @@ class Game:
 
         if arrival:
             show_dialogue(self.companion.name, arrival)
+        self._check_faction_tension()
 
     def handle_talk(self, target: str) -> None:
         if self.active_case_id is None:
@@ -3722,6 +3723,63 @@ class Game:
         "money in it", "paid well", "compensate you",
         "little work", "small job", "favor for me",
     ])
+
+    def _check_faction_tension(self) -> None:
+        """Fire a tension event if player holds rep ≥ 40 with two directly opposing factions."""
+        from noir.jobs.factions import OPPOSITION, TENSION_THRESHOLD
+        reps = get_all_faction_reps(self.conn)
+        checked: set[frozenset] = set()
+        for faction, rep in reps.items():
+            if rep < TENSION_THRESHOLD:
+                continue
+            if faction not in OPPOSITION:
+                continue
+            for opp in OPPOSITION[faction].get("direct", []):
+                pair = frozenset((faction, opp))
+                if pair in checked:
+                    continue
+                checked.add(pair)
+                opp_rep = reps.get(opp, 0)
+                if opp_rep < TENSION_THRESHOLD:
+                    continue
+                self._trigger_tension_event(faction, opp, rep, opp_rep)
+                return
+
+    def _trigger_tension_event(self, faction_a: str, faction_b: str,
+                                rep_a: int, rep_b: int) -> None:
+        from noir.jobs.factions import FACTIONS, TENSION_ESCALATION
+        name_a = FACTIONS.get(faction_a, {}).get("name", faction_a)
+        name_b = FACTIONS.get(faction_b, {}).get("name", faction_b)
+        escalated = rep_a >= TENSION_ESCALATION or rep_b >= TENSION_ESCALATION
+
+        if escalated:
+            msg = (f"[red]A contact from {name_a} corners you. Word has reached {name_b}. "
+                   f"They want to know where your loyalties lie — and they're not asking politely.[/red]")
+        else:
+            msg = (f"[yellow dim]Word is traveling between {name_a} and {name_b}. "
+                   f"Someone's noticed you're working both sides.[/yellow dim]")
+        console.print(f"\n{msg}")
+
+        console.print("[bold white]How do you respond? (reassure / dismiss / choose): [/bold white]", end="")
+        choice = console.input("").strip().lower()
+
+        if choice == "reassure":
+            update_faction_rep(self.conn, faction_a, 5)
+            console.print(f"[dim]You smooth it over with {name_a}. For now.[/dim]")
+        elif choice == "choose":
+            console.print(f"[bold white]Side with {name_a} or {name_b}? [/bold white]", end="")
+            side = console.input("").strip().lower()
+            if name_a.lower() in side or faction_a in side:
+                update_faction_rep(self.conn, faction_a, 15)
+                update_faction_rep(self.conn, faction_b, -20)
+                console.print(f"[dim]You've made your choice. {name_b} won't forget.[/dim]")
+            else:
+                update_faction_rep(self.conn, faction_b, 15)
+                update_faction_rep(self.conn, faction_a, -20)
+                console.print(f"[dim]You've made your choice. {name_a} won't forget.[/dim]")
+        else:
+            update_faction_rep(self.conn, faction_a, -5)
+            console.print("[dim]They don't like that answer.[/dim]")
 
     def _check_npc_job_offer(self, npc_row, response: str) -> None:
         """Detect if NPC just offered the player a job and prompt acceptance."""
