@@ -1,0 +1,233 @@
+[
+  {
+    "slug": "skip_trace",
+    "tier": 1,
+    "factions": ["any"],
+    "title": "Skip Trace",
+    "description": "Find a person who has gone missing or is avoiding someone. Report their location.",
+    "payout_range": [25, 60],
+    "moral_weight": "low",
+    "step_templates": [
+      "Ask around about {target} — last seen near {location_1}",
+      "Confirm {target}'s current whereabouts",
+      "Report back to {client}"
+    ]
+  },
+  {
+    "slug": "message_delivery",
+    "tier": 1,
+    "factions": ["rossi", "castellano", "shorties", "tallboys", "parish_govt"],
+    "title": "Message Delivery",
+    "description": "Carry something to someone without being seen or stopped.",
+    "payout_range": [30, 65],
+    "moral_weight": "low",
+    "step_templates": [
+      "Pick up the package from {client}",
+      "Deliver it to {target} at {location_1} without attracting attention",
+      "Confirm delivery"
+    ]
+  },
+  {
+    "slug": "surveillance",
+    "tier": 1,
+    "factions": ["any"],
+    "title": "Surveillance",
+    "description": "Watch a location or person and report what you observe.",
+    "payout_range": [35, 75],
+    "moral_weight": "low",
+    "step_templates": [
+      "Get into position near {location_1} without being noticed",
+      "Observe {target} for one period",
+      "Report findings to {client}"
+    ]
+  },
+  {
+    "slug": "serve_papers",
+    "tier": 1,
+    "factions": ["da_office", "bar_association", "judiciary"],
+    "title": "Serve Papers",
+    "description": "Deliver legal notice to someone who doesn't want to receive it.",
+    "payout_range": [25, 50],
+    "moral_weight": "low",
+    "step_templates": [
+      "Locate {target}",
+      "Serve the papers — they will resist",
+      "Confirm service to {client}"
+    ]
+  },
+  {
+    "slug": "cheating_spouse",
+    "tier": 1,
+    "factions": ["private"],
+    "title": "Domestic Inquiry",
+    "description": "Confirm or deny a client's suspicion about their partner.",
+    "payout_range": [40, 75],
+    "moral_weight": "medium",
+    "step_templates": [
+      "Establish {target}'s routine",
+      "Observe {target} at {location_1}",
+      "Report the truth to {client} — whatever it is"
+    ]
+  },
+  {
+    "slug": "debt_collection",
+    "tier": 1,
+    "factions": ["rossi", "castellano"],
+    "title": "Debt Collection",
+    "description": "Recover money owed using persuasion or pressure.",
+    "payout_range": [35, 70],
+    "moral_weight": "medium",
+    "step_templates": [
+      "Find {target} at {location_1}",
+      "Collect the debt — by whatever means necessary",
+      "Return the money to {client}"
+    ]
+  },
+  {
+    "slug": "evidence_retrieval",
+    "tier": 2,
+    "factions": ["da_office", "rossi", "castellano", "bar_association"],
+    "title": "Evidence Retrieval",
+    "description": "Get something incriminating before someone else does.",
+    "payout_range": [100, 200],
+    "moral_weight": "medium",
+    "step_templates": [
+      "Locate where {target} is being kept at {location_1}",
+      "Retrieve it before it disappears",
+      "Decide who it goes to — {client} or someone else",
+      "Deliver and collect"
+    ]
+  },
+  {
+    "slug": "stolen_property",
+    "tier": 2,
+    "factions": ["private", "rossi", "castellano"],
+    "title": "Stolen Property",
+    "description": "Recover an object. Who gets it back is your call.",
+    "payout_range": [100, 200],
+    "moral_weight": "medium",
+    "step_templates": [
+      "Find out who took {target}",
+      "Track it to {location_1}",
+      "Recover it",
+      "Return it — to {client} or to whoever deserves it"
+    ]
+  },
+  {
+    "slug": "witness_protection",
+    "tier": 2,
+    "factions": ["da_office", "naacp", "press"],
+    "title": "Witness Protection",
+    "description": "Keep an NPC alive and talking long enough to matter.",
+    "payout_range": [120, 250],
+    "moral_weight": "high",
+    "step_templates": [
+      "Find {target} at {location_1} before someone else does",
+      "Keep {target} safe through the conversation",
+      "Get {target} to {client} in one piece"
+    ]
+  },
+  {
+    "slug": "dig_up_dirt",
+    "tier": 2,
+    "factions": ["shorties", "tallboys", "chamber", "press", "naacp"],
+    "title": "Dig Up Dirt",
+    "description": "Find compromising information on a target. Decide what to do with it.",
+    "payout_range": [120, 240],
+    "moral_weight": "medium",
+    "step_templates": [
+      "Find where {target}'s secrets are kept",
+      "Get the information at {location_1}",
+      "Decide: hand it to {client}, sell it higher, or bury it"
+    ]
+  },
+  {
+    "slug": "union_job",
+    "tier": 2,
+    "factions": ["ila_231", "colored_longshoremen"],
+    "title": "Union Work",
+    "description": "Protect a worker, expose a scab, or document a violation.",
+    "payout_range": [100, 180],
+    "moral_weight": "medium",
+    "step_templates": [
+      "Find {target} at {location_1}",
+      "Complete the union's objective",
+      "Report back to {client}"
+    ]
+  },
+  {
+    "slug": "shadow_operation",
+    "tier": 2,
+    "factions": ["nopd", "shorties", "tallboys", "parish_govt"],
+    "title": "Shadow Operation",
+    "description": "Tail a target across multiple locations over one game day.",
+    "payout_range": [130, 250],
+    "moral_weight": "low",
+    "step_templates": [
+      "Pick up {target}'s trail at {location_1}",
+      "Follow without being made",
+      "Track to {location_2}",
+      "Report the full account to {client}"
+    ]
+  },
+  {
+    "slug": "faction_power_play",
+    "tier": 3,
+    "factions": ["any"],
+    "title": "Power Play",
+    "description": "Actions that shift which faction controls a key city role or location.",
+    "payout_range": [400, 800],
+    "moral_weight": "high",
+    "step_templates": [
+      "Understand who currently holds {target}",
+      "Undermine their position through {location_1}",
+      "Ensure {client}'s candidate or interest fills the vacuum",
+      "Cover your tracks"
+    ]
+  },
+  {
+    "slug": "arc_mission",
+    "tier": 3,
+    "factions": ["any"],
+    "title": "Arc Mission",
+    "description": "Multi-step job evolving over several cases with recurring NPCs.",
+    "payout_range": [500, 1000],
+    "moral_weight": "high",
+    "step_templates": [
+      "Make first contact with {target}",
+      "Complete the first stage of {client}'s plan",
+      "Survive the complication at {location_1}",
+      "Deliver the final result"
+    ]
+  },
+  {
+    "slug": "exposure",
+    "tier": 3,
+    "factions": ["press", "naacp"],
+    "title": "Exposure",
+    "description": "Expose a corrupt figure publicly. Consequences ripple.",
+    "payout_range": [400, 700],
+    "moral_weight": "high",
+    "step_templates": [
+      "Gather irrefutable evidence against {target}",
+      "Secure corroboration at {location_1}",
+      "Deliver to {client} for publication",
+      "Manage the fallout"
+    ]
+  },
+  {
+    "slug": "cover_up",
+    "tier": 3,
+    "factions": ["rossi", "castellano", "shorties", "tallboys", "parish_govt"],
+    "title": "Cover-Up",
+    "description": "Bury evidence or silence witnesses to protect a faction's interests.",
+    "payout_range": [450, 900],
+    "moral_weight": "high",
+    "step_templates": [
+      "Identify what needs to disappear",
+      "Neutralize the threat at {location_1}",
+      "Ensure {target} stays quiet",
+      "Confirm to {client} that it's done"
+    ]
+  }
+]
