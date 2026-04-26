@@ -310,6 +310,26 @@ CREATE TABLE IF NOT EXISTS location_organizations (
 
 CREATE INDEX IF NOT EXISTS idx_org_members_org ON organization_members(organization_id);
 CREATE INDEX IF NOT EXISTS idx_org_members_member ON organization_members(member_type, member_id);
+
+CREATE TABLE IF NOT EXISTS neighborhoods (
+    id      INTEGER PRIMARY KEY,
+    slug    TEXT UNIQUE NOT NULL,
+    name    TEXT NOT NULL,
+    danger  INTEGER NOT NULL DEFAULT 2
+);
+
+CREATE TABLE IF NOT EXISTS neighborhood_factions (
+    neighborhood_id INTEGER NOT NULL REFERENCES neighborhoods(id),
+    faction         TEXT NOT NULL,
+    PRIMARY KEY (neighborhood_id, faction)
+);
+
+CREATE TABLE IF NOT EXISTS neighborhood_adjacency (
+    from_id  INTEGER NOT NULL REFERENCES neighborhoods(id),
+    to_id    INTEGER NOT NULL REFERENCES neighborhoods(id),
+    distance INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (from_id, to_id)
+);
 """
 
 
@@ -386,6 +406,7 @@ _MIGRATIONS = [
         FOREIGN KEY (npc_id) REFERENCES npcs(id),
         FOREIGN KEY (case_id) REFERENCES cases(id)
     )""",
+    "ALTER TABLE locations ADD COLUMN neighborhood_id INTEGER REFERENCES neighborhoods(id)",
 ]
 
 
