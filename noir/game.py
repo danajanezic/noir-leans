@@ -70,7 +70,8 @@ from noir.cases.trial import TrialSystem
 from noir.onboarding.quiz import Quiz, QUIZ_QUESTIONS
 from noir.onboarding.cold_open import ColdOpen
 from noir.world import World
-from noir.items import ITEM_CATALOG
+from noir.items import ITEM_CATALOG, get_item_def
+from noir.persistence.repository import use_item
 from noir.map import render_map, FACTION_LEGEND, MARKER_LEGEND
 
 
@@ -2569,6 +2570,9 @@ class Game:
             self.handle_slash_done()
         elif slug == "/items":
             self.handle_slash_items()
+        elif slug.startswith("/use"):
+            args = raw.strip()[4:].strip()  # strip "/use" prefix
+            self.handle_slash_use(args)
         elif slug.startswith("/bribe"):
             target = raw.strip()[6:].strip()
             self.handle_bribe(target)
@@ -3586,6 +3590,43 @@ class Game:
     def handle_slash_items(self) -> None:
         inventory = get_player_items(self.conn)
         show_items(inventory, ITEM_CATALOG)
+
+    def handle_slash_use(self, args: str) -> None:
+        parts = args.strip().split()
+        if len(parts) < 2:
+            console.print("[dim]Use what, how? Try: /use camera photograph[/dim]")
+            return
+
+        item_slug = parts[0].lower()
+        action_name = parts[1].lower()
+
+        inventory = get_player_items(self.conn)
+        if inventory.get(item_slug, 0) < 1:
+            console.print(f"[dim]You don't have a {item_slug.replace('_', ' ')}.[/dim]")
+            return
+
+        item_def = get_item_def(item_slug)
+        if not item_def:
+            console.print("[dim]That's not something you're carrying.[/dim]")
+            return
+
+        actions = item_def.get("actions", {})
+        if action_name not in actions:
+            valid = ", ".join(actions.keys()) or "none"
+            console.print(f"[dim]You can't do that with a {item_def['name']}. Valid: {valid}[/dim]")
+            return
+
+        action_def = actions[action_name]
+        consumes = action_def.get("consumes")
+        if consumes:
+            if inventory.get(consumes, 0) < 1:
+                consumable_def = get_item_def(consumes)
+                cname = consumable_def["name"] if consumable_def else consumes
+                console.print(f"[dim]You need {cname} to do that.[/dim]")
+                return
+            use_item(self.conn, slug=consumes)
+
+        console.print(f"[dim]Done.[/dim]")
 
     def handle_slash_done(self) -> None:
         """Mark an active job complete after confirming the objective was met."""

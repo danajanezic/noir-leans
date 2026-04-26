@@ -136,3 +136,32 @@ def test_treme_pawn_org_seeded(db):
         "SELECT id FROM organizations WHERE name='Treme Pawn & Loan'"
     ).fetchone()
     assert row is not None
+
+
+def test_check_job_requirements_missing(db):
+    from noir.items import check_job_requirements
+    inventory = {}  # no camera, no film
+    missing = check_job_requirements("cheating_spouse", inventory)
+    assert "Camera" in missing
+
+
+def test_check_job_requirements_has_tool_but_missing_consumable(db):
+    from noir.items import check_job_requirements
+    inventory = {"camera": 1}  # camera present, no film
+    missing = check_job_requirements("cheating_spouse", inventory)
+    assert "Roll of Film" in missing
+    assert "Camera" not in missing
+
+
+def test_check_job_requirements_all_present(db):
+    from noir.items import check_job_requirements
+    inventory = {"camera": 1, "film": 2}
+    missing = check_job_requirements("cheating_spouse", inventory)
+    assert missing == []
+
+
+def test_check_job_requirements_no_reqs(db):
+    from noir.items import check_job_requirements
+    inventory = {}
+    missing = check_job_requirements("skip_trace", inventory)
+    assert missing == []

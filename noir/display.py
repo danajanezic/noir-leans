@@ -897,6 +897,7 @@ def show_help() -> None:
         "  /drink — have a drink (at a bar or near one)\n"
         "  /rep — your street reputation and faction standings\n"
         "  /items — what you're carrying\n"
+        "  /use [item] [action] — use an item\n"
         "  /job or /case — current active case or job\n"
         "  /jobs — all cases and active jobs\n"
         "  /classifieds — browse the job board\n"
