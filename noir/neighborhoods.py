@@ -3,17 +3,17 @@ import json as _json
 from noir.jobs.factions import OPPOSITION
 
 _NEIGHBORHOODS = [
-    ("mid_city",        "Mid-City",          ["nopd", "shorties"]),
-    ("treme",           "Treme",             ["nopd", "colored_longshoremen"]),
-    ("seventh_ward",    "7th Ward",          ["nopd", "colored_longshoremen"]),
+    ("mid_city",        "Mid-City",          ["nopd", "shorties", "tallboys"]),     # shorties/tallboys turf war
+    ("treme",           "Treme",             ["nopd", "colored_longshoremen", "tallboys"]),  # tallboys opposes CLA
+    ("seventh_ward",    "7th Ward",          ["nopd", "colored_longshoremen", "tallboys"]),  # same
     ("garden_district", "Garden District",   ["nopd", "tallboys"]),
     ("cbd",             "CBD",               ["nopd", "rossi", "shorties"]),
     ("french_quarter",  "French Quarter",    ["nopd", "rossi", "archdiocese"]),
-    ("marigny",         "Marigny",           ["castellano"]),
-    ("uptown",          "Uptown",            ["nopd", "tallboys"]),
-    ("irish_channel",   "Irish Channel",     ["ila_231", "nopd"]),
-    ("bywater",         "Bywater",           ["ila_231", "colored_longshoremen"]),
-    ("lower_ninth",     "Lower 9th Ward",    ["colored_longshoremen", "nopd"]),
+    ("marigny",         "Marigny",           ["castellano", "nopd"]),               # castellano/nopd tension
+    ("uptown",          "Uptown",            ["nopd", "shorties", "tallboys"]),     # political machine conflict
+    ("irish_channel",   "Irish Channel",     ["ila_231", "nopd", "rossi"]),         # rossi/nopd conflict
+    ("bywater",         "Bywater",           ["ila_231", "colored_longshoremen", "tallboys"]),  # tallboys/CLA
+    ("lower_ninth",     "Lower 9th Ward",    ["colored_longshoremen", "nopd", "tallboys"]),    # tallboys/CLA
     ("algiers",         "Algiers",           ["nopd", "ila_231"]),
 ]
 
@@ -85,17 +85,19 @@ def is_algiers_crossing(from_slug: str, to_slug: str) -> bool:
 
 
 def compute_danger(faction_slugs: list[str]) -> int:
-    danger = 1
     slugs = set(faction_slugs)
+    pair_severity: dict[frozenset, int] = {}
     for slug in slugs:
         opp = OPPOSITION.get(slug, {})
         for other in opp.get("direct", []):
-            if other in slugs and slug < other:
-                danger += 2
+            if other in slugs:
+                pair = frozenset([slug, other])
+                pair_severity[pair] = max(pair_severity.get(pair, 0), 2)
         for other in opp.get("secondary", []):
-            if other in slugs and slug < other:
-                danger += 1
-    return max(1, min(5, danger))
+            if other in slugs:
+                pair = frozenset([slug, other])
+                pair_severity[pair] = max(pair_severity.get(pair, 0), 1)
+    return max(1, min(5, 1 + sum(pair_severity.values())))
 
 
 def recompute_all_danger(conn: sqlite3.Connection) -> None:
