@@ -70,7 +70,7 @@ from noir.cases.trial import TrialSystem
 from noir.onboarding.quiz import Quiz, QUIZ_QUESTIONS
 from noir.onboarding.cold_open import ColdOpen
 from noir.world import World
-from noir.items import ITEM_CATALOG, get_item_def
+from noir.items import ITEM_CATALOG, get_item_def, detect_item_action
 from noir.persistence.repository import use_item
 from noir.map import render_map, FACTION_LEGEND, MARKER_LEGEND
 
@@ -1655,6 +1655,7 @@ class Game:
                 self.handle_da()
                 return
             show_player_turn(player_input)
+            self._maybe_trigger_item_action(player_input)
             state_ctx = self._player_state_context()
             identity_ctx = self._player_identity_context()
             rel_ctx = self._npc_relationship_context(npc_row["id"])
@@ -3627,6 +3628,29 @@ class Game:
             use_item(self.conn, slug=consumes)
 
         console.print(f"[dim]Done.[/dim]")
+
+    def _maybe_trigger_item_action(self, text: str) -> None:
+        inventory = get_player_items(self.conn)
+        if not inventory:
+            return
+        match = detect_item_action(text, inventory)
+        if not match:
+            return
+        item_slug, action_name = match
+        item_def = get_item_def(item_slug)
+        if not item_def:
+            return
+        actions = item_def.get("actions", {})
+        action_def = actions.get(action_name, {})
+        consumes = action_def.get("consumes")
+        if consumes:
+            if inventory.get(consumes, 0) < 1:
+                consumable_def = get_item_def(consumes)
+                cname = consumable_def["name"] if consumable_def else consumes
+                console.print(f"[dim]You reach for the {item_def['name']} — but you're out of {cname}.[/dim]")
+                return
+            use_item(self.conn, slug=consumes)
+        console.print(f"[dim][{item_def['name']}][/dim]")
 
     def handle_slash_done(self) -> None:
         """Mark an active job complete after confirming the objective was met."""
