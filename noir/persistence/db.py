@@ -407,6 +407,21 @@ _MIGRATIONS = [
         FOREIGN KEY (case_id) REFERENCES cases(id)
     )""",
     "ALTER TABLE locations ADD COLUMN neighborhood_id INTEGER REFERENCES neighborhoods(id)",
+    """CREATE TABLE IF NOT EXISTS item_definitions (
+    slug TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    price INTEGER NOT NULL,
+    consumable INTEGER DEFAULT 0,
+    requires_slug TEXT,
+    actions TEXT DEFAULT '{}',
+    FOREIGN KEY (requires_slug) REFERENCES item_definitions(slug)
+)""",
+    """CREATE TABLE IF NOT EXISTS player_items (
+    item_slug TEXT PRIMARY KEY,
+    quantity INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (item_slug) REFERENCES item_definitions(slug)
+)""",
 ]
 
 
@@ -528,6 +543,11 @@ def create_schema(conn: sqlite3.Connection) -> None:
     except ImportError:
         pass
     _migrate_da_trust(conn)
+    try:
+        from noir.items import seed_item_definitions
+        seed_item_definitions(conn)
+    except Exception:
+        pass
     try:
         from noir.neighborhoods import seed_neighborhoods, recompute_all_danger
         seed_neighborhoods(conn)
