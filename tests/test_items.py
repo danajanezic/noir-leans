@@ -123,3 +123,9 @@ def test_use_item_fails_when_zero_quantity(db):
     add_player_item(db, slug="ammo_38", quantity=0)
     result = use_item(db, slug="ammo_38")
     assert result is False
+
+
+def test_use_item_last_unit_removes_from_inventory(db):
+    add_player_item(db, slug="film", quantity=1)
+    use_item(db, slug="film")
+    assert "film" not in get_player_items(db)

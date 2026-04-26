@@ -1273,14 +1273,17 @@ def add_player_item(conn: sqlite3.Connection, *, slug: str, quantity: int = 1) -
 
 
 def use_item(conn: sqlite3.Connection, *, slug: str) -> bool:
-    """Decrement a consumable by 1. Returns True if item was present and decremented."""
+    """Decrement a consumable by 1. Returns True if decremented. Removes row when quantity reaches 0."""
     row = conn.execute(
         "SELECT quantity FROM player_items WHERE item_slug=?", (slug,)
     ).fetchone()
     if not row or row["quantity"] <= 0:
         return False
-    conn.execute(
-        "UPDATE player_items SET quantity = quantity - 1 WHERE item_slug=?", (slug,)
-    )
+    if row["quantity"] == 1:
+        conn.execute("DELETE FROM player_items WHERE item_slug=?", (slug,))
+    else:
+        conn.execute(
+            "UPDATE player_items SET quantity = quantity - 1 WHERE item_slug=?", (slug,)
+        )
     conn.commit()
     return True
