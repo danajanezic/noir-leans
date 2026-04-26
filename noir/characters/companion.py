@@ -71,6 +71,7 @@ class Companion(Agent):
         import noir.memory as _mem
         from noir.memory.retrieval import retrieve_relevant_history
 
+        history = []
         if query and _mem.is_available():
             history = retrieve_relevant_history(
                 self.conn,
@@ -79,7 +80,7 @@ class Companion(Agent):
                 k=8,
                 recency=4,
             )
-        else:
+        if not history:
             all_history = get_history(self.conn, character_id=self.character_id, case_id=self.case_id)
             history = all_history[-12:]
 
