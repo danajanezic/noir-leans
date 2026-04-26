@@ -1576,6 +1576,7 @@ class Game:
             advance_game_time(self.conn, delta=5)
             self._check_npc_bribe_offer(npc_row, response)
             self._check_npc_job_offer(npc_row, response)
+            self._check_job_completion(npc_row, response)
             self._check_npc_appointment(npc_row["id"], npc_row["name"], player_input, response)
             self._check_npc_romance_milestone(npc_row["id"], npc)
             # Re-classify events with the actual response now that it's available
@@ -3405,6 +3406,94 @@ class Game:
         if street_says:
             body += f"\n\n[italic dim]{street_says}[/italic dim]"
         console.print(_Panel(body, title="[yellow]Street Reputation[/yellow]", border_style="yellow"))
+
+    def handle_slash_done(self) -> None:
+        """Mark an active job complete after confirming the objective was met."""
+        active_jobs = get_active_jobs(self.conn)
+        if not active_jobs:
+            console.print("[dim]No active jobs.[/dim]")
+            return
+
+        if len(active_jobs) == 1:
+            job = active_jobs[0]
+        else:
+            console.print("[bold yellow]Active jobs:[/bold yellow]")
+            for i, j in enumerate(active_jobs, 1):
+                console.print(f"  {i}. {j['title']}")
+            choice = console.input("[bold white]Which job are you completing? (number): [/bold white]").strip()
+            if not choice.isdigit() or not (1 <= int(choice) <= len(active_jobs)):
+                console.print("[dim]Cancelled.[/dim]")
+                return
+            job = active_jobs[int(choice) - 1]
+
+        try:
+            data = json.loads(job["case_data"]) if isinstance(job["case_data"], str) else job["case_data"]
+        except Exception:
+            data = {}
+
+        objective = data.get("objective", "complete the objective")
+        verdict = self.llm.query_structured(
+            "The detective claims to have completed a job. "
+            "Based on the objective, judge whether it is plausible they succeeded. "
+            "Return ONLY valid JSON: {\"completed\": true|false, \"reason\": \"one sentence\"}",
+            [],
+            f"Job objective: {objective}\nDetective claims: done."
+        )
+
+        if not verdict.get("completed", True):
+            console.print(f"[dim]{verdict.get('reason', 'The job is not done yet.')}[/dim]")
+            return
+
+        payout = job["payout"] or 0
+        faction = job["faction"] or "private"
+        tier = job["tier"] or 1
+        complete_job(self.conn, case_id=job["id"], payout=payout, faction=faction, tier=tier)
+
+        if payout:
+            console.print(f"[dim]Job done. ${payout} collected.[/dim]")
+        else:
+            console.print("[dim]Job done.[/dim]")
+
+        moral_weight = data.get("moral_weight", "low")
+        if moral_weight == "high" and self.companion:
+            self.companion.speak(
+                f"[You just completed a morally significant job: {objective}]",
+                record=False
+            )
+
+    def _check_job_completion(self, npc_row, response: str) -> None:
+        """Auto-detect if the NPC's response signals a job has been completed."""
+        active_jobs = get_active_jobs(self.conn)
+        if not active_jobs:
+            return
+
+        job = next(
+            (j for j in active_jobs
+             if (json.loads(j["case_data"]) if isinstance(j["case_data"], str)
+                 else j["case_data"]).get("client_npc_name", "").lower()
+                in npc_row["name"].lower()),
+            None
+        )
+        if not job:
+            return
+
+        signal = self.llm.query_structured(
+            "Does the NPC dialogue signal that a job or task has been completed to their satisfaction? "
+            "Return ONLY valid JSON: {\"job_complete\": true|false}",
+            [],
+            f"NPC said: \"{response[:300]}\""
+        )
+        if not signal.get("job_complete"):
+            return
+
+        payout = job["payout"] or 0
+        faction = job["faction"] or "private"
+        tier = job["tier"] or 1
+        complete_job(self.conn, case_id=job["id"], payout=payout, faction=faction, tier=tier)
+        if payout:
+            console.print(f"[dim]Job complete. ${payout} in your pocket.[/dim]")
+        else:
+            console.print("[dim]Job complete.[/dim]")
 
     def handle_slash_jobs(self, raw: str) -> None:
         from rich.panel import Panel as _Panel
