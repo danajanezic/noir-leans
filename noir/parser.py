@@ -13,6 +13,7 @@ class Intent(Enum):
     COLLECT = auto()
     EXAMINE = auto()
     LOOK = auto()
+    MAP = auto()
     HELP = auto()
     SHOOT_PARTNER = auto()
     UNKNOWN = auto()
@@ -49,6 +50,7 @@ _RULES: list[tuple[str, Intent, int]] = [
     (rf"^{_EXAMINE_WORDS}\s+(.+)$", Intent.EXAMINE, 1),
     (rf"^{_GO_WORDS}\s+(.+)$", Intent.GO, 1),
     (rf"^{_LOOK_WORDS}$", Intent.LOOK, 0),
+    (r"^(?:map|show map|open map|view map)$", Intent.MAP, 0),
     (r"^(?:shoot|kill|murder|shoot|gun down|put a bullet in|fire at)\s+(?:my partner|partner|riley|the partner|\w+)$", Intent.SHOOT_PARTNER, 0),
     (r"^help\b", Intent.HELP, 0),
 ]

@@ -2,6 +2,7 @@ import sqlite3
 from noir.persistence.db import create_schema
 from noir.neighborhoods import seed_neighborhoods
 from noir.map import render_map
+from noir.parser import parse_command, Intent
 
 
 def _conn():
@@ -37,3 +38,12 @@ def test_render_map_different_active_neighborhood():
     conn = _conn()
     result = render_map(conn, "mid_city", {})
     assert "MID-CITY" in result
+
+
+def test_parse_map_command():
+    assert parse_command("map").intent == Intent.MAP
+
+
+def test_parse_map_command_variants():
+    assert parse_command("show map").intent == Intent.MAP
+    assert parse_command("open map").intent == Intent.MAP
