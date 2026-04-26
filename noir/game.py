@@ -53,6 +53,10 @@ from noir.persistence.repository import (
     get_player_org_memberships, collect_org_payroll,
     get_history, append_history,
     detain_npc, release_npc, get_detained_npcs,
+    create_job, get_active_jobs, get_available_jobs,
+    create_job_offer, accept_job_offer, decline_job_offer, get_pending_job_offers,
+    complete_job, fail_job,
+    get_faction_rep, update_faction_rep, get_all_faction_reps,
 )
 from noir.persistence.db import create_schema
 from noir.characters.companion import Companion
@@ -1110,6 +1114,33 @@ class Game:
 
         t = threading.Thread(target=_enrich_all, daemon=True)
         t.start()
+
+    def _replenish_job_board(self) -> None:
+        """Ensure at least 2 pending jobs per faction/tier that the player qualifies for."""
+        from noir.jobs.generator import JobGenerator
+        from noir.jobs.factions import ALL_FACTION_SLUGS, TIER_REP_THRESHOLDS
+        gen = JobGenerator(self.llm, self.conn)
+        for faction in ALL_FACTION_SLUGS:
+            for tier in (1, 2, 3):
+                threshold = TIER_REP_THRESHOLDS.get(tier, 0)
+                if get_faction_rep(self.conn, faction) < threshold:
+                    continue
+                existing = self.conn.execute(
+                    "SELECT COUNT(*) FROM cases WHERE case_type='job' AND status='pending' "
+                    "AND faction=? AND tier=?",
+                    (faction, tier)
+                ).fetchone()[0]
+                if existing < 2:
+                    for job in gen.generate_board(faction=faction, tier=tier,
+                                                   count=2 - existing):
+                        create_job(
+                            self.conn,
+                            faction=job["faction"],
+                            tier=job["tier"],
+                            title=job["title"],
+                            payout=job["payout"],
+                            case_data=job["case_data"],
+                        )
 
     def start_new_case(self) -> None:
         import noir.audio as audio
@@ -2374,6 +2405,10 @@ class Game:
             self.handle_slash_drink()
         elif slug == "/rep":
             self.handle_slash_rep()
+        elif slug.startswith("/jobs"):
+            self.handle_slash_jobs(raw.strip())
+        elif slug == "/done":
+            self.handle_slash_done()
         elif slug.startswith("/bribe"):
             target = raw.strip()[6:].strip()
             self.handle_bribe(target)
@@ -3369,6 +3404,65 @@ class Game:
         if street_says:
             body += f"\n\n[italic dim]{street_says}[/italic dim]"
         console.print(_Panel(body, title="[yellow]Street Reputation[/yellow]", border_style="yellow"))
+
+    def handle_slash_jobs(self, raw: str) -> None:
+        from rich.panel import Panel as _Panel
+        from noir.jobs.factions import FACTIONS
+        args = raw.strip().lower()
+
+        if "--pending" in args:
+            offers = get_pending_job_offers(self.conn)
+            if not offers:
+                console.print("[dim]No pending job offers.[/dim]")
+                return
+            console.print("[bold yellow]Pending job offers:[/bold yellow]")
+            for offer in offers:
+                console.print(f"  [yellow]·[/yellow] {offer['npc_name']} has work for you.")
+            return
+
+        jobs = get_available_jobs(self.conn)
+        if not jobs:
+            console.print("[dim]Generating jobs — one moment.[/dim]")
+            self._replenish_job_board()
+            jobs = get_available_jobs(self.conn)
+
+        if not jobs:
+            console.print("[dim]Nothing on the board right now.[/dim]")
+            return
+
+        lines = []
+        for i, job in enumerate(jobs, 1):
+            try:
+                data = json.loads(job["case_data"]) if isinstance(job["case_data"], str) else job["case_data"]
+            except Exception:
+                data = {}
+            faction_name = FACTIONS.get(job["faction"] or "", {}).get("name", job["faction"] or "Unknown")
+            lines.append(
+                f"[bold white]{i}.[/bold white] [Tier {job['tier']}] {job['title']} "
+                f"— {faction_name} — [green]${job['payout']}[/green]"
+            )
+            lines.append(f"   [dim]{data.get('objective', '')}[/dim]")
+            lines.append("")
+
+        console.print(_Panel("\n".join(lines).rstrip(), title="[yellow]Available Jobs[/yellow]",
+                             border_style="yellow"))
+
+        choice = console.input("[bold white]Take a job? (number or enter to skip): [/bold white]").strip()
+        if not choice.isdigit():
+            return
+        idx = int(choice) - 1
+        if not (0 <= idx < len(jobs)):
+            console.print("[dim]Invalid selection.[/dim]")
+            return
+
+        job = jobs[idx]
+        self.conn.execute("UPDATE cases SET status='active' WHERE id=?", (job["id"],))
+        self.conn.commit()
+        try:
+            data = json.loads(job["case_data"]) if isinstance(job["case_data"], str) else job["case_data"]
+        except Exception:
+            data = {}
+        console.print(f"[dim]Job accepted: {job['title']}. {data.get('objective', '')}[/dim]")
 
     def handle_bribe(self, target_name: str) -> None:
         if not target_name:
