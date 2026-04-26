@@ -4482,11 +4482,15 @@ class Game:
             return
         label = "NOIRLEANS"
         ruler = "─" * ((MAP_WIDTH - len(label)) // 2) + label + "─" * ((MAP_WIDTH - len(label) + 1) // 2)
-        while shutil.get_terminal_size().columns <= MAP_WIDTH:
+        while True:
             # Fresh console each time so Rich reads the current terminal width
             c = Console()
             c.clear()
             c.print(f"\n[dim yellow]{ruler}[/dim yellow]\n")
+            if shutil.get_terminal_size().columns > MAP_WIDTH:
+                c.print("[green]Good — your terminal is wide enough. Press Enter to continue.[/green]")
+                input()
+                break
             c.print(
                 "[yellow]Your terminal is too narrow for the map. "
                 "Widen your window until the line above fits on one row, then press Enter.[/yellow]"
