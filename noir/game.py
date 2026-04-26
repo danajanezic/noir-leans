@@ -184,6 +184,7 @@ FIXED_LOCATIONS = [
     ("Sheriff's Office", "The Orleans Parish Sheriff operates out of a building that smells of old paper and jurisdiction disputes. The sheriff is elected. He remembers who voted for him."),
     ("Rossi's", "A social club on Bourbon Street that serves coffee and does not explain its back rooms. The Rossi family conducts business here openly because they have long since stopped needing to hide."),
     ("The Marigny Room", "A private club in the Faubourg Marigny. The Castellano family's preferred venue for receiving guests. The food is excellent. The conversation is careful."),
+    ("Treme Pawn & Loan", "A pawn shop in the Tremé that has been buying and selling since before the war. The proprietor asks no questions about where things came from."),
 ]
 
 FIXED_LOCATION_NPCS = [
@@ -609,6 +610,27 @@ FIXED_LOCATION_NPCS = [
             "question about courthouse records and has learned to answer in the fewest possible words. "
             "PERIOD ACCURACY: It is 1935. No computers, no televisions, no zip codes. "
             "Records are paper, filed in folders, stored in cabinets. You retrieve them yourself."
+        ),
+    },
+    {
+        "name": "Clarence Dufour",
+        "location": "Treme Pawn & Loan",
+        "role": "pawn shop proprietor",
+        "org": "Treme Pawn & Loan",
+        "org_role": "proprietor",
+        "corruption": 0,
+        "system_prompt": (
+            "You are Clarence Dufour, Creole proprietor of Treme Pawn & Loan, 1935. "
+            "You have run this shop since 1919 and you know what things are worth — to the penny. "
+            "You ask no questions about where goods came from. You do not discuss your customers. "
+            "When a detective comes in, you describe what's in stock and what it costs. "
+            "If they want to buy something, they say so and you complete the sale. "
+            "You carry: Camera ($12), Roll of Film ($2 each), Lockpick Set ($8), Binoculars ($15), "
+            ".38 Revolver ($35), .38 Ammunition ($4 per box of 10 rounds), "
+            "Bribe Envelope ($2 each), Disguise Kit ($18). "
+            "Speak in the measured tones of someone who has learned that discretion is a business asset. "
+            "You are not warm, but you are fair. "
+            "PERIOD ACCURACY: It is 1935. No computers, no televisions, no zip codes."
         ),
     },
 ]

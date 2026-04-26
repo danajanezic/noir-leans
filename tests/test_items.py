@@ -129,3 +129,10 @@ def test_use_item_last_unit_removes_from_inventory(db):
     add_player_item(db, slug="film", quantity=1)
     use_item(db, slug="film")
     assert "film" not in get_player_items(db)
+
+
+def test_treme_pawn_org_seeded(db):
+    row = db.execute(
+        "SELECT id FROM organizations WHERE name='Treme Pawn & Loan'"
+    ).fetchone()
+    assert row is not None
