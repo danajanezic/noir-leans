@@ -2566,6 +2566,8 @@ class Game:
             self.handle_slash_active_work()
         elif slug == "/done":
             self.handle_slash_done()
+        elif slug == "/items":
+            self.handle_slash_items()
         elif slug.startswith("/bribe"):
             target = raw.strip()[6:].strip()
             self.handle_bribe(target)
@@ -3579,6 +3581,13 @@ class Game:
                                  border_style="yellow dim"))
         elif not tags and not street_says:
             console.print("[dim]Nobody knows your name yet. Do some work.[/dim]")
+
+    def handle_slash_items(self) -> None:
+        from noir.items import ITEM_CATALOG
+        from noir.persistence.repository import get_player_items
+        from noir.display import show_items
+        inventory = get_player_items(self.conn)
+        show_items(inventory, ITEM_CATALOG)
 
     def handle_slash_done(self) -> None:
         """Mark an active job complete after confirming the objective was met."""
