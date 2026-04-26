@@ -79,15 +79,14 @@ def get_active_jobs(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 
 
 def get_available_jobs(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    from noir.jobs.factions import TIER_REP_THRESHOLDS
-    rows = conn.execute(
+    """Return pending tier-1 jobs only. Tier 2+ jobs come through NPC offers, not the board."""
+    return conn.execute(
         """SELECT c.*, COALESCE(fr.reputation, 0) as faction_rep
            FROM cases c
            LEFT JOIN faction_reputation fr ON c.faction = fr.faction
-           WHERE c.case_type='job' AND c.status='pending'
-           ORDER BY c.tier, c.created_at"""
+           WHERE c.case_type='job' AND c.status='pending' AND c.tier=1
+           ORDER BY c.created_at"""
     ).fetchall()
-    return [r for r in rows if (r["faction_rep"] or 0) >= TIER_REP_THRESHOLDS.get(r["tier"] or 1, 0)]
 
 
 def create_job_offer(conn: sqlite3.Connection, *, npc_id: int) -> int:
@@ -435,7 +434,9 @@ def get_active_cases(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 
 
 def get_all_cases(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    return conn.execute("SELECT * FROM cases ORDER BY id DESC").fetchall()
+    return conn.execute(
+        "SELECT * FROM cases WHERE NOT (case_type='job' AND status='pending') ORDER BY id DESC"
+    ).fetchall()
 
 
 def set_case_active(conn: sqlite3.Connection, *, case_id: int) -> None:
@@ -1206,5 +1207,52 @@ def update_street_reputation(conn: sqlite3.Connection, *,
                street_says=excluded.street_says,
                updated_at=excluded.updated_at""",
         (_json.dumps(tags), street_says)
+    )
+    conn.commit()
+
+
+def get_all_neighborhoods(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute("SELECT * FROM neighborhoods ORDER BY id").fetchall()
+
+
+def get_neighborhood_factions(conn: sqlite3.Connection, slug: str) -> list[str]:
+    rows = conn.execute(
+        """SELECT nf.faction FROM neighborhood_factions nf
+           JOIN neighborhoods n ON n.id = nf.neighborhood_id
+           WHERE n.slug = ?""",
+        (slug,)
+    ).fetchall()
+    return [r["faction"] for r in rows]
+
+
+def get_travel_distance(conn: sqlite3.Connection, from_slug: str, to_slug: str) -> int | None:
+    row = conn.execute(
+        """SELECT na.distance FROM neighborhood_adjacency na
+           JOIN neighborhoods fn ON fn.id = na.from_id
+           JOIN neighborhoods tn ON tn.id = na.to_id
+           WHERE fn.slug = ? AND tn.slug = ?""",
+        (from_slug, to_slug)
+    ).fetchone()
+    return row["distance"] if row else None
+
+
+def get_neighborhood_for_location(conn: sqlite3.Connection, location_id: int) -> sqlite3.Row | None:
+    return conn.execute(
+        """SELECT n.* FROM neighborhoods n
+           JOIN locations l ON l.neighborhood_id = n.id
+           WHERE l.id = ?""",
+        (location_id,)
+    ).fetchone()
+
+
+def get_neighborhood_by_slug(conn: sqlite3.Connection, slug: str) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM neighborhoods WHERE slug=?", (slug,)
+    ).fetchone()
+
+
+def update_neighborhood_danger(conn: sqlite3.Connection, slug: str, danger: int) -> None:
+    conn.execute(
+        "UPDATE neighborhoods SET danger=? WHERE slug=?", (danger, slug)
     )
     conn.commit()

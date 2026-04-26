@@ -1,4 +1,10 @@
 from noir.neighborhoods import seed_neighborhoods, get_neighborhood_id
+from noir.persistence.repository import (
+    get_neighborhood_for_location,
+    get_travel_distance,
+    get_neighborhood_factions,
+    get_all_neighborhoods,
+)
 
 
 def test_neighborhoods_table_exists(db):
@@ -61,3 +67,43 @@ def test_get_neighborhood_id(db):
     nid = get_neighborhood_id(db, "french_quarter")
     assert nid is not None
     assert isinstance(nid, int)
+
+
+def test_get_all_neighborhoods(db):
+    seed_neighborhoods(db)
+    hoods = get_all_neighborhoods(db)
+    assert len(hoods) == 12
+    assert any(h["slug"] == "french_quarter" for h in hoods)
+
+
+def test_get_neighborhood_factions(db):
+    seed_neighborhoods(db)
+    factions = get_neighborhood_factions(db, "french_quarter")
+    assert set(factions) == {"nopd", "rossi", "archdiocese"}
+
+
+def test_get_travel_distance_adjacent(db):
+    seed_neighborhoods(db)
+    dist = get_travel_distance(db, "french_quarter", "marigny")
+    assert dist == 1
+
+
+def test_get_travel_distance_not_connected(db):
+    seed_neighborhoods(db)
+    dist = get_travel_distance(db, "lower_ninth", "uptown")
+    assert dist is None
+
+
+def test_get_neighborhood_for_location(db):
+    seed_neighborhoods(db)
+    nid = db.execute(
+        "SELECT id FROM neighborhoods WHERE slug='french_quarter'"
+    ).fetchone()["id"]
+    loc_id = db.execute(
+        "INSERT INTO locations (name, description, is_fixed, neighborhood_id) VALUES (?, ?, 1, ?) RETURNING id",
+        ("Café Du Monde", "A famous café.", nid)
+    ).fetchone()["id"]
+    db.commit()
+    result = get_neighborhood_for_location(db, loc_id)
+    assert result is not None
+    assert result["slug"] == "french_quarter"
