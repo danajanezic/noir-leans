@@ -39,6 +39,9 @@
       "Get into position near {location_1} without being noticed",
       "Observe {target} for one period",
       "Report findings to {client}"
+    ],
+    "required_items": [
+      {"slug": "binoculars", "needs_consumable": false}
     ]
   },
   {
@@ -67,6 +70,9 @@
       "Establish {target}'s routine",
       "Observe {target} at {location_1}",
       "Report the truth to {client} — whatever it is"
+    ],
+    "required_items": [
+      {"slug": "camera", "needs_consumable": true}
     ]
   },
   {
@@ -81,6 +87,9 @@
       "Find {target} at {location_1}",
       "Collect the debt — by whatever means necessary",
       "Return the money to {client}"
+    ],
+    "required_items": [
+      {"slug": "revolver_38", "needs_consumable": false}
     ]
   },
   {
@@ -168,6 +177,9 @@
       "Follow without being made",
       "Track to {location_2}",
       "Report the full account to {client}"
+    ],
+    "required_items": [
+      {"slug": "binoculars", "needs_consumable": false}
     ]
   },
   {
