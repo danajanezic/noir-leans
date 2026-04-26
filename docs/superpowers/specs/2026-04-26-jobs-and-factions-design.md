@@ -48,7 +48,7 @@ Working for faction A hurts standing with opposing factions. Rep penalty: **-8 p
 | Rossi | Castellano | NOPD, DA's Office |
 | Castellano | Rossi | NOPD, DA's Office |
 | Shorties | Tallboys | — |
-| Tallboys | Shorties, NAACP | Treme Social Aid, Colored Longshoremen's |
+| Tallboys | Shorties, NAACP, Treme Social Aid, Colored Longshoremen's | — |
 | Chamber | ILA 231, Colored Longshoremen's | NAACP, Treme Social Aid |
 | NOPD | Rossi, Castellano | NAACP, Treme Social Aid |
 | DA's Office | Rossi, Castellano | — |
@@ -61,7 +61,7 @@ All other faction pairs are neutral — working for both simultaneously carries 
 
 **Note on Shorties ↔ NAACP:** Neutral. The Short machine's populist programs benefited all residents regardless of race; Short deliberately avoided making race political to maintain his coalition. Working for the Shorties does not hurt NAACP standing.
 
-**Note on Tallboys:** The Tallboys coalition includes KKK-affiliated members who lost political power during the Short years and feel entitled to reclaim it. Working for the Tallboys is a direct hit to NAACP standing and secondary hit to Treme Social Aid and Colored Longshoremen's.
+**Note on Tallboys:** The Tallboys coalition includes KKK-affiliated members who lost political power during the Short years and feel entitled to reclaim it. Working for the Tallboys is a direct hit to NAACP standing and also to Treme Social Aid and Colored Longshoremen's.
 
 ---
 
