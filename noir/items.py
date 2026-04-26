@@ -186,28 +186,42 @@ def get_job_required_items(archetype_slug: str) -> list:
     return []
 
 
-def check_job_requirements(archetype_slug: str, inventory: dict) -> list[str]:
-    """Return display names of items required by the job that are missing from inventory."""
-    required = get_job_required_items(archetype_slug)
+def check_job_requirements(
+    archetype_slug: str,
+    inventory: dict[str, int],
+) -> list[str]:
+    """Return display names of items missing from inventory for the given archetype. Empty = all met."""
+    reqs = get_job_required_items(archetype_slug)
     missing = []
-    for slug in required:
-        qty = inventory.get(slug, 0)
-        if not qty:
-            item = get_item_def(slug)
-            name = item["name"] if item else slug
-            missing.append(name)
+    for req in reqs:
+        slug = req["slug"]
+        item_def = get_item_def(slug)
+        if not item_def:
+            continue
+        if inventory.get(slug, 0) < 1:
+            missing.append(item_def["name"])
+            continue
+        if req.get("needs_consumable"):
+            consumable_slug = item_def.get("requires_slug")
+            if consumable_slug:
+                consumable_def = get_item_def(consumable_slug)
+                if inventory.get(consumable_slug, 0) < 1:
+                    cname = consumable_def["name"] if consumable_def else consumable_slug
+                    missing.append(cname)
     return missing
 
 
 def get_consumables_to_decrement(archetype_slug: str) -> list[str]:
-    """Return list of consumable slugs that should be decremented on job completion."""
-    required = get_job_required_items(archetype_slug)
-    result = []
-    for slug in required:
-        item = get_item_def(slug)
-        if item and item.get("consumable"):
-            result.append(slug)
-    return result
+    """Return slugs of consumables that should be decremented on job completion."""
+    reqs = get_job_required_items(archetype_slug)
+    to_decrement = []
+    for req in reqs:
+        if not req.get("needs_consumable"):
+            continue
+        item_def = get_item_def(req["slug"])
+        if item_def and item_def.get("requires_slug"):
+            to_decrement.append(item_def["requires_slug"])
+    return to_decrement
 
 
 def detect_item_action(
