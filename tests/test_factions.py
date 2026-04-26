@@ -12,11 +12,13 @@ def db():
     conn.close()
 
 
-def test_all_factions_seeded_at_zero(db):
+def test_all_factions_seeded(db):
     from noir.persistence.repository import get_all_faction_reps
     reps = get_all_faction_reps(db)
     assert len(reps) == 19
-    assert all(v == 0 for v in reps.values())
+    # da_office seeds at 100 (matches legacy da_trust default); all others at 0
+    assert reps["da_office"] == 100
+    assert all(v == 0 for k, v in reps.items() if k != "da_office")
 
 
 def test_faction_slugs_present(db):
@@ -65,19 +67,19 @@ def test_get_faction_rep_returns_zero_initially(db):
 
 
 def test_update_faction_rep_increases_rep(db):
-    from noir.persistence.repository import update_faction_rep
+    from noir.persistence.repository import update_faction_rep, get_faction_rep
     update_faction_rep(db, "rossi", 10)
     assert get_faction_rep(db, "rossi") == 10
 
 
 def test_update_faction_rep_caps_at_100(db):
-    from noir.persistence.repository import update_faction_rep
+    from noir.persistence.repository import update_faction_rep, get_faction_rep
     update_faction_rep(db, "rossi", 200)
     assert get_faction_rep(db, "rossi") == 100
 
 
 def test_update_faction_rep_floors_at_zero(db):
-    from noir.persistence.repository import update_faction_rep
+    from noir.persistence.repository import update_faction_rep, get_faction_rep
     update_faction_rep(db, "rossi", -50)
     assert get_faction_rep(db, "rossi") == 0
 
@@ -89,7 +91,7 @@ def test_update_faction_rep_returns_new_value(db):
 
 
 def test_get_all_faction_reps_returns_dict(db):
-    from noir.persistence.repository import update_faction_rep
+    from noir.persistence.repository import update_faction_rep, get_all_faction_reps
     update_faction_rep(db, "rossi", 5)
     reps = get_all_faction_reps(db)
     assert isinstance(reps, dict)
@@ -110,15 +112,14 @@ def test_da_trust_migration_copies_to_faction_rep(db):
 
 
 def test_update_da_trust_writes_to_faction_rep(db):
-    from noir.persistence.repository import update_da_trust, create_player
-    create_player(db)
-    update_da_trust(db, delta=20)
-    assert get_faction_rep(db, "da_office") == 20
+    from noir.persistence.repository import update_da_trust, get_faction_rep
+    # da_office seeds at 100; reduce it to verify routing works
+    update_da_trust(db, delta=-30)
+    assert get_faction_rep(db, "da_office") == 70
 
 
 def test_update_da_trust_negative_delta(db):
-    from noir.persistence.repository import update_da_trust, update_faction_rep, create_player
-    create_player(db)
-    update_faction_rep(db, "da_office", 50)
+    from noir.persistence.repository import update_da_trust, get_faction_rep
+    # da_office seeds at 100
     update_da_trust(db, delta=-10)
-    assert get_faction_rep(db, "da_office") == 40
+    assert get_faction_rep(db, "da_office") == 90

@@ -35,11 +35,30 @@ def update_player_reputation(conn: sqlite3.Connection, *, delta: int) -> None:
 
 
 def update_da_trust(conn: sqlite3.Connection, *, delta: int) -> None:
+    update_faction_rep(conn, "da_office", delta)
+
+
+def get_faction_rep(conn: sqlite3.Connection, faction: str) -> int:
+    row = conn.execute(
+        "SELECT reputation FROM faction_reputation WHERE faction=?", (faction,)
+    ).fetchone()
+    return row["reputation"] if row else 0
+
+
+def update_faction_rep(conn: sqlite3.Connection, faction: str, delta: int) -> int:
     conn.execute(
-        "UPDATE player SET da_trust = MAX(0, MIN(100, COALESCE(da_trust, 100) + ?)) WHERE id=1",
-        (delta,)
+        "UPDATE faction_reputation SET reputation = MAX(0, MIN(100, reputation + ?)) WHERE faction=?",
+        (delta, faction)
     )
     conn.commit()
+    return get_faction_rep(conn, faction)
+
+
+def get_all_faction_reps(conn: sqlite3.Connection) -> dict[str, int]:
+    rows = conn.execute(
+        "SELECT faction, reputation FROM faction_reputation ORDER BY faction"
+    ).fetchall()
+    return {r["faction"]: r["reputation"] for r in rows}
 
 
 def update_player_stats(conn: sqlite3.Connection, *,

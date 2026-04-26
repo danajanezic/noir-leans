@@ -5,7 +5,7 @@ from noir.llm.base import LLMBackend
 from noir.persistence.repository import (
     update_case_status, get_case, append_history, get_history,
     update_player_reputation, update_player_stats, get_player, get_game_time,
-    get_evidence_for_case, get_all_dossier, update_da_trust,
+    get_evidence_for_case, get_all_dossier, update_da_trust, get_faction_rep,
     get_accepted_bribes_for_case, update_player_cash,
 )
 
@@ -189,7 +189,7 @@ class TrialSystem:
 
         player = get_player(self.conn)
         reputation = player["reputation"] if player else 100
-        da_trust = player["da_trust"] if player and "da_trust" in player.keys() else 100
+        da_trust = get_faction_rep(self.conn, "da_office")
         suspect = _suspect_profile(self.conn, self.case_id)
 
         connections = ", ".join(
@@ -468,8 +468,7 @@ class TrialSystem:
         # Pull the most recent DA structured response from history to find flagged items
         da_prompts = [m for m in da_history if m["role"] == "user" and "flagged_evidence" in m.get("content", "")]
         # Simpler: check player's DA trust — low trust implies fabrication history
-        player = get_player(self.conn)
-        da_trust = player["da_trust"] if player and "da_trust" in player.keys() else 100
+        da_trust = get_faction_rep(self.conn, "da_office")
         fabrication_exposed = da_trust < 90 and random.random() < (1 - da_trust / 100)
         if fabrication_exposed:
             fabrication_note = " Fabricated or unsubstantiated evidence was exposed during the trial."

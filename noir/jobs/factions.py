@@ -84,11 +84,17 @@ def faction_slug_for_npc(conn: sqlite3.Connection, npc_id: int) -> str | None:
     return None
 
 
+_FACTION_DEFAULTS: dict[str, int] = {
+    "da_office": 100,  # matches legacy player.da_trust default
+}
+
+
 def seed_faction_reputation(conn: sqlite3.Connection) -> None:
     for slug in ALL_FACTION_SLUGS:
+        default = _FACTION_DEFAULTS.get(slug, 0)
         conn.execute(
-            "INSERT OR IGNORE INTO faction_reputation (faction, reputation) VALUES (?, 0)",
-            (slug,)
+            "INSERT OR IGNORE INTO faction_reputation (faction, reputation) VALUES (?, ?)",
+            (slug, default)
         )
     conn.commit()
 

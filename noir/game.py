@@ -3504,9 +3504,13 @@ class Game:
         if not offer.get("bribe_offered"):
             return
 
-        amount = offer.get("amount") or 0
+        amount = offer.get("amount") or None
         condition = offer.get("condition", "back off")
-        console.print(f"\n[yellow dim]{npc_row['name']} has offered you ${amount} to {condition}.[/yellow dim]")
+        if amount:
+            offer_desc = f"${amount}"
+        else:
+            offer_desc = "a favor"
+        console.print(f"\n[yellow dim]{npc_row['name']} has offered you {offer_desc} to {condition}.[/yellow dim]")
         accept_input = console.input("[bold white]Accept this bribe? (yes/no):[/bold white] ").strip().lower()
         if accept_input != "yes":
             console.print("[dim]You pass.[/dim]")
@@ -3514,7 +3518,8 @@ class Game:
                          amount=amount, accepted=False, effect=None)
             return
 
-        update_player_cash(self.conn, delta=amount)
+        if amount:
+            update_player_cash(self.conn, delta=amount)
         record_bribe(self.conn, case_id=self.active_case_id, npc_id=npc_row["id"],
                      amount=amount, accepted=True, effect="player_accepted")
         # Shift toward chaos only
@@ -3522,7 +3527,10 @@ class Game:
             "UPDATE player SET law_chaos = MAX(-100, MIN(100, law_chaos - 8)) WHERE id=1"
         )
         self.conn.commit()
-        console.print(f"[dim]${amount} in your pocket. You know what they expect.[/dim]")
+        if amount:
+            console.print(f"[dim]${amount} in your pocket. You know what they expect.[/dim]")
+        else:
+            console.print(f"[dim]You've agreed. They'll expect you to follow through.[/dim]")
 
     def _determine_bribe_effect(self, npc_id: int) -> dict:
         """Figure out what a bribe to this NPC would affect, given the current case state."""
@@ -3722,14 +3730,16 @@ class Game:
                         "stage": _affection_to_stage(affection),
                     })
 
-        from noir.persistence.repository import get_skills, get_specializations
+        from noir.persistence.repository import get_skills, get_specializations, get_faction_rep
         p_skills = get_skills(self.conn, owner="player") or None
         p_specs = get_specializations(self.conn, owner="player") or None
         pt_skills = get_skills(self.conn, owner="partner") or None
         pt_specs = get_specializations(self.conn, owner="partner") or None
 
+        player_dict = dict(player)
+        player_dict["da_trust"] = get_faction_rep(self.conn, "da_office")
         show_player_profile(
-            dict(player), org_list, partner_name, partner_stage, npc_rels,
+            player_dict, org_list, partner_name, partner_stage, npc_rels,
             player_skills=p_skills,
             player_specializations=p_specs,
             partner_skills=pt_skills,
