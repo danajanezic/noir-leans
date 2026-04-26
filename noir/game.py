@@ -1992,9 +1992,21 @@ class Game:
         )
 
     def handle_slash_status(self, raw: str) -> None:
+        from noir.jobs.factions import FACTIONS as _FACTIONS
         parts = raw.strip().split(None, 2)
         if len(parts) == 1:
             show_player_status(get_player_states(self.conn))
+            active_jobs = get_active_jobs(self.conn)
+            if active_jobs:
+                console.print(f"\n[bold yellow]Active jobs ({len(active_jobs)}):[/bold yellow]")
+                for job in active_jobs:
+                    try:
+                        data = json.loads(job["case_data"]) if isinstance(job["case_data"], str) else job["case_data"]
+                        objective = data.get("objective", "")
+                    except Exception:
+                        objective = ""
+                    faction_name = _FACTIONS.get(job["faction"] or "", {}).get("name", "")
+                    console.print(f"  [yellow]·[/yellow] {job['title']} ({faction_name}) — {objective}")
             return
         sub = parts[1].lower()
         if sub == "add" and len(parts) >= 3:
@@ -3395,18 +3407,35 @@ class Game:
                 console.print("[dim]The case is behind you now. Head to the DA's office for a new one.[/dim]")
 
     def handle_slash_rep(self) -> None:
+        from rich.panel import Panel as _Panel
+        from noir.jobs.factions import FACTIONS
+
         rep = get_street_reputation(self.conn)
         tags = rep.get("tags", [])
         street_says = rep.get("street_says", "")
-        if not tags and not street_says:
+        if tags or street_says:
+            tag_str = "  ".join(f"[bold]{t}[/bold]" for t in tags) if tags else "[dim]none[/dim]"
+            body = tag_str
+            if street_says:
+                body += f"\n\n[italic dim]{street_says}[/italic dim]"
+            console.print(_Panel(body, title="[yellow]Street Reputation[/yellow]", border_style="yellow"))
+
+        reps = get_all_faction_reps(self.conn)
+        nonzero = {k: v for k, v in reps.items() if v > 0 and k != "da_office"}
+        # Also show da_office if it differs from default (100)
+        da_rep = reps.get("da_office", 100)
+        if da_rep != 100:
+            nonzero["da_office"] = da_rep
+        if nonzero:
+            lines = []
+            for slug, score in sorted(nonzero.items(), key=lambda x: -x[1]):
+                name = FACTIONS.get(slug, {}).get("name", slug)
+                bar = "█" * (score // 10) + "░" * (10 - score // 10)
+                lines.append(f"  [yellow]{name:<40}[/yellow] {bar} {score}")
+            console.print(_Panel("\n".join(lines), title="[yellow]Faction Standing[/yellow]",
+                                 border_style="yellow dim"))
+        elif not tags and not street_says:
             console.print("[dim]No reputation yet. Solve a case first.[/dim]")
-            return
-        from rich.panel import Panel as _Panel
-        tag_str = "  ".join(f"[bold]{t}[/bold]" for t in tags) if tags else "[dim]none[/dim]"
-        body = tag_str
-        if street_says:
-            body += f"\n\n[italic dim]{street_says}[/italic dim]"
-        console.print(_Panel(body, title="[yellow]Street Reputation[/yellow]", border_style="yellow"))
 
     def handle_slash_done(self) -> None:
         """Mark an active job complete after confirming the objective was met."""
