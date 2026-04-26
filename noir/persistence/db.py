@@ -528,3 +528,9 @@ def create_schema(conn: sqlite3.Connection) -> None:
     except ImportError:
         pass
     _migrate_da_trust(conn)
+    try:
+        from noir.neighborhoods import seed_neighborhoods, recompute_all_danger
+        seed_neighborhoods(conn)
+        recompute_all_danger(conn)
+    except Exception:
+        pass
