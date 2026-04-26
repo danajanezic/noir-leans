@@ -291,3 +291,40 @@ def test_check_purchase_from_dufour_insufficient_cash(db):
     ])
     game._check_purchase_from_dufour(npc_row, "Sure, I'll take twelve dollars for that camera.")
     assert get_player_items(db) == {}
+
+
+def test_get_missing_items_no_active_job(db):
+    game = _make_game(db)
+    # No active jobs — should return empty
+    result = game._get_missing_required_items_for_active_job()
+    assert result == []
+
+
+def test_get_missing_items_active_job_with_missing_items(db):
+    import json
+    from noir.persistence.repository import add_player_item
+    game = _make_game(db)
+    # Insert an active cheating_spouse job (requires camera + film)
+    db.execute(
+        "INSERT INTO cases (archetype, title, case_type, status, case_data, payout, faction, tier) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        ("job", "Test Job", "job", "active", json.dumps({"job_archetype": "cheating_spouse"}), 60, "private", 1)
+    )
+    db.commit()
+    # No camera in inventory
+    result = game._get_missing_required_items_for_active_job()
+    assert "Camera" in result
+
+
+def test_get_missing_items_active_job_requirements_met(db):
+    import json
+    from noir.persistence.repository import add_player_item
+    game = _make_game(db)
+    db.execute(
+        "INSERT INTO cases (archetype, title, case_type, status, case_data, payout, faction, tier) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        ("job", "Test Job", "job", "active", json.dumps({"job_archetype": "cheating_spouse"}), 60, "private", 1)
+    )
+    db.commit()
+    add_player_item(db, slug="camera", quantity=1)
+    add_player_item(db, slug="film", quantity=2)
+    result = game._get_missing_required_items_for_active_job()
+    assert result == []

@@ -230,9 +230,10 @@ class Agent:
                            role="assistant", content=response, case_id=self.case_id)
         return response
 
-    def narrate(self, prompt: str) -> str:
+    def narrate(self, prompt: str, record: bool = True) -> str:
         history = self._history_with_summaries()
         response = self._query_with_retry(prompt, history)
-        append_history(self.conn, character_id=self.character_id,
-                       role="assistant", content=response, case_id=self.case_id)
+        if record:
+            append_history(self.conn, character_id=self.character_id,
+                           role="assistant", content=response, case_id=self.case_id)
         return response
