@@ -70,7 +70,7 @@ from noir.cases.trial import TrialSystem
 from noir.onboarding.quiz import Quiz, QUIZ_QUESTIONS
 from noir.onboarding.cold_open import ColdOpen
 from noir.world import World
-from noir.items import ITEM_CATALOG, get_item_def, detect_item_action, check_job_requirements, get_consumables_to_decrement
+from noir.items import ITEM_CATALOG, get_item_def, detect_item_action, check_job_requirements, get_consumables_to_decrement, get_job_required_items
 from noir.persistence.repository import use_item
 from noir.map import render_map, FACTION_LEGEND, MARKER_LEGEND
 

@@ -47,7 +47,6 @@ def test_player_items_table_exists(db):
     db.execute("SELECT * FROM player_items LIMIT 1")  # no error = table exists
 
 
-@pytest.mark.xfail(reason="archetypes.json required_items added in Task 3")
 def test_get_job_required_items_cheating_spouse():
     from noir.items import get_job_required_items
     reqs = get_job_required_items("cheating_spouse")
@@ -371,3 +370,41 @@ def test_handle_slash_done_decrements_consumable(db):
     game.handle_slash_done()
     items = get_player_items(db)
     assert items.get("film", 0) == 2  # decremented by 1
+
+
+def test_handle_slash_active_work_with_required_items_no_crash(db):
+    """Verify /job display doesn't crash for a job with required items."""
+    import json
+    game = _make_game(db)
+    db.execute(
+        "INSERT INTO cases (case_type, status, case_data, payout, faction, tier, archetype, title) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        ("job", "active", json.dumps({
+            "job_archetype": "cheating_spouse",
+            "objective": "Find out if they're cheating.",
+            "steps": [{"id": 1, "description": "Follow the subject.", "completed": False}]
+        }), 60, "private", 1, "cheating_spouse", "Test Job")
+    )
+    db.commit()
+    # No items in inventory — should not crash, just show yellow required items
+    game.handle_slash_active_work()  # no exception = pass
+
+
+def test_handle_slash_jobs_with_required_items_no_crash(db, monkeypatch):
+    """Verify /classifieds display doesn't crash for jobs with required items."""
+    import json
+    import noir.game as game_module
+    game = _make_game(db)
+    db.execute(
+        "INSERT INTO cases (case_type, status, case_data, payout, faction, tier, archetype, title) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        ("job", "pending", json.dumps({
+            "job_archetype": "cheating_spouse",
+            "objective": "Find out if they're cheating.",
+            "steps": []
+        }), 60, "private", 1, "cheating_spouse", "Test Job")
+    )
+    db.commit()
+    # Stub out the interactive prompt so it doesn't block in tests
+    monkeypatch.setattr(game_module.console, "input", lambda *a, **kw: "")
+    game.handle_slash_jobs("")  # no exception = pass
