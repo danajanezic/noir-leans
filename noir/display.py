@@ -469,7 +469,7 @@ def show_partner_aside(speaker: str, text: str) -> None:
 
 _PROMPT_HINT_PLAIN = (
     "/go <place>  \u00b7  /talk <name>  \u00b7  /look  \u00b7  /evidence"
-    "  \u00b7  /leads  \u00b7  /suspects  \u00b7  /status  \u00b7  /me  \u00b7  /help"
+    "  \u00b7  /leads  \u00b7  /suspects  \u00b7  /status  \u00b7  /me  \u00b7  /items  \u00b7  /help"
 )
 
 
@@ -817,6 +817,34 @@ def show_cases(cases: list, active_case_id: int | None) -> None:
     console.print("[dim]/cases activate <title> — switch active case[/dim]\n")
 
 
+def show_items(items: dict[str, int], item_defs: list) -> None:
+    """Display the player's current inventory."""
+    owned = [(d, items.get(d["slug"], 0)) for d in item_defs if items.get(d["slug"], 0) > 0]
+    if not owned:
+        console.print(Panel(
+            "[dim]Nothing on you.[/dim]",
+            title="[bold white]What You're Carrying[/bold white]",
+            border_style="white",
+        ))
+        return
+    lines = []
+    for item_def, qty in owned:
+        if item_def["consumable"]:
+            qty_str = str(qty)
+        else:
+            qty_str = "✓"
+        lines.append(
+            f"  [white]{item_def['name']:<22}[/white]"
+            f"[yellow]{qty_str:<5}[/yellow]"
+            f"[dim]{item_def['description']}[/dim]"
+        )
+    console.print(Panel(
+        "\n".join(lines),
+        title="[bold white]What You're Carrying[/bold white]",
+        border_style="white",
+    ))
+
+
 def show_help() -> None:
     from io import StringIO
     from rich.console import Console as _Console
@@ -868,6 +896,8 @@ def show_help() -> None:
         "  /add <name> as suspect — add someone to your list\n"
         "  /drink — have a drink (at a bar or near one)\n"
         "  /rep — your street reputation and faction standings\n"
+        "  /items — what you're carrying\n"
+        "  /use [item] [action] — use an item\n"
         "  /job or /case — current active case or job\n"
         "  /jobs — all cases and active jobs\n"
         "  /classifieds — browse the job board\n"

@@ -14,7 +14,7 @@ from noir.display import (
     show_conversation_header, show_conversation_footer, show_evidence, show_partner_aside,
     show_relationships, show_dossier, show_dossier_all, show_cases, show_player_profile,
     npc_input_prompt, show_player_turn,
-    show_wait_result, fmt_game_time, console, enable_game_padding
+    show_wait_result, fmt_game_time, console, enable_game_padding, show_items
 )
 from noir.parser import parse_command, Intent
 from noir.llm.base import LLMBackend, FatalLLMError
@@ -46,7 +46,7 @@ from noir.persistence.repository import (
     initialize_npc_relationship,
     get_npc_revelation_summary, set_npc_revelation_summary,
     get_organizations_for_npc, get_organizations_for_location,
-    get_player_cash, update_player_cash,
+    get_player_cash, update_player_cash, get_player_items, add_player_item,
     record_bribe, get_accepted_bribes_for_case,
     get_npc_corruption, set_npc_corruption,
     get_organization_by_name, add_organization_member,
@@ -70,6 +70,8 @@ from noir.cases.trial import TrialSystem
 from noir.onboarding.quiz import Quiz, QUIZ_QUESTIONS
 from noir.onboarding.cold_open import ColdOpen
 from noir.world import World
+from noir.items import ITEM_CATALOG, get_item_def, detect_item_action, check_job_requirements, get_consumables_to_decrement, get_job_required_items
+from noir.persistence.repository import use_item
 from noir.map import render_map, FACTION_LEGEND, MARKER_LEGEND
 
 
@@ -184,6 +186,7 @@ FIXED_LOCATIONS = [
     ("Sheriff's Office", "The Orleans Parish Sheriff operates out of a building that smells of old paper and jurisdiction disputes. The sheriff is elected. He remembers who voted for him."),
     ("Rossi's", "A social club on Bourbon Street that serves coffee and does not explain its back rooms. The Rossi family conducts business here openly because they have long since stopped needing to hide."),
     ("The Marigny Room", "A private club in the Faubourg Marigny. The Castellano family's preferred venue for receiving guests. The food is excellent. The conversation is careful."),
+    ("Treme Pawn & Loan", "A pawn shop in the Tremé that has been buying and selling since before the war. The proprietor asks no questions about where things came from."),
 ]
 
 FIXED_LOCATION_NPCS = [
@@ -609,6 +612,27 @@ FIXED_LOCATION_NPCS = [
             "question about courthouse records and has learned to answer in the fewest possible words. "
             "PERIOD ACCURACY: It is 1935. No computers, no televisions, no zip codes. "
             "Records are paper, filed in folders, stored in cabinets. You retrieve them yourself."
+        ),
+    },
+    {
+        "name": "Clarence Dufour",
+        "location": "Treme Pawn & Loan",
+        "role": "pawn shop proprietor",
+        "org": "Treme Pawn & Loan",
+        "org_role": "proprietor",
+        "corruption": 0,
+        "system_prompt": (
+            "You are Clarence Dufour, Creole proprietor of Treme Pawn & Loan, 1935. "
+            "You have run this shop since 1919 and you know what things are worth — to the penny. "
+            "You ask no questions about where goods came from. You do not discuss your customers. "
+            "When a detective comes in, you describe what's in stock and what it costs. "
+            "If they want to buy something, they say so and you complete the sale. "
+            "You carry: Camera ($12), Roll of Film ($2 each), Lockpick Set ($8), Binoculars ($15), "
+            ".38 Revolver ($35), .38 Ammunition ($4 per box of 10 rounds), "
+            "Bribe Envelope ($2 each), Disguise Kit ($18). "
+            "Speak in the measured tones of someone who has learned that discretion is a business asset. "
+            "You are not warm, but you are fair. "
+            "PERIOD ACCURACY: It is 1935. No computers, no televisions, no zip codes."
         ),
     },
 ]
@@ -1394,6 +1418,15 @@ class Game:
 
         if arrival:
             show_dialogue(self.companion.name, arrival)
+        missing = self._get_missing_required_items_for_active_job()
+        if missing and self.companion:
+            missing_str = " and ".join(missing)
+            nudge_prompt = (
+                f"[The detective is heading to work on a job and is missing: {missing_str}. "
+                f"Remind them in one in-character sentence — don't say 'the job', be specific about what they need.]"
+            )
+            nudge = self.companion.narrate(nudge_prompt, record=False)
+            show_partner_aside(self.companion.name, nudge)
         self._check_faction_tension()
 
     def handle_talk(self, target: str) -> None:
@@ -1631,6 +1664,7 @@ class Game:
                 self.handle_da()
                 return
             show_player_turn(player_input)
+            self._maybe_trigger_item_action(player_input)
             state_ctx = self._player_state_context()
             identity_ctx = self._player_identity_context()
             rel_ctx = self._npc_relationship_context(npc_row["id"])
@@ -1675,6 +1709,8 @@ class Game:
             advance_game_time(self.conn, delta=5)
             self._check_npc_bribe_offer(npc_row, response)
             self._check_npc_job_offer(npc_row, response)
+            if npc_row["name"] == "Clarence Dufour":
+                self._check_purchase_from_dufour(npc_row, response)
             self._check_job_completion(npc_row, response)
             self._check_npc_appointment(npc_row["id"], npc_row["name"], player_input, response)
             self._check_npc_romance_milestone(npc_row["id"], npc)
@@ -2544,6 +2580,11 @@ class Game:
             self.handle_slash_active_work()
         elif slug == "/done":
             self.handle_slash_done()
+        elif slug == "/items":
+            self.handle_slash_items()
+        elif slug.startswith("/use"):
+            args = raw.strip()[4:].strip()  # strip "/use" prefix
+            self.handle_slash_use(args)
         elif slug.startswith("/bribe"):
             target = raw.strip()[6:].strip()
             self.handle_bribe(target)
@@ -3558,6 +3599,131 @@ class Game:
         elif not tags and not street_says:
             console.print("[dim]Nobody knows your name yet. Do some work.[/dim]")
 
+    def handle_slash_items(self) -> None:
+        inventory = get_player_items(self.conn)
+        show_items(inventory, ITEM_CATALOG)
+
+    def handle_slash_use(self, args: str) -> None:
+        parts = args.strip().split()
+        if len(parts) < 2:
+            console.print("[dim]Use what, how? Try: /use camera photograph[/dim]")
+            return
+
+        item_slug = parts[0].lower()
+        action_name = parts[1].lower()
+
+        inventory = get_player_items(self.conn)
+        if inventory.get(item_slug, 0) < 1:
+            console.print(f"[dim]You don't have a {item_slug.replace('_', ' ')}.[/dim]")
+            return
+
+        item_def = get_item_def(item_slug)
+        if not item_def:
+            console.print("[dim]That's not something you're carrying.[/dim]")
+            return
+
+        actions = item_def.get("actions", {})
+        if action_name not in actions:
+            valid = ", ".join(actions.keys()) or "none"
+            console.print(f"[dim]You can't do that with a {item_def['name']}. Valid: {valid}[/dim]")
+            return
+
+        action_def = actions[action_name]
+        consumes = action_def.get("consumes")
+        if consumes:
+            if inventory.get(consumes, 0) < 1:
+                consumable_def = get_item_def(consumes)
+                cname = consumable_def["name"] if consumable_def else consumes
+                console.print(f"[dim]You need {cname} to do that.[/dim]")
+                return
+            use_item(self.conn, slug=consumes)
+
+        console.print(f"[dim]Done.[/dim]")
+
+    def _maybe_trigger_item_action(self, text: str) -> None:
+        inventory = get_player_items(self.conn)
+        if not inventory:
+            return
+        match = detect_item_action(text, inventory)
+        if not match:
+            return
+        item_slug, action_name = match
+        item_def = get_item_def(item_slug)
+        if not item_def:
+            return
+        actions = item_def.get("actions", {})
+        action_def = actions.get(action_name, {})
+        consumes = action_def.get("consumes")
+        if consumes:
+            if inventory.get(consumes, 0) < 1:
+                consumable_def = get_item_def(consumes)
+                cname = consumable_def["name"] if consumable_def else consumes
+                console.print(f"[dim]You reach for the {item_def['name']} — but you're out of {cname}.[/dim]")
+                return
+            use_item(self.conn, slug=consumes)
+        console.print(f"[dim][{item_def['name']}][/dim]")
+
+    def _check_purchase_from_dufour(self, npc_row, response: str) -> None:
+        _DUFOUR_KEYWORDS = ("buy", "purchase", "i'll take", "give me", "i want", "how much", "sell me")
+        resp_lower = response.lower()
+        if not any(kw in resp_lower for kw in _DUFOUR_KEYWORDS):
+            return
+
+        purchase = self.llm.query_structured(
+            "Determine if this pawn shop proprietor's response indicates a completed sale to the detective. "
+            "A sale means the proprietor acknowledged the detective is buying something specific. "
+            "Return ONLY valid JSON: "
+            "{\"item_purchased\": \"slug_or_null\", \"quantity\": 1}",
+            [],
+            f"Proprietor said: \"{response[:400]}\""
+        )
+
+        slug = purchase.get("item_purchased")
+        if not slug or slug == "null":
+            return
+
+        valid_slugs = {item["slug"] for item in ITEM_CATALOG}
+        if slug not in valid_slugs:
+            return
+
+        item_def = get_item_def(slug)
+        if not item_def:
+            return
+
+        qty = 10 if slug == "ammo_38" else int(purchase.get("quantity") or 1)
+        price = item_def["price"] * (10 if slug == "ammo_38" else 1)
+
+        cash = get_player_cash(self.conn)
+        if cash < price:
+            console.print(f"[dim]You're short. {item_def['name']} costs ${price}.[/dim]")
+            return
+
+        add_player_item(self.conn, slug=slug, quantity=qty)
+        update_player_cash(self.conn, delta=-price)
+
+        if slug == "ammo_38":
+            console.print(f"[dim]-${price}. Ten rounds of .38, added to your pocket.[/dim]")
+        elif item_def["consumable"]:
+            console.print(f"[dim]-${price}. {item_def['name']} added.[/dim]")
+        else:
+            console.print(f"[dim]-${price}. {item_def['name']} is yours.[/dim]")
+
+    def _get_missing_required_items_for_active_job(self) -> list[str]:
+        job = self.conn.execute(
+            "SELECT case_data FROM cases WHERE case_type='job' AND status='active' LIMIT 1"
+        ).fetchone()
+        if not job:
+            return []
+        try:
+            data = json.loads(job["case_data"]) if isinstance(job["case_data"], str) else job["case_data"]
+            archetype_slug = data.get("job_archetype", "")
+        except Exception:
+            return []
+        if not archetype_slug:
+            return []
+        inventory = get_player_items(self.conn)
+        return check_job_requirements(archetype_slug, inventory)
+
     def handle_slash_done(self) -> None:
         """Mark an active job complete after confirming the objective was met."""
         active_jobs = get_active_jobs(self.conn)
@@ -3596,10 +3762,28 @@ class Game:
             console.print(f"[dim]{reason}[/dim]")
             return
 
+        # --- item requirement check ---
+        _archetype = data.get("job_archetype", "")
+
+        if _archetype:
+            _missing = check_job_requirements(_archetype, get_player_items(self.conn))
+            if _missing:
+                missing_str = " and ".join(_missing)
+                console.print(f"[dim]Can't close that out. You're still missing {missing_str}.[/dim]")
+                return
+        # --- end item requirement check ---
+
         payout = job["payout"] or 0
         faction = job["faction"] or "private"
         tier = job["tier"] or 1
         complete_job(self.conn, case_id=job["id"], payout=payout, faction=faction, tier=tier)
+
+        # --- decrement consumables ---
+        if _archetype:
+            for consumable_slug in get_consumables_to_decrement(_archetype):
+                use_item(self.conn, slug=consumable_slug)
+        # --- end decrement consumables ---
+
         if tier == 1:
             self._replenish_job_board()
         self._resume_on_hold()
@@ -3690,6 +3874,27 @@ class Game:
                         lines.append(f"  {marker} [{color}]{wrapped[0]}[/{color}]")
                         for cont in wrapped[1:]:
                             lines.append(f"    [{color}]{cont}[/{color}]")
+            archetype_slug = data.get("job_archetype", "")
+            if archetype_slug:
+                reqs = get_job_required_items(archetype_slug)
+                if reqs:
+                    inventory = get_player_items(self.conn)
+                    req_parts = []
+                    for req in reqs:
+                        item_def = get_item_def(req["slug"])
+                        if not item_def:
+                            continue
+                        has_item = inventory.get(req["slug"], 0) >= 1
+                        color = "dim" if has_item else "yellow"
+                        req_parts.append(f"[{color}]{item_def['name']}[/{color}]")
+                        if req.get("needs_consumable") and item_def.get("requires_slug"):
+                            consumable_def = get_item_def(item_def["requires_slug"])
+                            if consumable_def:
+                                has_consumable = inventory.get(item_def["requires_slug"], 0) >= 1
+                                color = "dim" if has_consumable else "yellow"
+                                req_parts.append(f"[{color}]{consumable_def['name']}[/{color}]")
+                    if req_parts:
+                        lines.append(f"\n[dim]Required:[/dim] {', '.join(req_parts)}")
             console.print("\n".join(lines))
         else:
             console.print(f"[bold yellow]{row['title']}[/bold yellow]")
@@ -3732,6 +3937,21 @@ class Game:
                 f"— {faction_name} — [green]${job['payout']}[/green]"
             )
             lines.append(f"   [dim]{data.get('objective', '')}[/dim]")
+            archetype_slug = data.get("job_archetype", "")
+            if archetype_slug:
+                reqs = get_job_required_items(archetype_slug)
+                if reqs:
+                    req_names = []
+                    for req in reqs:
+                        item_def = get_item_def(req["slug"])
+                        if item_def:
+                            req_names.append(item_def["name"])
+                            if req.get("needs_consumable") and item_def.get("requires_slug"):
+                                consumable_def = get_item_def(item_def["requires_slug"])
+                                if consumable_def:
+                                    req_names.append(consumable_def["name"])
+                    if req_names:
+                        lines.append(f"   [dim]Requires: {', '.join(req_names)}[/dim]")
             lines.append("")
 
         console.print(_Panel("\n".join(lines).rstrip(), title="[yellow]Help Wanted[/yellow]",

@@ -227,6 +227,13 @@ SEEDED_ORGANIZATIONS = [
         "is_hierarchical": 0,
         "influence": 5,
     },
+    {
+        "name": "Treme Pawn & Loan",
+        "type": "independent",
+        "description": "A pawn and loan shop in the Tremé. Buys and sells without asking questions about provenance.",
+        "is_hierarchical": 0,
+        "influence": 1,
+    },
 ]
 
 
