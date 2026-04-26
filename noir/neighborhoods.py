@@ -1,4 +1,5 @@
 import sqlite3
+from noir.jobs.factions import OPPOSITION
 
 _NEIGHBORHOODS = [
     ("mid_city",        "Mid-City",          ["nopd", "shorties"]),
@@ -75,3 +76,27 @@ def get_neighborhood_id(conn: sqlite3.Connection, slug: str) -> int | None:
 
 def is_algiers_crossing(from_slug: str, to_slug: str) -> bool:
     return (from_slug in _ALGIERS_SIDE) != (to_slug in _ALGIERS_SIDE)
+
+
+def compute_danger(faction_slugs: list[str]) -> int:
+    danger = 1
+    slugs = set(faction_slugs)
+    for slug in slugs:
+        opp = OPPOSITION.get(slug, {})
+        for other in opp.get("direct", []):
+            if other in slugs and slug < other:
+                danger += 2
+        for other in opp.get("secondary", []):
+            if other in slugs and slug < other:
+                danger += 1
+    return max(1, min(5, danger))
+
+
+def recompute_all_danger(conn: sqlite3.Connection) -> None:
+    from noir.persistence.repository import get_neighborhood_factions, update_neighborhood_danger
+    hoods = conn.execute("SELECT slug FROM neighborhoods").fetchall()
+    for hood in hoods:
+        slug = hood["slug"]
+        factions = get_neighborhood_factions(conn, slug)
+        danger = compute_danger(factions)
+        update_neighborhood_danger(conn, slug, danger)

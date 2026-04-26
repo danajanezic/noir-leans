@@ -1,4 +1,4 @@
-from noir.neighborhoods import seed_neighborhoods, get_neighborhood_id
+from noir.neighborhoods import seed_neighborhoods, get_neighborhood_id, compute_danger, recompute_all_danger
 from noir.persistence.repository import (
     get_neighborhood_for_location,
     get_travel_distance,
@@ -128,3 +128,34 @@ def test_update_neighborhood_danger(db):
     update_neighborhood_danger(db, "french_quarter", 4)
     row = get_neighborhood_by_slug(db, "french_quarter")
     assert row["danger"] == 4
+
+
+def test_compute_danger_base():
+    assert compute_danger([]) == 1
+
+
+def test_compute_danger_no_opposing_factions():
+    assert compute_danger(["archdiocese"]) == 1
+
+
+def test_compute_danger_direct_opposition():
+    assert compute_danger(["rossi", "castellano"]) == 3
+
+
+def test_compute_danger_secondary_opposition():
+    assert compute_danger(["nopd", "rossi"]) == 3
+
+
+def test_compute_danger_clamps_to_5():
+    danger = compute_danger(["rossi", "castellano", "nopd", "treme_club", "tallboys", "shorties"])
+    assert danger <= 5
+    assert danger >= 1
+
+
+def test_recompute_all_danger_updates_db(db):
+    seed_neighborhoods(db)
+    recompute_all_danger(db)
+    row = db.execute(
+        "SELECT danger FROM neighborhoods WHERE slug='french_quarter'"
+    ).fetchone()
+    assert 1 <= row["danger"] <= 5
