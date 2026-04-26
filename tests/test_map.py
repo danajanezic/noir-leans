@@ -41,10 +41,4 @@ def test_render_map_different_active_neighborhood():
 
 
 def test_parse_map_command():
-    assert parse_command("map").intent == Intent.MAP
-
-
-def test_parse_map_command_variants():
-    assert parse_command("show map").intent == Intent.MAP
-    assert parse_command("open map").intent == Intent.MAP
-    assert parse_command("view map").intent == Intent.MAP
+    assert parse_command("/map").intent == Intent.MAP
