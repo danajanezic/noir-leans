@@ -46,7 +46,7 @@ from noir.persistence.repository import (
     initialize_npc_relationship,
     get_npc_revelation_summary, set_npc_revelation_summary,
     get_organizations_for_npc, get_organizations_for_location,
-    get_player_cash, update_player_cash, get_player_items,
+    get_player_cash, update_player_cash, get_player_items, add_player_item,
     record_bribe, get_accepted_bribes_for_case,
     get_npc_corruption, set_npc_corruption,
     get_organization_by_name, add_organization_member,
