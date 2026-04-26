@@ -1,4 +1,8 @@
-from noir.neighborhoods import seed_neighborhoods, get_neighborhood_id, compute_danger, recompute_all_danger, travel_time_minutes
+from unittest.mock import MagicMock
+from noir.neighborhoods import (
+    seed_neighborhoods, get_neighborhood_id, compute_danger, recompute_all_danger, travel_time_minutes,
+    assign_locations_to_neighborhoods, seed_bartenders, get_bartender_for_neighborhood,
+)
 from noir.persistence.repository import (
     get_neighborhood_for_location,
     get_travel_distance,
@@ -171,3 +175,50 @@ def test_travel_time_two_blocks():
 
 def test_travel_time_ferry_surcharge():
     assert travel_time_minutes(distance=2, is_ferry=True) == 45
+
+
+def test_fixed_locations_get_neighborhood(db):
+    seed_neighborhoods(db)
+    db.execute(
+        "INSERT OR IGNORE INTO locations (name, description, is_fixed) VALUES (?, ?, 1)",
+        ("Café Du Monde", "A famous café in the French Quarter near Jackson Square.")
+    )
+    db.commit()
+    assign_locations_to_neighborhoods(db)
+    row = db.execute(
+        "SELECT neighborhood_id FROM locations WHERE name='Café Du Monde'"
+    ).fetchone()
+    assert row["neighborhood_id"] is not None
+
+
+def test_get_bartender_for_neighborhood_none_before_seeding(db):
+    seed_neighborhoods(db)
+    assert get_bartender_for_neighborhood(db, "french_quarter") is None
+
+
+def test_seed_bartenders_creates_npc(db):
+    seed_neighborhoods(db)
+    mock_llm = MagicMock()
+    mock_llm.query.return_value = (
+        '{"name": "Marie Tureaud", "sex": "female", "age": 38, '
+        '"ethnicity": "Creole", "personality": "sharp and guarded", '
+        '"bar_name": "The Gold Tooth", "bar_description": "A dim bar off Bourbon."}'
+    )
+    seed_bartenders(db, mock_llm)
+    result = get_bartender_for_neighborhood(db, "french_quarter")
+    assert result is not None
+    assert result["name"] == "Marie Tureaud"
+
+
+def test_seed_bartenders_idempotent(db):
+    seed_neighborhoods(db)
+    mock_llm = MagicMock()
+    mock_llm.query.return_value = (
+        '{"name": "Joe Blanc", "sex": "male", "age": 45, '
+        '"ethnicity": "Cajun", "personality": "friendly", '
+        '"bar_name": "The Rusty Nail", "bar_description": "A dive bar."}'
+    )
+    seed_bartenders(db, mock_llm)
+    seed_bartenders(db, mock_llm)
+    rows = db.execute("SELECT COUNT(*) FROM npcs WHERE role='bartender'").fetchone()[0]
+    assert rows == 12
