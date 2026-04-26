@@ -4475,6 +4475,8 @@ class Game:
         show_splash()
         enable_game_padding()
         create_schema(self.conn)
+        from noir.neighborhoods import seed_bartenders
+        seed_bartenders(self.conn, self.llm)
         fixed_locs = self.setup_fixed_locations()
         seed_archetypes_to_db(self.conn)
         self._ensure_seeded_locations()
