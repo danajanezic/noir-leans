@@ -370,6 +370,22 @@ _MIGRATIONS = [
     "ALTER TABLE npcs ADD COLUMN detained INTEGER DEFAULT 0",
     "ALTER TABLE npcs ADD COLUMN sex TEXT",
     "ALTER TABLE conversation_history ADD COLUMN embedding BLOB",
+    "ALTER TABLE cases ADD COLUMN faction TEXT",
+    "ALTER TABLE cases ADD COLUMN tier INTEGER",
+    "ALTER TABLE cases ADD COLUMN payout INTEGER",
+    """CREATE TABLE IF NOT EXISTS faction_reputation (
+        faction TEXT PRIMARY KEY,
+        reputation INTEGER NOT NULL DEFAULT 0
+    )""",
+    """CREATE TABLE IF NOT EXISTS job_offers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        npc_id INTEGER NOT NULL,
+        case_id INTEGER,
+        offered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        accepted INTEGER DEFAULT 0,
+        FOREIGN KEY (npc_id) REFERENCES npcs(id),
+        FOREIGN KEY (case_id) REFERENCES cases(id)
+    )""",
 ]
 
 
@@ -456,6 +472,23 @@ PRAGMA foreign_keys = ON;
 """)
 
 
+def _migrate_da_trust(conn: sqlite3.Connection) -> None:
+    """One-time copy of legacy player.da_trust into faction_reputation for da_office."""
+    player = conn.execute("SELECT da_trust FROM player WHERE id=1").fetchone()
+    if player is None:
+        return
+    da_trust = player["da_trust"] if player["da_trust"] is not None else 100
+    existing = conn.execute(
+        "SELECT reputation FROM faction_reputation WHERE faction='da_office'"
+    ).fetchone()
+    if existing is not None and existing["reputation"] == 0 and da_trust > 0:
+        conn.execute(
+            "UPDATE faction_reputation SET reputation=? WHERE faction='da_office'",
+            (da_trust,)
+        )
+        conn.commit()
+
+
 def create_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
     for sql in _MIGRATIONS:
@@ -468,3 +501,9 @@ def create_schema(conn: sqlite3.Connection) -> None:
     _backfill_clues(conn)
     from noir.organizations import seed_organizations
     seed_organizations(conn)
+    try:
+        from noir.jobs.factions import seed_faction_reputation
+        seed_faction_reputation(conn)
+    except ImportError:
+        pass
+    _migrate_da_trust(conn)
