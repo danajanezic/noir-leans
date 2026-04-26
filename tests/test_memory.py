@@ -164,3 +164,103 @@ def test_backfill_embeds_null_rows(tmp_path):
     rows = conn.execute("SELECT id, embedding FROM conversation_history ORDER BY id").fetchall()
     assert rows[0]["embedding"] is not None  # was NULL, now filled
     assert rows[1]["embedding"] == already   # pre-existing, unchanged
+
+
+def test_retrieve_returns_semantically_similar_messages(tmp_path):
+    """Retrieval returns messages whose embeddings are closest to the query."""
+    import sqlite3
+    import numpy as np
+    import noir.memory as mem
+    from noir.memory.retrieval import retrieve_relevant_history
+
+    conn = sqlite3.connect(str(tmp_path / "ret.db"))
+    conn.row_factory = sqlite3.Row
+    conn.execute("""
+        CREATE TABLE conversation_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            character_id TEXT, role TEXT, content TEXT, case_id INTEGER, embedding BLOB
+        )
+    """)
+
+    v_sister = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+    v_family = np.array([0.9, 0.1, 0.0], dtype=np.float32)
+    v_alderman = np.array([0.0, 0.0, 1.0], dtype=np.float32)
+
+    conn.execute("INSERT INTO conversation_history (character_id, role, content, embedding) VALUES ('partner', 'user', 'my sister in Baton Rouge', ?)", (v_sister.tobytes(),))
+    conn.execute("INSERT INTO conversation_history (character_id, role, content, embedding) VALUES ('partner', 'assistant', 'you mentioned family in Baton Rouge', ?)", (v_family.tobytes(),))
+    conn.execute("INSERT INTO conversation_history (character_id, role, content, embedding) VALUES ('partner', 'user', 'the alderman freight contracts', ?)", (v_alderman.tobytes(),))
+    conn.commit()
+
+    query_vec = np.array([0.95, 0.05, 0.0], dtype=np.float32)
+    mem._model = type("M", (), {"encode": staticmethod(lambda t, **kw: query_vec)})()
+    mem._no_embeddings = False
+    mem._worker = object()  # non-None so is_available() returns True
+
+    results = retrieve_relevant_history(conn, character_id="partner", query="do you remember my sister", k=2, recency=0)
+    contents = [r["content"] for r in results]
+
+    assert "my sister in Baton Rouge" in contents
+    assert "you mentioned family in Baton Rouge" in contents
+    assert "the alderman freight contracts" not in contents
+
+
+def test_retrieve_always_includes_recency(tmp_path):
+    """Last `recency` messages are always included regardless of similarity score."""
+    import sqlite3
+    import numpy as np
+    import noir.memory as mem
+    from noir.memory.retrieval import retrieve_relevant_history
+
+    conn = sqlite3.connect(str(tmp_path / "rec.db"))
+    conn.row_factory = sqlite3.Row
+    conn.execute("""
+        CREATE TABLE conversation_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            character_id TEXT, role TEXT, content TEXT, case_id INTEGER, embedding BLOB
+        )
+    """)
+
+    for i in range(5):
+        v = np.zeros(4, dtype=np.float32)
+        v[i % 4] = 1.0
+        conn.execute(
+            "INSERT INTO conversation_history (character_id, role, content, embedding) VALUES ('partner', 'user', ?, ?)",
+            (f"message {i}", v.tobytes())
+        )
+    conn.commit()
+
+    query_vec = np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float32)
+    mem._model = type("M", (), {"encode": staticmethod(lambda t, **kw: query_vec)})()
+    mem._no_embeddings = False
+    mem._worker = object()  # non-None so is_available() returns True
+
+    results = retrieve_relevant_history(conn, character_id="partner", query="anything", k=1, recency=2)
+    contents = [r["content"] for r in results]
+
+    assert "message 3" in contents
+    assert "message 4" in contents
+
+
+def test_retrieve_returns_empty_when_no_embeddings(tmp_path):
+    """Returns empty list gracefully when embeddings are unavailable."""
+    import sqlite3
+    import noir.memory as mem
+    from noir.memory.retrieval import retrieve_relevant_history
+
+    conn = sqlite3.connect(str(tmp_path / "empty.db"))
+    conn.row_factory = sqlite3.Row
+    conn.execute("""
+        CREATE TABLE conversation_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            character_id TEXT, role TEXT, content TEXT, case_id INTEGER, embedding BLOB
+        )
+    """)
+    conn.execute("INSERT INTO conversation_history (character_id, role, content) VALUES ('partner', 'user', 'hello')")
+    conn.commit()
+
+    mem._no_embeddings = True
+    mem._model = None
+    mem._worker = None
+
+    results = retrieve_relevant_history(conn, character_id="partner", query="hello", k=8, recency=4)
+    assert results == []
