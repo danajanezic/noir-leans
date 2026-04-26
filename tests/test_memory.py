@@ -102,3 +102,33 @@ def test_embedding_worker_shutdown_drains_queue(tmp_path):
         assert row["embedding"] is not None, f"Row {row['id']} embedding not stored"
         stored = np.frombuffer(row["embedding"], dtype=np.float32)
         assert np.allclose(stored, np.zeros(3, dtype=np.float32))
+
+
+def test_memory_init_no_package_is_graceful(monkeypatch):
+    """init() with no_embeddings=True sets _no_embeddings=True without crashing."""
+    import sys
+    import noir.memory as mem
+
+    # Reset state
+    mem._no_embeddings = False
+    mem._model = None
+    mem._worker = None
+
+    mem.init(db_path="/tmp/test.db", no_embeddings=True)
+    assert mem.is_available() is False
+    assert mem.embed("anything") is None
+    mem.shutdown()  # must not raise
+
+
+def test_memory_embed_returns_none_when_unavailable():
+    import noir.memory as mem
+    mem._no_embeddings = True
+    mem._model = None
+    assert mem.embed("test") is None
+
+
+def test_memory_enqueue_noop_when_unavailable():
+    import noir.memory as mem
+    mem._no_embeddings = True
+    mem._worker = None
+    mem.enqueue(row_id=1, text="test")  # must not raise
