@@ -24,12 +24,30 @@ A one-shot Rich canvas render — no terminal takeover, no curses. The player ty
 
 ### Neighborhood Boxes
 
-Each box is 16 wide × 5 tall (`BW=16, BH=5`). Interior rows:
-- Row 1: neighborhood name, centered, `bold white`
-- Row 2: faction codes, centered, one letter per faction separated by spaces
-- Row 3: danger bar (5 chars), centered — `░` green (1–2), `▒` yellow (3), `▓` bold red (4–5)
+Each box is 16 wide × 5 tall (`BW=16, BH=5`).
 
-Current location gets a **double-line border** (`╔══╗`) in `bold white`; all others get a **single-line dim border** (`┌──┐`).
+- **Top border:** neighborhood name embedded and centered in the border line (e.g. `┌─ TREME ──┐`)
+- **Row 1:** faction codes, centered, one letter per faction separated by spaces
+- **Row 2:** danger bar (5 chars), centered — `░` green (1–2), `▒` yellow (3), `▓` red (4–5)
+- **Row 3:** discovered location markers, centered (empty if none discovered)
+
+Current location gets a **double-line border** (`╔══╗`) in `bold white` with full-brightness interior. All other boxes use a **single-line dim border** (`┌──┐`) with non-bold interior content. The outer map frame and title are `dim yellow`.
+
+### Location Markers
+
+Displayed in row 3 of a neighborhood box only for **discovered** case locations. Each type has a distinct UTF-8 symbol:
+
+| Symbol | Type |
+|--------|------|
+| `✦` | Crime scene |
+| `⌂` | Premises (any NPC building — factory, dock, home, etc.) |
+| `⚑` | Stakeout |
+| `◉` | Evidence |
+| `☎` | Contact |
+| `✝` | Church / mortuary |
+| `⚜` | Bar / lounge / tavern |
+
+The danger key is rendered to the right of the map frame (not below it), vertically centered, with a blank line between each entry.
 
 ### Neighborhoods & Column Anchors
 
