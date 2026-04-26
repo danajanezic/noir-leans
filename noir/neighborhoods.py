@@ -209,23 +209,27 @@ def seed_bartenders(conn: sqlite3.Connection, llm) -> None:
         bar_name = data.get("bar_name", f"The {hood_row['name']} Bar")
         bar_desc = data.get("bar_description", "A neighborhood bar.")
 
-        result = conn.execute(
-            "INSERT OR IGNORE INTO locations (name, description, is_fixed, neighborhood_id) VALUES (?, ?, 1, ?) RETURNING id",
-            (bar_name, bar_desc, nid)
+        existing = conn.execute(
+            "SELECT id FROM locations WHERE name=? AND is_fixed=1", (bar_name,)
         ).fetchone()
-        if result is None:
-            result = conn.execute("SELECT id FROM locations WHERE name=?", (bar_name,)).fetchone()
-        loc_id = result["id"]
+        if existing:
+            loc_id = existing["id"]
+        else:
+            loc_id = conn.execute(
+                "INSERT INTO locations (name, description, is_fixed, neighborhood_id) VALUES (?, ?, 1, ?) RETURNING id",
+                (bar_name, bar_desc, nid)
+            ).fetchone()["id"]
         conn.commit()
 
+        bartender_name = data.get("name", "The Barkeep")
         bartender_system = (
-            f"You are {data['name']}, bartender at {bar_name} in {hood_row['name']}, 1935 New Orleans. "
+            f"You are {bartender_name}, bartender at {bar_name} in {hood_row['name']}, 1935 New Orleans. "
             f"You know your neighborhood well — its regulars, its factions, its gossip — but you keep your own counsel. "
             f"You can share: names of nearby establishments, mood on the street, faction activity hints. "
             f"Stay in character. Period-accurate language only. No modern slang. No case plot details."
         )
         conn.execute(
             "INSERT INTO npcs (case_id, name, role, system_prompt, current_location_id) VALUES (NULL, ?, 'bartender', ?, ?)",
-            (data["name"], bartender_system, loc_id)
+            (bartender_name, bartender_system, loc_id)
         )
         conn.commit()

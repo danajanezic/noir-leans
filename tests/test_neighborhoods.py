@@ -196,29 +196,34 @@ def test_get_bartender_for_neighborhood_none_before_seeding(db):
     assert get_bartender_for_neighborhood(db, "french_quarter") is None
 
 
+def _mock_llm_with_unique_bars():
+    mock_llm = MagicMock()
+    # Each neighborhood needs a unique bar_name so locations don't collide
+    mock_llm.query.side_effect = [
+        f'{{"name": "Barkeep {i}", "sex": "male", "age": 40, "ethnicity": "Creole", '
+        f'"personality": "quiet", "bar_name": "Bar {i}", "bar_description": "A bar."}}'
+        for i in range(20)
+    ]
+    return mock_llm
+
+
 def test_seed_bartenders_creates_npc(db):
     seed_neighborhoods(db)
-    mock_llm = MagicMock()
-    mock_llm.query.return_value = (
-        '{"name": "Marie Tureaud", "sex": "female", "age": 38, '
-        '"ethnicity": "Creole", "personality": "sharp and guarded", '
-        '"bar_name": "The Gold Tooth", "bar_description": "A dim bar off Bourbon."}'
-    )
+    # french_quarter is index 5 in _NEIGHBORHOODS order; supply enough unique responses
+    mock_llm = _mock_llm_with_unique_bars()
     seed_bartenders(db, mock_llm)
     result = get_bartender_for_neighborhood(db, "french_quarter")
     assert result is not None
-    assert result["name"] == "Marie Tureaud"
+    assert "Barkeep" in result["name"]
 
 
 def test_seed_bartenders_idempotent(db):
     seed_neighborhoods(db)
-    mock_llm = MagicMock()
-    mock_llm.query.return_value = (
-        '{"name": "Joe Blanc", "sex": "male", "age": 45, '
-        '"ethnicity": "Cajun", "personality": "friendly", '
-        '"bar_name": "The Rusty Nail", "bar_description": "A dive bar."}'
-    )
+    mock_llm = _mock_llm_with_unique_bars()
     seed_bartenders(db, mock_llm)
-    seed_bartenders(db, mock_llm)
+    # Second call should be a complete no-op — all 12 exist
+    mock_llm2 = MagicMock()
+    mock_llm2.query.side_effect = AssertionError("should not call LLM on second seed")
+    seed_bartenders(db, mock_llm2)
     rows = db.execute("SELECT COUNT(*) FROM npcs WHERE role='bartender'").fetchone()[0]
     assert rows == 12
