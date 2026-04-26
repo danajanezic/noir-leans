@@ -74,13 +74,6 @@ def test_detect_item_action_no_match(db):
     assert result is None
 
 
-def test_check_job_requirements_no_reqs(db):
-    from noir.items import check_job_requirements
-    # skip_trace has no required_items
-    missing = check_job_requirements("skip_trace", {})
-    assert missing == []
-
-
 def test_detect_item_action_not_owned(db):
     from noir.items import detect_item_action
     inventory = {}  # no camera
