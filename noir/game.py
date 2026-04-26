@@ -4473,10 +4473,38 @@ class Game:
                 title="[green]CASE CLOSED[/green]",
             ))
 
+    def _check_terminal_width(self) -> None:
+        import shutil
+        import sys
+        from noir.map import render_map
+        from noir.neighborhoods import seed_neighborhoods, recompute_all_danger
+        MAP_WIDTH = 94
+        if shutil.get_terminal_size().columns > MAP_WIDTH:
+            return
+        # Show the map as the alignment check and loop until the player confirms it fits
+        seed_neighborhoods(self.conn)
+        recompute_all_danger(self.conn)
+        while True:
+            cols = shutil.get_terminal_size().columns
+            rendered = render_map(self.conn, "french_quarter", {})
+            sys.stdout.write('\n')
+            sys.stdout.write(rendered)
+            sys.stdout.write('\n')
+            sys.stdout.flush()
+            if cols > MAP_WIDTH:
+                break
+            console.print(
+                f"[yellow]Your terminal is {cols} columns wide. "
+                f"The map needs more than {MAP_WIDTH}. "
+                "Widen your window, then press Enter.[/yellow]"
+            )
+            input()
+
     def loop(self) -> None:
         show_splash()
         enable_game_padding()
         create_schema(self.conn)
+        self._check_terminal_width()
         from noir.neighborhoods import seed_bartenders
         seed_bartenders(self.conn, self.llm)
         fixed_locs = self.setup_fixed_locations()
