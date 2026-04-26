@@ -13,7 +13,22 @@ log = logging.getLogger(__name__)
 def _strip_stage_directions(text: str) -> str:
     text = re.sub(r'\(.*?\)', '', text, flags=re.DOTALL)
     text = re.sub(r'\*.*?\*', '', text, flags=re.DOTALL)
-    return re.sub(r'[ \t]+', ' ', text).strip()
+    text = re.sub(r'[ \t]+', ' ', text).strip()
+    # Truncate at any mid-response transcript injection: "USER: [" or "\nUSER:" signals
+    # the LLM starting to simulate a new conversation turn inside its response.
+    mid_transcript = re.search(r'\n\s*USER\s*:', text, re.IGNORECASE)
+    if mid_transcript:
+        text = text[:mid_transcript.start()].strip()
+    # Strip transcript echoing: if the response starts with USER: or ASSISTANT: labels,
+    # extract just the last ASSISTANT: block (or drop the preamble entirely).
+    if re.search(r'^(USER|ASSISTANT):', text, re.IGNORECASE):
+        parts = re.split(r'\bASSISTANT:\s*', text, flags=re.IGNORECASE)
+        if len(parts) > 1:
+            text = parts[-1].strip()
+        else:
+            text = re.sub(r'^(USER|ASSISTANT):.*?(?=\n[^A-Z]|\Z)', '', text,
+                          flags=re.IGNORECASE | re.DOTALL).strip()
+    return text
 
 _CHARACTER_LOCK = (
     "\n\nABSOLUTE RULE: Never use racial epithets, slurs, or derogatory terms for any race, ethnicity, or group. "
@@ -43,11 +58,13 @@ _CHARACTER_LOCK = (
     "Silence is conveyed by saying nothing, or by speaking briefly. "
     "CRITICAL — NEVER WRITE THE DETECTIVE'S LINES: Do not write dialogue for the detective, the partner, "
     "or any other character. Do not format your response as a script, transcript, or Q&A exchange. "
-    "Do not prefix anything with 'Detective:', 'You:', 'Q:', or any other character label. "
+    "Do not prefix anything with 'Detective:', 'You:', 'Q:', 'USER:', 'ASSISTANT:', or any other character label. "
     "Your response is your own continuous speech — nothing else. "
     "CRITICAL — BRACKETS: Your prompt contains context in [square brackets]. "
     "That content is internal guidance for you — it does NOT appear in your spoken response. "
-    "Never output anything in [square brackets]. Never mirror that format in your reply."
+    "Never output anything in [square brackets]. Never mirror that format in your reply. "
+    "NEVER begin your response by repeating or paraphrasing the prompt you were given. "
+    "Start directly with what you want to say."
     "\n\nCRITICAL — NO INVENTED CHARACTERS: Do not invent or name any person who has not already appeared in the conversation history or been established in the case context provided to you. "
     "This includes coroners, clerks, doormen, doctors, informants, or any other named individual. "
     "If you need to refer to an unnamed official, use their role only ('the coroner', 'the clerk') — never invent a name. "
@@ -113,7 +130,11 @@ class Agent:
         return response
 
     def _history_with_summaries(self) -> list[dict]:
-        history = get_history(self.conn, character_id=self.character_id, case_id=self.case_id)
+        history = [
+            {**m, "content": _strip_stage_directions(m["content"])}
+            if m["role"] == "assistant" else m
+            for m in get_history(self.conn, character_id=self.character_id, case_id=self.case_id)
+        ]
         summaries = get_conversation_summaries(self.conn, character_id=self.character_id)
         opinion = get_latest_npc_opinion(self.conn, character_id=self.character_id)
         if not summaries and not opinion:
@@ -131,9 +152,16 @@ class Agent:
         return prefix + history
 
     _SUMMARY_SYSTEM = (
+        "NAME CONSTRAINT — ENFORCE BEFORE WRITING ANYTHING: "
+        "Scan the transcript for every proper name that appears verbatim. "
+        "Your summary may only contain names from that list. "
+        "If a person is referenced but not named in the transcript, describe them by role only: "
+        "'the alderman', 'an unidentified source', 'a colleague'. "
+        "NEVER invent or supply a proper name that does not appear verbatim in the transcript. "
+        "Example — WRONG: 'Camille Fontenot tipped off the alderman.' "
+        "Example — RIGHT: 'An unidentified colleague tipped off the alderman.' "
+        "\n\n"
         "You are processing a conversation from a 1935 noir detective game. "
-        "CRITICAL: Only reference characters by name if they appear in the conversation transcript. "
-        "Do not invent names for any person not named in the transcript — use role only ('the coroner', 'the clerk'). "
         "Return ONLY valid JSON with four fields:\n"
         "\"summary\": 2-4 sentences covering personal facts the detective revealed about themselves, "
         "any commitments or plans mentioned, and key information exchanged. Factual and specific.\n"
