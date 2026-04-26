@@ -8,8 +8,12 @@ _BATCH_SIZE = 32
 
 
 def run_backfill(conn: sqlite3.Connection) -> None:
+    if _mem._model is None:
+        _log.warning("backfill: model not loaded, skipping")
+        return
     rows = conn.execute(
-        "SELECT id, content FROM conversation_history WHERE embedding IS NULL ORDER BY id"
+        "SELECT id, content FROM conversation_history "
+        "WHERE embedding IS NULL AND content IS NOT NULL ORDER BY id"
     ).fetchall()
     if not rows:
         return
@@ -25,5 +29,9 @@ def run_backfill(conn: sqlite3.Connection) -> None:
                 )
             except Exception as e:
                 _log.warning("backfill failed for row %d: %s", row["id"], e)
-        conn.commit()
+        try:
+            conn.commit()
+        except Exception as commit_err:
+            _log.warning("backfill: commit failed for batch at index %d: %s", i, commit_err)
+            conn.rollback()
     _log.info("embedding backfill complete")
