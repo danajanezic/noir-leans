@@ -173,17 +173,24 @@ def get_item_def(slug: str) -> Optional[dict]:
     return _SLUG_TO_ITEM.get(slug)
 
 
-def get_job_required_items(archetype_slug: str) -> list:
-    """Return the required_items list for the given job archetype slug, or []."""
-    try:
-        with open(_JOBS_ARCHETYPES_PATH, "r", encoding="utf-8") as fh:
-            archetypes = json.load(fh)
-        for arch in archetypes:
-            if arch.get("slug") == archetype_slug:
-                return arch.get("required_items", [])
-    except Exception:
-        pass
-    return []
+_JOB_ARCHETYPES: dict[str, dict] | None = None
+
+
+def _load_job_archetypes() -> dict[str, dict]:
+    global _JOB_ARCHETYPES
+    if _JOB_ARCHETYPES is None:
+        try:
+            raw = json.loads(_JOBS_ARCHETYPES_PATH.read_text())
+            _JOB_ARCHETYPES = {a["slug"]: a for a in raw if "slug" in a}
+        except Exception:
+            _JOB_ARCHETYPES = {}
+    return _JOB_ARCHETYPES
+
+
+def get_job_required_items(archetype_slug: str) -> list[dict]:
+    """Return required_items list for a job archetype slug, or [] if none."""
+    archetypes = _load_job_archetypes()
+    return archetypes.get(archetype_slug, {}).get("required_items", [])
 
 
 def check_job_requirements(
@@ -226,8 +233,7 @@ def get_consumables_to_decrement(archetype_slug: str) -> list[str]:
 
 def detect_item_action(
     text: str,
-    inventory: dict,
-    conn: sqlite3.Connection,
+    inventory: dict[str, int],
 ) -> Optional[tuple]:
     """Return (item_slug, action_name) from player text, or None.
 
