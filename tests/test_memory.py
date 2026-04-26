@@ -290,3 +290,75 @@ def test_append_history_posts_embed_task(tmp_path, monkeypatch):
     assert isinstance(row_id, int)
     assert row_id > 0
     assert enqueued == [{"row_id": row_id, "text": "hello"}]
+
+
+def test_companion_history_uses_retrieval_when_available(tmp_path, monkeypatch):
+    """_history_with_summaries(query) calls retrieve_relevant_history when embeddings available."""
+    import sqlite3
+    import noir.memory as mem
+    from noir.characters.companion import Companion
+    from unittest.mock import MagicMock, patch
+
+    conn = sqlite3.connect(str(tmp_path / "comp.db"))
+    conn.row_factory = sqlite3.Row
+    conn.executescript("""
+        CREATE TABLE conversation_history (id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT, role TEXT, content TEXT, case_id INTEGER, embedding BLOB);
+        CREATE TABLE conversation_summaries (id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT, summary TEXT, npc_opinion TEXT, case_id INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE partner (id INTEGER PRIMARY KEY, name TEXT, sex TEXT, personality_archetype TEXT, speech_style TEXT, relationship_stance TEXT, system_prompt TEXT, alignment TEXT, affection INTEGER DEFAULT 0, dark_past_state TEXT DEFAULT 'none', dark_past TEXT, relationship_notes TEXT);
+        INSERT INTO partner (id, name, sex, personality_archetype, speech_style, relationship_stance, system_prompt) VALUES (1, 'Viv', 'female', 'stoic', 'terse', 'professional', 'you are a partner');
+    """)
+
+    retrieved = [{"role": "user", "content": "my sister in Baton Rouge"}]
+    monkeypatch.setattr(mem, "_no_embeddings", False)
+    monkeypatch.setattr(mem, "_model", object())
+    monkeypatch.setattr(mem, "_worker", object())
+
+    companion = Companion(
+        character_id="partner", system_prompt="you are a partner", llm=MagicMock(),
+        conn=conn, case_id=None, name="Viv", sex="female",
+        personality_archetype="stoic", speech_style="terse", relationship_stance="professional"
+    )
+
+    with patch("noir.memory.retrieval.retrieve_relevant_history", return_value=retrieved) as mock_retrieve:
+        result = companion._history_with_summaries(query="do you remember my sister")
+
+    mock_retrieve.assert_called_once()
+    call_kwargs = mock_retrieve.call_args[1]
+    assert call_kwargs["character_id"] == "partner"
+    assert call_kwargs["query"] == "do you remember my sister"
+    assert any(m["content"] == "my sister in Baton Rouge" for m in result)
+
+
+def test_companion_history_falls_back_to_recency_when_unavailable(tmp_path, monkeypatch):
+    """Falls back to last 12 messages when embeddings unavailable."""
+    import sqlite3
+    import noir.memory as mem
+    from noir.characters.companion import Companion
+    from unittest.mock import MagicMock
+
+    conn = sqlite3.connect(str(tmp_path / "comp2.db"))
+    conn.row_factory = sqlite3.Row
+    conn.executescript("""
+        CREATE TABLE conversation_history (id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT, role TEXT, content TEXT, case_id INTEGER, embedding BLOB);
+        CREATE TABLE conversation_summaries (id INTEGER PRIMARY KEY AUTOINCREMENT, character_id TEXT, summary TEXT, npc_opinion TEXT, case_id INTEGER, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE partner (id INTEGER PRIMARY KEY, name TEXT, sex TEXT, personality_archetype TEXT, speech_style TEXT, relationship_stance TEXT, system_prompt TEXT, alignment TEXT, affection INTEGER DEFAULT 0, dark_past_state TEXT DEFAULT 'none', dark_past TEXT, relationship_notes TEXT);
+        INSERT INTO partner (id, name, sex, personality_archetype, speech_style, relationship_stance, system_prompt) VALUES (1, 'Viv', 'female', 'stoic', 'terse', 'professional', 'you are a partner');
+    """)
+    for i in range(20):
+        conn.execute("INSERT INTO conversation_history (character_id, role, content, case_id) VALUES ('partner', 'user', ?, NULL)", (f"msg{i}",))
+    conn.commit()
+
+    monkeypatch.setattr(mem, "_no_embeddings", True)
+    monkeypatch.setattr(mem, "_model", None)
+    monkeypatch.setattr(mem, "_worker", None)
+
+    companion = Companion(
+        character_id="partner", system_prompt="you are a partner", llm=MagicMock(),
+        conn=conn, case_id=None, name="Viv", sex="female",
+        personality_archetype="stoic", speech_style="terse", relationship_stance="professional"
+    )
+
+    result = companion._history_with_summaries(query="anything")
+    dialogue_msgs = [m for m in result if m["role"] in ("user", "assistant")]
+    assert len(dialogue_msgs) <= 12
+    assert dialogue_msgs[-1]["content"] == "msg19"

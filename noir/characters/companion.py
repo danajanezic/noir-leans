@@ -67,10 +67,22 @@ class Companion(Agent):
     def _SUMMARY_SYSTEM(self) -> str:
         return _COMPANION_SUMMARY_SYSTEM
 
-    def _history_with_summaries(self) -> list[dict]:
-        # Case-scoped raw history only
-        history = get_history(self.conn, character_id=self.character_id,
-                              case_id=self.case_id)
+    def _history_with_summaries(self, query: str = "") -> list[dict]:
+        import noir.memory as _mem
+        from noir.memory.retrieval import retrieve_relevant_history
+
+        if query and _mem.is_available():
+            history = retrieve_relevant_history(
+                self.conn,
+                character_id=self.character_id,
+                query=query,
+                k=8,
+                recency=4,
+            )
+        else:
+            all_history = get_history(self.conn, character_id=self.character_id, case_id=self.case_id)
+            history = all_history[-12:]
+
         case_summaries = get_conversation_summaries(
             self.conn, character_id=self.character_id, case_id=self.case_id
         ) if self.case_id else []
@@ -90,6 +102,17 @@ class Companion(Agent):
             {"role": "assistant", "content": "Understood — I'll carry that forward."},
         ]
         return prefix + history
+
+    def speak(self, player_input: str, record: bool = True, store_as: str | None = None) -> str:
+        history = self._history_with_summaries(query=player_input)
+        response = self._query_with_retry(player_input, history)
+        if record:
+            append_history(self.conn, character_id=self.character_id,
+                           role="user", content=store_as if store_as is not None else player_input,
+                           case_id=self.case_id)
+            append_history(self.conn, character_id=self.character_id,
+                           role="assistant", content=response, case_id=self.case_id)
+        return response
 
     def summarize_and_save(self, history: list[dict], persist: bool = True) -> dict:
         """Summarize conversation, update relationship record. Returns {affection_delta, xp_awards}."""
@@ -135,7 +158,7 @@ class Companion(Agent):
     def interpret(self, player_input: str) -> dict:
         """Respond in character AND return a game action to dispatch."""
         interpret_system = self._locked_system_prompt + _INTERPRET_SUFFIX
-        history = self._history_with_summaries()
+        history = self._history_with_summaries(query=player_input)
         result = self.llm.query_structured(interpret_system, history, player_input)
         dialogue = result.get("dialogue", "")
         append_history(self.conn, character_id=self.character_id,
