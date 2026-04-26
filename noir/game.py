@@ -1700,6 +1700,8 @@ class Game:
             advance_game_time(self.conn, delta=5)
             self._check_npc_bribe_offer(npc_row, response)
             self._check_npc_job_offer(npc_row, response)
+            if npc_row["name"] == "Clarence Dufour":
+                self._check_purchase_from_dufour(npc_row, response)
             self._check_job_completion(npc_row, response)
             self._check_npc_appointment(npc_row["id"], npc_row["name"], player_input, response)
             self._check_npc_romance_milestone(npc_row["id"], npc)
@@ -3651,6 +3653,51 @@ class Game:
                 return
             use_item(self.conn, slug=consumes)
         console.print(f"[dim][{item_def['name']}][/dim]")
+
+    def _check_purchase_from_dufour(self, npc_row, response: str) -> None:
+        _DUFOUR_KEYWORDS = ("buy", "purchase", "i'll take", "give me", "i want", "how much", "sell me")
+        resp_lower = response.lower()
+        if not any(kw in resp_lower for kw in _DUFOUR_KEYWORDS):
+            return
+
+        purchase = self.llm.query_structured(
+            "Determine if this pawn shop proprietor's response indicates a completed sale to the detective. "
+            "A sale means the proprietor acknowledged the detective is buying something specific. "
+            "Return ONLY valid JSON: "
+            "{\"item_purchased\": \"slug_or_null\", \"quantity\": 1}",
+            [],
+            f"Proprietor said: \"{response[:400]}\""
+        )
+
+        slug = purchase.get("item_purchased")
+        if not slug or slug == "null":
+            return
+
+        valid_slugs = {item["slug"] for item in ITEM_CATALOG}
+        if slug not in valid_slugs:
+            return
+
+        item_def = get_item_def(slug)
+        if not item_def:
+            return
+
+        qty = 10 if slug == "ammo_38" else int(purchase.get("quantity") or 1)
+        price = item_def["price"] * (10 if slug == "ammo_38" else 1)
+
+        cash = get_player_cash(self.conn)
+        if cash < price:
+            console.print(f"[dim]You're short. {item_def['name']} costs ${price}.[/dim]")
+            return
+
+        add_player_item(self.conn, slug=slug, quantity=qty)
+        update_player_cash(self.conn, delta=-price)
+
+        if slug == "ammo_38":
+            console.print(f"[dim]-${price}. Ten rounds of .38, added to your pocket.[/dim]")
+        elif item_def["consumable"]:
+            console.print(f"[dim]-${price}. {item_def['name']} added.[/dim]")
+        else:
+            console.print(f"[dim]-${price}. {item_def['name']} is yours.[/dim]")
 
     def handle_slash_done(self) -> None:
         """Mark an active job complete after confirming the objective was met."""
