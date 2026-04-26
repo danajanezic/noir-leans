@@ -1,3 +1,6 @@
+from noir.neighborhoods import seed_neighborhoods, get_neighborhood_id
+
+
 def test_neighborhoods_table_exists(db):
     row = db.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='neighborhoods'"
@@ -24,9 +27,6 @@ def test_locations_has_neighborhood_id(db):
     assert "neighborhood_id" in cols
 
 
-from noir.neighborhoods import seed_neighborhoods, get_neighborhood_id
-
-
 def test_seed_neighborhoods_creates_all_12(db):
     seed_neighborhoods(db)
     count = db.execute("SELECT COUNT(*) FROM neighborhoods").fetchone()[0]
@@ -43,7 +43,7 @@ def test_seed_neighborhoods_idempotent(db):
 def test_seed_adjacency_creates_edges(db):
     seed_neighborhoods(db)
     count = db.execute("SELECT COUNT(*) FROM neighborhood_adjacency").fetchone()[0]
-    assert count > 0
+    assert count == 30  # 15 pairs × 2 directions
 
 
 def test_adjacency_is_symmetric(db):
