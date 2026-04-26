@@ -328,3 +328,46 @@ def test_get_missing_items_active_job_requirements_met(db):
     add_player_item(db, slug="film", quantity=2)
     result = game._get_missing_required_items_for_active_job()
     assert result == []
+
+
+def test_handle_slash_done_blocked_missing_items(db):
+    """Job cannot be completed via /done when required items are missing."""
+    import json
+    from noir.llm.mock import MockLLMBackend
+    game = _make_game(db)
+    # Insert active cheating_spouse job (requires camera + film)
+    db.execute(
+        "INSERT INTO cases (archetype, title, case_type, status, case_data, payout, faction, tier) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        ("cheating_spouse", "Test Job", "job", "active",
+         json.dumps({"job_archetype": "cheating_spouse"}), 60, "private", 1)
+    )
+    db.commit()
+    # No camera in inventory — mock LLM to say job is complete
+    game.llm = MockLLMBackend(responses=[json.dumps({"completed": True, "reason": ""})])
+    game.handle_slash_done()
+    # Job should still be active (not completed)
+    row = db.execute("SELECT status FROM cases WHERE case_type='job' AND archetype='cheating_spouse'").fetchone()
+    assert row["status"] == "active"
+
+
+def test_handle_slash_done_decrements_consumable(db):
+    """Film is decremented after cheating_spouse job completes via /done."""
+    import json
+    from noir.llm.mock import MockLLMBackend
+    from noir.persistence.repository import add_player_item
+    game = _make_game(db)
+    db.execute(
+        "INSERT INTO cases (archetype, title, case_type, status, case_data, payout, faction, tier) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        ("cheating_spouse", "Test Job", "job", "active",
+         json.dumps({"job_archetype": "cheating_spouse"}), 60, "private", 1)
+    )
+    db.commit()
+    add_player_item(db, slug="camera", quantity=1)
+    add_player_item(db, slug="film", quantity=3)
+    # Mock LLM to say job is complete
+    game.llm = MockLLMBackend(responses=[json.dumps({"completed": True, "reason": ""})])
+    game.handle_slash_done()
+    items = get_player_items(db)
+    assert items.get("film", 0) == 2  # decremented by 1

@@ -3763,11 +3763,7 @@ class Game:
             return
 
         # --- item requirement check ---
-        try:
-            _data = json.loads(job["case_data"]) if isinstance(job["case_data"], str) else job["case_data"]
-            _archetype = _data.get("job_archetype", "")
-        except Exception:
-            _archetype = ""
+        _archetype = data.get("job_archetype", "")
 
         if _archetype:
             _missing = check_job_requirements(_archetype, get_player_items(self.conn))
