@@ -1256,3 +1256,31 @@ def update_neighborhood_danger(conn: sqlite3.Connection, slug: str, danger: int)
         "UPDATE neighborhoods SET danger=? WHERE slug=?", (danger, slug)
     )
     conn.commit()
+
+
+def get_player_items(conn: sqlite3.Connection) -> dict[str, int]:
+    rows = conn.execute("SELECT item_slug, quantity FROM player_items").fetchall()
+    return {r["item_slug"]: r["quantity"] for r in rows}
+
+
+def add_player_item(conn: sqlite3.Connection, *, slug: str, quantity: int = 1) -> None:
+    conn.execute(
+        """INSERT INTO player_items (item_slug, quantity) VALUES (?, ?)
+           ON CONFLICT(item_slug) DO UPDATE SET quantity = quantity + ?""",
+        (slug, quantity, quantity),
+    )
+    conn.commit()
+
+
+def use_item(conn: sqlite3.Connection, *, slug: str) -> bool:
+    """Decrement a consumable by 1. Returns True if item was present and decremented."""
+    row = conn.execute(
+        "SELECT quantity FROM player_items WHERE item_slug=?", (slug,)
+    ).fetchone()
+    if not row or row["quantity"] <= 0:
+        return False
+    conn.execute(
+        "UPDATE player_items SET quantity = quantity - 1 WHERE item_slug=?", (slug,)
+    )
+    conn.commit()
+    return True

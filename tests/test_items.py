@@ -1,6 +1,9 @@
 import json
 import pytest
 from noir.persistence.db import create_schema
+from noir.persistence.repository import (
+    get_player_items, add_player_item, use_item,
+)
 
 
 def test_item_definitions_seeded(db):
@@ -84,3 +87,39 @@ def test_detect_item_action_not_owned(db):
     inventory = {}  # no camera
     result = detect_item_action("I take a picture", inventory)
     assert result is None
+
+
+def test_get_player_items_empty(db):
+    items = get_player_items(db)
+    assert items == {}
+
+
+def test_add_player_item_creates_row(db):
+    add_player_item(db, slug="camera", quantity=1)
+    items = get_player_items(db)
+    assert items["camera"] == 1
+
+
+def test_add_player_item_stacks(db):
+    add_player_item(db, slug="film", quantity=2)
+    add_player_item(db, slug="film", quantity=3)
+    items = get_player_items(db)
+    assert items["film"] == 5
+
+
+def test_use_item_decrements(db):
+    add_player_item(db, slug="film", quantity=3)
+    result = use_item(db, slug="film")
+    assert result is True
+    assert get_player_items(db)["film"] == 2
+
+
+def test_use_item_fails_when_empty(db):
+    result = use_item(db, slug="film")
+    assert result is False
+
+
+def test_use_item_fails_when_zero_quantity(db):
+    add_player_item(db, slug="ammo_38", quantity=0)
+    result = use_item(db, slug="ammo_38")
+    assert result is False
