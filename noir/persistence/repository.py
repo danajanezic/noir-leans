@@ -3,6 +3,11 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+try:
+    import noir.memory as _mem
+except Exception:
+    _mem = None
+
 _WORLD_CONTEXT_PATH = Path(__file__).parent.parent / "data" / "world_context.txt"
 
 
@@ -71,11 +76,11 @@ def append_history(conn: sqlite3.Connection, *, character_id: str, role: str,
     )
     conn.commit()
     row_id: int = cursor.lastrowid
-    try:
-        import noir.memory as _mem
-        _mem.enqueue(row_id=row_id, text=content)
-    except Exception:
-        pass
+    if _mem is not None:
+        try:
+            _mem.enqueue(row_id=row_id, text=content)
+        except Exception:
+            pass
     return row_id
 
 
