@@ -70,7 +70,7 @@ from noir.cases.trial import TrialSystem
 from noir.onboarding.quiz import Quiz, QUIZ_QUESTIONS
 from noir.onboarding.cold_open import ColdOpen
 from noir.world import World
-from noir.items import ITEM_CATALOG, get_item_def, detect_item_action, check_job_requirements
+from noir.items import ITEM_CATALOG, get_item_def, detect_item_action, check_job_requirements, get_consumables_to_decrement
 from noir.persistence.repository import use_item
 from noir.map import render_map, FACTION_LEGEND, MARKER_LEGEND
 
@@ -3762,10 +3762,32 @@ class Game:
             console.print(f"[dim]{reason}[/dim]")
             return
 
+        # --- item requirement check ---
+        try:
+            _data = json.loads(job["case_data"]) if isinstance(job["case_data"], str) else job["case_data"]
+            _archetype = _data.get("job_archetype", "")
+        except Exception:
+            _archetype = ""
+
+        if _archetype:
+            _missing = check_job_requirements(_archetype, get_player_items(self.conn))
+            if _missing:
+                missing_str = " and ".join(_missing)
+                console.print(f"[dim]Can't close that out. You're still missing {missing_str}.[/dim]")
+                return
+        # --- end item requirement check ---
+
         payout = job["payout"] or 0
         faction = job["faction"] or "private"
         tier = job["tier"] or 1
         complete_job(self.conn, case_id=job["id"], payout=payout, faction=faction, tier=tier)
+
+        # --- decrement consumables ---
+        if _archetype:
+            for consumable_slug in get_consumables_to_decrement(_archetype):
+                use_item(self.conn, slug=consumable_slug)
+        # --- end decrement consumables ---
+
         if tier == 1:
             self._replenish_job_board()
         self._resume_on_hold()
