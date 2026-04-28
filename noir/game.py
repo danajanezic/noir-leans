@@ -1547,10 +1547,12 @@ class Game:
         )
         others_ctx = self._copresent_npc_context(npc_row["id"])
         loc_ctx = ""
+        _game_time_now = get_game_time(self.conn)
+        _time_str = fmt_game_time(_game_time_now)
         if self.current_location_id:
             loc = get_location(self.conn, self.current_location_id)
             if loc:
-                loc_ctx = f"[You are currently at {loc['name']}. {loc['description']} Stay grounded in this location.] "
+                loc_ctx = f"[It is {_time_str}. You are currently at {loc['name']}. {loc['description']} Stay grounded in this location and time.] "
         if self.active_case_id:
             import json as _j
             case = get_case(self.conn, self.active_case_id)
