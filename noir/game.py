@@ -1640,6 +1640,20 @@ class Game:
                     "[INTERROGATION ROOM — you are in a holding room at The Precinct. "
                     "You are alone here. The detective has brought you in for formal questioning.] "
                 )
+        if self.active_case_id:
+            _dossier = get_all_dossier(self.conn, case_id=self.active_case_id)
+            _other_facts = {
+                name: facts for name, facts in _dossier.items()
+                if name != npc_row["name"] and facts
+            }
+            if _other_facts:
+                _dossier_lines = [f"{n}: {'; '.join(f)}" for n, f in _other_facts.items()]
+                loc_ctx += (
+                    f"[DETECTIVE'S PRIOR INTERVIEWS — the detective has already spoken to others about this case. "
+                    f"What they have learned: {' | '.join(_dossier_lines)}. "
+                    f"You don't know exactly what these people said, but if the detective confronts you with "
+                    f"this information, react authentically — deny, deflect, confirm, or panic as your character demands.] "
+                )
         show_conversation_header(npc_row["name"])
         if npc_row["name"] == "Clarence Dufour":
             console.print("[dim]Type 'shop' to browse what's available.[/dim]\n")
@@ -1785,6 +1799,12 @@ class Game:
                     )
                     _other_response = _other_npc.speak(_other_ctx, store_as=f"[{npc_row['name']} said: {response}]")
                     show_dialogue(_addressed["name"], _other_response)
+                    # Record Antoine's interjection in the Don's history so the Don remembers it
+                    _interject_note = f"[{_addressed['name']} interjected: \"{_other_response}\"]"
+                    from noir.persistence.repository import append_history as _append_history
+                    _append_history(self.conn, character_id=npc.character_id,
+                                    role="user", content=_interject_note,
+                                    case_id=self.active_case_id)
             if self.companion and self._should_partner_interject(player_input, response, "success"):
                 interject_ctx = self._partner_interject_context(player_input, npc_row["name"], response, "success")
                 interject_response = self.companion.speak(interject_ctx, store_as=f"[You observed the detective speaking with {npc_row['name']} and added:]", query=response)
