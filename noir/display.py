@@ -657,14 +657,17 @@ def show_locations(fixed: list, case_locs: list, case_title: str | None = None,
                    crime_scene: str | None = None) -> None:
     t = Table(box=box.SIMPLE, show_header=True, header_style="bold yellow")
     t.add_column("Location", style="white")
+    t.add_column("Neighborhood", style="dim")
     t.add_column("Case", style="dim")
     for loc in fixed:
         name = f"{loc['name']} *" if current_location and loc["name"] == current_location else loc["name"]
-        t.add_row(name, "—")
+        hood = loc["neighborhood_name"] if loc["neighborhood_name"] else "—"
+        t.add_row(name, hood, "—")
     for loc in case_locs:
         name = f"{loc['name']} *" if current_location and loc["name"] == current_location else loc["name"]
+        hood = loc["neighborhood_name"] if loc["neighborhood_name"] else "—"
         tag = "crime scene" if crime_scene and loc["name"].lower() == crime_scene.lower() else (case_title or "current case")
-        t.add_row(name, tag)
+        t.add_row(name, hood, tag)
     console.print(Panel(t, title="[bold yellow]Known Locations[/bold yellow]",
                         border_style="yellow"))
     console.print("[dim]* you are here  ·  Ask your partner about any of them.[/dim]\n")

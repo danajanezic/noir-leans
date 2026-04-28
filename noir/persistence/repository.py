@@ -354,16 +354,31 @@ def get_location(conn: sqlite3.Connection, location_id: int) -> sqlite3.Row | No
 
 
 def get_fixed_locations(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    return conn.execute("SELECT * FROM locations WHERE is_fixed=1").fetchall()
+    return conn.execute(
+        """SELECT l.*, n.name AS neighborhood_name
+           FROM locations l
+           LEFT JOIN neighborhoods n ON n.id = l.neighborhood_id
+           WHERE l.is_fixed=1"""
+    ).fetchall()
 
 
 def get_locations_for_case(conn: sqlite3.Connection, case_id: int) -> list[sqlite3.Row]:
-    return conn.execute("SELECT * FROM locations WHERE case_id=?", (case_id,)).fetchall()
+    return conn.execute(
+        """SELECT l.*, n.name AS neighborhood_name
+           FROM locations l
+           LEFT JOIN neighborhoods n ON n.id = l.neighborhood_id
+           WHERE l.case_id=?""",
+        (case_id,)
+    ).fetchall()
 
 
 def get_discovered_locations_for_case(conn: sqlite3.Connection, case_id: int) -> list[sqlite3.Row]:
     return conn.execute(
-        "SELECT * FROM locations WHERE case_id=? AND discovered=1", (case_id,)
+        """SELECT l.*, n.name AS neighborhood_name
+           FROM locations l
+           LEFT JOIN neighborhoods n ON n.id = l.neighborhood_id
+           WHERE l.case_id=? AND l.discovered=1""",
+        (case_id,)
     ).fetchall()
 
 
