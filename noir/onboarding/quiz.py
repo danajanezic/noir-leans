@@ -216,6 +216,50 @@ class Quiz:
                 return opt
         return answer
 
+    def generate_replacement(self) -> dict:
+        """Generate a new partner from existing player stats — no quiz required."""
+        from noir.persistence.repository import get_player_skill_roots
+        from noir.characters.skills import roots_for_alignment
+        player = get_player(self.conn)
+        player_alignment = resolve_alignment(
+            player["law_chaos"] if player else 0,
+            player["good_evil"] if player else 0,
+        )
+        race = (player["race"] if player else None) or "unspecified"
+        gender = (player["gender"] if player else None) or "unspecified"
+        cases_solved = player["cases_solved"] if player else 0
+        reputation = player["reputation"] if player else 100
+
+        prompt = (
+            f"Player alignment: {player_alignment}. "
+            f"Race: {race}. Gender: {gender}. "
+            f"Cases solved: {cases_solved}. Reputation: {reputation}/100.\n\n"
+            "The detective's previous partner is dead. Generate a new partner who fits where "
+            "this detective is now — shaped by experience, not a fresh start. "
+            "Return the JSON partner profile."
+        )
+        self.llm.status_message = "Someone new steps out of the dark..."
+        traits = self.llm.query_structured(QUIZ_SYSTEM_PROMPT, [], prompt)
+        self.llm.status_message = "Thinking..."
+        save_partner(
+            self.conn,
+            name=traits["name"],
+            sex=traits["sex"],
+            personality_archetype=traits["personality_archetype"],
+            speech_style=traits["speech_style"],
+            relationship_stance=traits["relationship_stance"],
+            system_prompt=traits["system_prompt"],
+            alignment=traits.get("alignment", "True Neutral"),
+        )
+        player_roots = roots_for_alignment(
+            law_chaos=player["law_chaos"] if player else 0,
+            good_evil=player["good_evil"] if player else 0,
+        )
+        partner_roots = [r for r in ("authority", "streetwise", "empathy", "cunning")
+                         if r not in player_roots]
+        initialize_player_skills(self.conn, owner="partner", roots=partner_roots)
+        return traits
+
     def run(self, *, answers: list[str]) -> dict:
         law_total, good_total = score_alignment(answers)
         player_alignment = resolve_alignment(law_total, good_total)

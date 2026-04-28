@@ -4829,7 +4829,17 @@ class Game:
         remove_partner(self.conn)
         self.companion = None
         console.print("\n[dim]You'll need a new partner. The city doesn't wait.[/dim]\n")
-        self.run_onboarding()
+        quiz = Quiz(conn=self.conn, llm=self.llm)
+        quiz.generate_replacement()
+        self.companion = Companion.load(conn=self.conn, llm=self.llm)
+        intro_prompt = (
+            f"You are stepping in as a new partner to a detective whose last partner is dead. "
+            f"Your name is {self.companion.name}. Use that name and no other. "
+            f"Introduce yourself — briefly, in character. You know this city. You know this detective by reputation. "
+            f"Keep it to 2 sentences. Stay grounded in 1935 Noirleans."
+        )
+        console.print("\n[cyan]A figure steps forward:[/cyan]\n")
+        show_dialogue(self.companion.name, self.companion.narrate(intro_prompt))
         if self.active_case_id is None:
             self.start_new_case()
 
