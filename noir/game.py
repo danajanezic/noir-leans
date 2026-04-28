@@ -1748,14 +1748,16 @@ class Game:
             else:
                 judge_ctx = ""
             ctx = loc_ctx + identity_ctx + (state_ctx or "") + (others_ctx or "") + rel_ctx + rep_ctx + org_ctx + rev_ctx + judge_ctx
-            psychology = get_npc_psychology(self.conn, npc_row["id"])
-            events = classify_events(self.llm, player_input, "")
-            update_npc_state(self.conn, npc_row["id"], events, psychology)
-            psychology = get_npc_psychology(self.conn, npc_row["id"])
+            _is_case_npc = npc_row["case_id"] is not None
+            psychology = get_npc_psychology(self.conn, npc_row["id"]) if _is_case_npc else {}
+            events = classify_events(self.llm, player_input, "") if _is_case_npc else {}
+            if _is_case_npc:
+                update_npc_state(self.conn, npc_row["id"], events, psychology)
+                psychology = get_npc_psychology(self.conn, npc_row["id"])
             revelation_prompt = _check_npc_revelation(
                 self.conn, self.llm, npc_row["id"], self.active_case_id,
                 npc_row["name"], events, psychology, player_input=player_input
-            )
+            ) if _is_case_npc else None
             speak_input = ctx + player_input
             if revelation_prompt:
                 speak_input = speak_input + "\n\n" + revelation_prompt
@@ -3172,11 +3174,16 @@ class Game:
         show_suspects(list(npcs), list(player_suspects), evidence_by_npc=evidence_by_npc)
 
     def handle_slash_look(self) -> None:
-        if self.current_location_id:
-            loc = get_location(self.conn, self.current_location_id)
+        loc_id = self.current_location_id
+        if not loc_id:
+            loc_id = get_character_location(self.conn, "player")
+            if loc_id:
+                self.current_location_id = loc_id
+        if loc_id:
+            loc = get_location(self.conn, loc_id)
             if loc:
-                npcs = self.world.get_npcs_at(self.current_location_id) if self.world else []
-                loc_orgs = [r["name"] for r in get_organizations_for_location(self.conn, self.current_location_id)]
+                npcs = self.world.get_npcs_at(loc_id) if self.world else []
+                loc_orgs = [r["name"] for r in get_organizations_for_location(self.conn, loc_id)]
                 show_location(loc["name"], loc["description"], [_npc_display_name(n) for n in npcs],
                               game_time=get_game_time(self.conn), orgs=loc_orgs)
                 return
