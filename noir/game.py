@@ -68,7 +68,6 @@ from noir.mystery.archetype_loader import seed_archetypes_to_db
 from noir.cases.manager import CaseManager
 from noir.cases.trial import TrialSystem
 from noir.onboarding.quiz import Quiz, QUIZ_QUESTIONS
-from noir.onboarding.cold_open import ColdOpen
 from noir.world import World
 from noir.items import ITEM_CATALOG, get_item_def, detect_item_action, check_job_requirements, get_consumables_to_decrement, get_job_required_items
 from noir.persistence.repository import use_item
@@ -1008,9 +1007,6 @@ class Game:
             seed_locations_to_db(self.conn, json.loads(locs_path.read_text()))
 
     def run_onboarding(self) -> None:
-        cold_open = ColdOpen(llm=self.llm)
-        incident = cold_open.generate_bar_incident()
-
         console.print("\n[bold yellow]--- NOIRLEANS, 3:47 AM ---[/bold yellow]\n")
         console.print("[dim]Something is shaking you. Something insistent.[/dim]\n")
 
@@ -1018,9 +1014,8 @@ class Game:
         answers = []
 
         console.print(
-            f"[cyan]A voice cuts through the fog:[/cyan]\n"
-            f"[italic]\"Wake up. We have a case. "
-            f"And before you ask — last night you {incident}\"[/italic]\n"
+            "[cyan]A voice cuts through the dark:[/cyan]\n"
+            "[italic]\"Wake up. We have a case.\"[/italic]\n"
         )
         self._start_background_generation()
         console.print("[dim]Press ENTER to continue...[/dim]")
@@ -1028,8 +1023,8 @@ class Game:
 
         console.print(
             "[cyan]The voice continues:[/cyan]\n"
-            "[italic]\"Before we get into it, I need to assess the damage. "
-            "Answer honestly. Or as honestly as you can manage in your current condition.\"[/italic]\n"
+            "[italic]\"Before we get into it, I need to know who I'm working with. "
+            "Answer honestly.\"[/italic]\n"
         )
 
         console.print("[bold white]Before we get into it — who are you?[/bold white]\n")
@@ -1049,12 +1044,10 @@ class Game:
 
         answers_summary = " | ".join(answers)
         intro_prompt = (
-            f"Your detective partner has just woken up with amnesia from last night's incident. "
-            f"Introduce yourself for the first time — they don't remember you. "
+            f"Introduce yourself to your new detective partner for the first time. "
             f"Your name is {self.companion.name}. Use that name and no other. "
-            f"Their quiz answers revealed their personality: {answers_summary}. "
-            f"Keep it to 2-3 sentences, fully in character. "
-            f"Reference the bar incident if it feels natural: {incident}"
+            f"Their answers revealed their personality: {answers_summary}. "
+            f"Keep it to 2-3 sentences, fully in character. Stay grounded in 1935 Noirleans."
         )
         console.print("\n[cyan]The figure comes into focus:[/cyan]\n")
         show_dialogue(self.companion.name, self.companion.narrate(intro_prompt))
