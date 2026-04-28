@@ -8,6 +8,8 @@ from noir.persistence.repository import (
 )
 from noir.mystery.auditor import CaseAuditor
 
+from noir.surnames import apply_surname_overrides
+
 REQUIRED_FIELDS = {"title", "victim", "killer_name", "motive", "suspects", "clues", "locations"}
 REQUIRED_SUSPECT_FIELDS = {
     "name", "role", "alibi", "secret", "archetype_id", "race",
@@ -459,6 +461,7 @@ class MysteryGenerator:
             "The victim, killer, and every suspect must have distinct family names."
         )
 
+
         recent_causes = self._recent_causes()
         avoid_text = (
             f"\n\nDo NOT use any of these recently used causes of death: {', '.join(recent_causes)}. "
@@ -507,6 +510,7 @@ class MysteryGenerator:
         if not _validate_case(case):
             self.llm._fatal()
 
+        case = apply_surname_overrides(case)
         return case
 
     def pick_random_archetype(self) -> str:

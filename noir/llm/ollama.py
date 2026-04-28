@@ -4,11 +4,10 @@ import re
 import time
 import urllib.error
 import urllib.request
-from rich.console import Console
 from .base import LLMBackend
+from ._spinner import BottomRightSpinner
 
 log = logging.getLogger(__name__)
-_console = Console()
 
 
 class OllamaBackend(LLMBackend):
@@ -48,7 +47,7 @@ class OllamaBackend(LLMBackend):
                 with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                     body = json.loads(resp.read())
             else:
-                with _console.status(f"[dim]{self.status_message}[/dim]", spinner="dots"):
+                with BottomRightSpinner(self.status_message):
                     with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                         body = json.loads(resp.read())
         except urllib.error.URLError as e:

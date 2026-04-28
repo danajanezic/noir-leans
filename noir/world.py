@@ -44,17 +44,27 @@ class World:
         return npc["current_location_id"]
 
     def get_npcs_at(self, location_id: int) -> list[sqlite3.Row]:
-        if self.active_case_id is None:
-            return []
-        npcs = get_npcs_for_case(self.conn, self.active_case_id)
         game_time = get_game_time(self.conn)
-
         all_locs = self.list_locations()
         loc_name_to_id = {loc["name"]: loc["id"] for loc in all_locs}
         precinct_id = loc_name_to_id.get("The Precinct")
 
+        # World-persistent NPCs (case_id=NULL at fixed locations) always resolve.
+        world_npcs = self.conn.execute(
+            """SELECT n.* FROM npcs n
+               JOIN locations l ON n.current_location_id = l.id
+               WHERE n.case_id IS NULL AND l.is_fixed=1"""
+        ).fetchall()
+
+        # Case-specific NPCs only when there is an active case.
+        case_npcs = get_npcs_for_case(self.conn, self.active_case_id) if self.active_case_id else []
+
+        seen_ids: set[int] = set()
         result = []
-        for npc in npcs:
+        for npc in list(world_npcs) + list(case_npcs):
+            if npc["id"] in seen_ids:
+                continue
+            seen_ids.add(npc["id"])
             if npc["detained"]:
                 if location_id == precinct_id:
                     result.append(npc)

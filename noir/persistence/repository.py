@@ -935,10 +935,14 @@ def get_active_appointment(conn: sqlite3.Connection, npc_id: int,
     ).fetchone()
 
 
+_APPOINTMENT_STAY_MINUTES = 60
+
+
 def fulfill_past_appointments(conn: sqlite3.Connection, npc_id: int, game_time: int) -> None:
+    """Mark appointments as fulfilled only after the NPC's stay window has passed."""
     conn.execute(
-        "UPDATE npc_appointments SET fulfilled=1 WHERE npc_id=? AND game_time < ?",
-        (npc_id, game_time)
+        "UPDATE npc_appointments SET fulfilled=1 WHERE npc_id=? AND game_time + ? < ?",
+        (npc_id, _APPOINTMENT_STAY_MINUTES, game_time)
     )
     conn.commit()
 

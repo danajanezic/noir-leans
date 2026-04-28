@@ -287,7 +287,9 @@ def detect_item_action(
 
 def seed_item_definitions(conn: sqlite3.Connection) -> None:
     """INSERT OR IGNORE all items from ITEM_CATALOG into item_definitions."""
-    for item in ITEM_CATALOG:
+    # Seed consumables (no requires_slug) first so FK self-references resolve correctly.
+    ordered = sorted(ITEM_CATALOG, key=lambda i: 0 if not i.get("requires_slug") else 1)
+    for item in ordered:
         conn.execute(
             """INSERT OR IGNORE INTO item_definitions
                (slug, name, description, price, consumable, requires_slug, actions)

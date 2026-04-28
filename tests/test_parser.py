@@ -68,6 +68,7 @@ def test_look_around_intent():
         assert cmd.intent == Intent.LOOK
 
 
+
 def test_help_intent():
     cmd = parse_command("help")
     assert cmd.intent == Intent.HELP

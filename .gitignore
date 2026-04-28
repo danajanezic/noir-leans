@@ -37,3 +37,5 @@ noir/data/audio/ambient/*.wav
 # scratch databases and reports (never commit)
 *.db
 report_*.json
+cut
+Italian surnames.tsv

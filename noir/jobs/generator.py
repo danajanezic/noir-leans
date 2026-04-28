@@ -3,6 +3,7 @@ import random
 import sqlite3
 from pathlib import Path
 from noir.llm.base import LLMBackend
+from noir.surnames import apply_job_surname_overrides
 
 _ARCHETYPES_PATH = Path(__file__).parent / "archetypes.json"
 _ARCHETYPES: list[dict] | None = None
@@ -11,7 +12,12 @@ _SYSTEM = (
     "You are generating a job assignment for a 1935 noir detective game set in Noirleans, Louisiana. "
     "Return ONLY valid JSON matching the exact structure requested. "
     "All names, locations, and details must be period-appropriate for 1935 New Orleans. "
-    "NPCs must have 1930s Louisiana names. "
+    "NPCs must have authentic 1930s Louisiana names — draw from Creole, Cajun, Italian, Irish, "
+    "and African-American naming traditions common to New Orleans. "
+    "Use varied, distinct first names: e.g. Odette, Tomas, Félix, Rosalie, Beaumont, Léonce, "
+    "Marguerite, Antoine, Céleste, Raoul, Isidore, Nadège, Émile, Delphine, Aristide. "
+    "NEVER use 'Clem', 'Clement', or any variant. "
+    "NEVER reuse names of established characters such as Roy, Arceneaux, or Thibodaux. "
     "Only use locations from the provided list — never invent new ones."
 )
 
@@ -38,6 +44,30 @@ def _fixed_locations(conn: sqlite3.Connection) -> list[str]:
     return [r["name"] for r in rows]
 
 
+def _used_first_names(conn: sqlite3.Connection) -> list[str]:
+    """Collect first names already in use across NPCs and job case_data."""
+    seen: set[str] = set()
+
+    for row in conn.execute("SELECT name FROM npcs").fetchall():
+        first = row["name"].split()[0].rstrip(",.")
+        seen.add(first)
+
+    for row in conn.execute(
+        "SELECT case_data FROM cases WHERE case_type='job'"
+    ).fetchall():
+        try:
+            data = json.loads(row["case_data"])
+        except (json.JSONDecodeError, TypeError):
+            continue
+        for field in ("client_npc_name", "target"):
+            val = data.get(field, "")
+            if isinstance(val, str) and val:
+                first = val.split()[0].rstrip(",.")
+                seen.add(first)
+
+    return sorted(seen)
+
+
 class JobGenerator:
 
     def __init__(self, llm: LLMBackend, conn: sqlite3.Connection):
@@ -58,12 +88,16 @@ class JobGenerator:
 
         locations = _fixed_locations(self.conn)
         payout = random.randint(*archetype["payout_range"])
+        used_names = _used_first_names(self.conn)
 
         prompt = (
             f"Faction: {faction}\n"
             f"Job type: {archetype['slug']} — {archetype['description']}\n"
             f"Tier: {tier}\n"
-            f"Available locations (use only these): {', '.join(locations[:25])}\n\n"
+            f"Available locations (use only these): {', '.join(locations[:25])}\n"
+            + (f"First names already in use — do NOT reuse any of these: {', '.join(used_names)}\n"
+               if used_names else "")
+            + "\n"
             f"Generate a specific job. Return JSON:\n"
             f'{{"objective": "one sentence describing what the detective must do", '
             f'"job_archetype": "{archetype["slug"]}", '
@@ -80,6 +114,7 @@ class JobGenerator:
         result = self.llm.query_structured(_SYSTEM, [], prompt)
         if not result or not result.get("objective"):
             return None
+        apply_job_surname_overrides(result, faction)
         return {
             "faction": faction,
             "tier": tier,

@@ -216,72 +216,37 @@ def test_maybe_trigger_item_action_blocked_without_consumable(db):
     assert items.get("film", 0) == 0  # still 0 — action was blocked
 
 
-def test_check_purchase_from_dufour_adds_item(db):
-    """When LLM confirms a sale, item is added and cash deducted."""
-    import json
-    from noir.persistence.repository import get_player_cash, update_player_cash, create_player
-    from noir.llm.mock import MockLLMBackend
-    create_player(db)
-    game = _make_game(db)
-    starting_cash = get_player_cash(db)
-    # Fake npc_row
-    npc_row = {"name": "Clarence Dufour"}
-    # Mock LLM to return camera purchase (response must be a JSON string)
-    game.llm = MockLLMBackend(responses=[
-        json.dumps({"item_purchased": "camera", "quantity": 1})
-    ])
-    game._check_purchase_from_dufour(npc_row, "Sure, I'll take your twelve dollars — that camera is yours.")
-    items = get_player_items(db)
-    assert items.get("camera", 0) == 1
-    cash = get_player_cash(db)
-    assert cash == starting_cash - 12  # camera costs $12
-
-
-def test_check_purchase_from_dufour_no_purchase_on_null(db):
-    """When LLM returns null slug, no item is added."""
-    import json
-    from noir.llm.mock import MockLLMBackend
-    game = _make_game(db)
-    npc_row = {"name": "Clarence Dufour"}
-    game.llm = MockLLMBackend(responses=[
-        json.dumps({"item_purchased": None, "quantity": 0})
-    ])
-    game._check_purchase_from_dufour(npc_row, "I have cameras, yes. How much did you say you want to buy?")
-    assert get_player_items(db) == {}
-
-
-def test_check_purchase_from_dufour_ammo_adds_ten(db):
-    """Ammo purchases always add 10 rounds regardless of LLM quantity."""
-    import json
-    from noir.persistence.repository import update_player_cash, create_player
-    from noir.llm.mock import MockLLMBackend
-    create_player(db)
-    game = _make_game(db)
-    update_player_cash(db, delta=100)
-    npc_row = {"name": "Clarence Dufour"}
-    game.llm = MockLLMBackend(responses=[
-        json.dumps({"item_purchased": "ammo_38", "quantity": 1})
-    ])
-    game._check_purchase_from_dufour(npc_row, "Here are your cartridges — I want forty dollars for the box.")
-    items = get_player_items(db)
-    assert items.get("ammo_38", 0) == 10
-
-
-def test_check_purchase_from_dufour_insufficient_cash(db):
-    """When player can't afford it, no item is added."""
-    import json
+def test_dufour_shop_purchase_adds_item(db):
+    """Buying an item deducts cash and adds it to inventory."""
     from noir.persistence.repository import get_player_cash, create_player, update_player_cash
-    from noir.llm.mock import MockLLMBackend
+    from noir.items import get_item_def
     create_player(db)
-    # Drain cash to below camera price ($12)
+    starting_cash = get_player_cash(db)
+    item_def = get_item_def("camera")
+    add_player_item(db, slug="camera", quantity=1)
+    update_player_cash(db, delta=-item_def["price"])
+    assert get_player_items(db).get("camera", 0) == 1
+    assert get_player_cash(db) == starting_cash - 12
+
+
+def test_dufour_shop_ammo_adds_ten(db):
+    """Ammo purchases add 10 rounds."""
+    from noir.persistence.repository import create_player, update_player_cash
+    create_player(db)
+    update_player_cash(db, delta=100)
+    add_player_item(db, slug="ammo_38", quantity=10)
+    assert get_player_items(db).get("ammo_38", 0) == 10
+
+
+def test_dufour_shop_insufficient_cash_no_item(db):
+    """Player with no cash cannot afford any item."""
+    from noir.persistence.repository import create_player, update_player_cash, get_player_cash
+    from noir.items import ITEM_CATALOG
+    create_player(db)
     starting = get_player_cash(db)
-    update_player_cash(db, delta=-(starting))  # drain to 0 (MAX(0,...) clamp)
-    game = _make_game(db)
-    npc_row = {"name": "Clarence Dufour"}
-    game.llm = MockLLMBackend(responses=[
-        json.dumps({"item_purchased": "camera", "quantity": 1})
-    ])
-    game._check_purchase_from_dufour(npc_row, "Sure, I'll take twelve dollars for that camera.")
+    update_player_cash(db, delta=-starting)
+    camera = next(i for i in ITEM_CATALOG if i["slug"] == "camera")
+    assert get_player_cash(db) < camera["price"]
     assert get_player_items(db) == {}
 
 

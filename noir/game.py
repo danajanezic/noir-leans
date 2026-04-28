@@ -78,7 +78,10 @@ from noir.map import render_map, FACTION_LEGEND, MARKER_LEGEND
 _APPOINTMENT_SYSTEM = (
     "You detect meeting commitments in NPC dialogue. "
     "Return ONLY valid JSON: "
-    '{"committed": true|false, "location": "string or null", "time": "HH:MM in 24h format or null"}'
+    '{"committed": true|false, "location": "string or null", '
+    '"time": "HH:MM in 24h format or null", "immediate": true|false} '
+    "Set immediate=true when the NPC agrees to follow, come along, or go there now/right away "
+    "with no specific future time. Set immediate=false for scheduled future meetings."
 )
 
 _WAIT_KEYWORDS = {
@@ -94,6 +97,33 @@ def _parse_hhmm(s: str) -> int:
         return int(h) * 60 + int(m)
     except Exception:
         return 0
+
+
+def _resolve_appointment_time(time_str: str, current_gt: int) -> int | None:
+    """Resolve a time string to absolute game-time minutes.
+
+    Handles HH:MM absolute times and relative forms like 'now', 'now+10',
+    'in 15 minutes', 'shortly', 'soon', 'immediately'.
+    Returns None if the string cannot be resolved.
+    """
+    if not time_str:
+        return None
+    s = time_str.strip().lower()
+    # Relative: now+N or in N minutes
+    import re as _re
+    m = _re.search(r'now\+(\d+)', s)
+    if m:
+        return current_gt + int(m.group(1))
+    m = _re.search(r'in\s+(\d+)', s)
+    if m:
+        return current_gt + int(m.group(1))
+    if s in ("now", "shortly", "soon", "immediately", "right away", "right now"):
+        return current_gt + 10
+    # Absolute HH:MM
+    tod = _parse_hhmm(time_str)
+    if tod == 0 and "0:00" not in time_str and "00:00" not in time_str:
+        return None  # parse failed
+    return _tod_to_absolute(current_gt, tod)
 
 
 def _infer_npc_voice(npc_row, conn=None) -> str:
@@ -1179,7 +1209,7 @@ class Game:
             self.conn.commit()
             self.active_case_id = None
             self.case_manager = None
-            self.world = None
+            self.world = World(conn=self.conn, active_case_id=None)
         self.conn.execute(
             "UPDATE cases SET status='on_hold' WHERE case_type='job' AND status='active'"
         )
@@ -1407,6 +1437,9 @@ class Game:
                 )
                 strategy = self.companion.narrate(strategy_prompt)
                 show_partner_aside(self.companion.name, strategy)
+        if loc["name"] == "Treme Pawn & Loan":
+            self._show_dufour_shop()
+
         if loc["name"] == "The Rusty Anchor":
             order = console.input("[dim]Order a drink? (y/n):[/dim] ").strip().lower()
             if order in ("y", "yes"):
@@ -1430,19 +1463,40 @@ class Game:
         self._check_faction_tension()
 
     def handle_talk(self, target: str) -> None:
-        if self.active_case_id is None:
-            console.print("[dim]Nobody here to talk to.[/dim]")
-            return
-        npcs = get_npcs_for_case(self.conn, self.active_case_id)
+        if self.active_case_id is not None:
+            npcs = get_npcs_for_case(self.conn, self.active_case_id)
+        else:
+            # No active case — still allow talking to world-persistent NPCs
+            npcs = self.conn.execute(
+                """SELECT n.* FROM npcs n JOIN locations l ON n.current_location_id = l.id
+                   WHERE n.case_id IS NULL AND l.is_fixed=1"""
+            ).fetchall()
         t = target.lower()
-        npc_row = next((n for n in npcs if t in n["name"].lower()), None)
-        if npc_row is None:
-            stopwords = {"about", "the", "and", "then", "please", "with"}
-            for word in t.split():
+        stopwords = {"about", "the", "and", "then", "please", "with"}
+
+        # Prefer NPCs physically present at current location — avoids matching
+        # a world-persistent NPC with a similar name who is elsewhere.
+        present = (
+            self.world.get_npcs_at(self.current_location_id)
+            if self.world and self.current_location_id
+            else []
+        )
+        present_ids = {n["id"] for n in present}
+
+        def _match(pool, target_str: str):
+            hit = next((n for n in pool if target_str in n["name"].lower()), None)
+            if hit:
+                return hit
+            for word in target_str.split():
                 if word not in stopwords and len(word) > 2:
-                    npc_row = next((n for n in npcs if word in n["name"].lower()), None)
-                    if npc_row:
-                        break
+                    hit = next((n for n in pool if word in n["name"].lower()), None)
+                    if hit:
+                        return hit
+            return None
+
+        npc_row = _match([n for n in npcs if n["id"] in present_ids], t)
+        if npc_row is None:
+            npc_row = _match(npcs, t)
         if npc_row is not None and self.world is not None:
             if npc_row["detained"]:
                 precinct_row = self.conn.execute(
@@ -1592,11 +1646,18 @@ class Game:
                     "You are alone here. The detective has brought you in for formal questioning.] "
                 )
         show_conversation_header(npc_row["name"])
+        if npc_row["name"] == "Clarence Dufour":
+            console.print("[dim]Type 'shop' to browse what's available.[/dim]\n")
         _is_da = "district attorney" in (npc_row["role"] or "").lower()
         if _is_da and self.active_case_id and self.case_manager:
             current_case = get_case(self.conn, self.active_case_id)
             if current_case and current_case["status"] not in ("closed", "in_trial"):
                 console.print("[dim]submit · new · drop  — or just talk[/dim]\n")
+        # Other NPCs physically present — checked after each response for NPC-to-NPC dialogue
+        _copresent = [
+            n for n in (self.world.get_npcs_at(self.current_location_id) if self.world and self.current_location_id else [])
+            if n["id"] != npc_row["id"]
+        ]
         while True:
             _rel_stage = _affection_to_stage(
                 get_npc_affection(self.conn, npc_row["id"])
@@ -1625,6 +1686,10 @@ class Game:
                 continue
             if _is_exit(player_input):
                 break
+            if npc_row["name"] == "Clarence Dufour" and \
+                    player_input.strip().lower() in ("shop", "buy", "browse"):
+                self._show_dufour_shop()
+                continue
             cmd = parse_command(player_input)
             if cmd.intent == Intent.TALK_PARTNER:
                 show_conversation_footer(npc_row["name"])
@@ -1696,6 +1761,33 @@ class Game:
                 speak_input = speak_input + "\n\n" + revelation_prompt
             response = npc.speak(speak_input, store_as=player_input)
             show_dialogue(npc_row["name"], response)
+            # NPC-to-NPC dialogue — check if the NPC directly addressed someone else present
+            _addressed = next(
+                (n for n in _copresent if n["name"].split()[0].lower() in response.lower()),
+                None
+            )
+            if _addressed:
+                try:
+                    console.print(f"[dim]— {_addressed['name']} looks ready to speak. Press Enter to let them, or say something. —[/dim]")
+                    _interrupt = console.input("[bold white]>[/bold white] ").strip()
+                except (EOFError, KeyboardInterrupt):
+                    _interrupt = ""
+                if _interrupt:
+                    # Player interrupted — treat as next player input this turn
+                    player_input = _interrupt
+                    response2 = npc.speak(ctx + player_input, store_as=player_input)
+                    show_dialogue(npc_row["name"], response2)
+                    response = response2
+                else:
+                    # Let the addressed NPC respond once
+                    _other_npc = NPC.load(conn=self.conn, llm=self.llm, npc_id=_addressed["id"],
+                                         case_id=self.active_case_id)
+                    _other_ctx = (
+                        f"[You are present at {get_location(self.conn, self.current_location_id)['name'] if self.current_location_id else 'this location'}. "
+                        f"{npc_row['name']} just said to you: \"{response}\"] "
+                    )
+                    _other_response = _other_npc.speak(_other_ctx, store_as=f"[{npc_row['name']} said: {response}]")
+                    show_dialogue(_addressed["name"], _other_response)
             if self.companion and self._should_partner_interject(player_input, response, "success"):
                 interject_ctx = self._partner_interject_context(player_input, npc_row["name"], response, "success")
                 interject_response = self.companion.speak(interject_ctx, store_as=f"[You observed the detective speaking with {npc_row['name']} and added:]", query=response)
@@ -1709,8 +1801,7 @@ class Game:
             advance_game_time(self.conn, delta=5)
             self._check_npc_bribe_offer(npc_row, response)
             self._check_npc_job_offer(npc_row, response)
-            if npc_row["name"] == "Clarence Dufour":
-                self._check_purchase_from_dufour(npc_row, response)
+
             self._check_job_completion(npc_row, response)
             self._check_npc_appointment(npc_row["id"], npc_row["name"], player_input, response)
             self._check_npc_romance_milestone(npc_row["id"], npc)
@@ -1718,6 +1809,10 @@ class Game:
             events = classify_events(self.llm, player_input, response)
             update_npc_state(self.conn, npc_row["id"], events, psychology)
         show_conversation_footer(npc_row["name"])
+        # Appointment met — fulfill it now that the player has spoken with the NPC.
+        # This lets the NPC return to their routine rather than staying pinned to
+        # the appointment location indefinitely.
+        fulfill_past_appointments(self.conn, npc_row["id"], get_game_time(self.conn) + 1)
         if self.current_location_id is not None:
             self._observations.setdefault(self.current_location_id, []).append(
                 f"spoke with {npc_row['name']} ({npc_row['role']})"
@@ -2578,6 +2673,8 @@ class Game:
             self.handle_slash_cases(raw.strip())
         elif slug in ("/job", "/case"):
             self.handle_slash_active_work()
+        elif slug in ("/dropjob", "/drop job"):
+            self.handle_drop_job()
         elif slug == "/done":
             self.handle_slash_done()
         elif slug == "/items":
@@ -2702,32 +2799,41 @@ class Game:
             prompt = (
                 f"Detective said: \"{player_input}\"\n"
                 f"{npc_name} replied: \"{response}\"\n\n"
-                f"Did {npc_name} commit to meeting the detective at a specific location "
-                f"at a specific time? Consider both messages — the NPC may be agreeing to "
-                f"a location/time the detective proposed. "
-                f"Only return committed=true if BOTH a location AND a time are established "
-                f"(from either message). Return JSON."
+                f"Did {npc_name} commit to going to a specific location with the detective? "
+                f"Consider both messages — the NPC may be agreeing to a location/time the detective proposed. "
+                f"Return committed=true if a location is established (time is optional). "
+                f"Set immediate=true if the detective used phrases like 'follow me', 'come with me', "
+                f"'come along', 'accompany me', 'walk with me', or similar — meaning they travel together now. "
+                f"For time, use HH:MM, 'now', 'now+N' (minutes from now), or null if unspecified. Return JSON."
             )
             result = self.llm.query_structured(_APPOINTMENT_SYSTEM, [], prompt)
             if not result.get("committed"):
                 return
             loc_str = result.get("location", "")
-            time_str = result.get("time", "")
-            if not loc_str or not time_str:
+            time_str = result.get("time") or ""
+            immediate = result.get("immediate", False)
+            if not loc_str:
                 return
             loc_row = self.world.find_location(loc_str) if self.world else None
             if not loc_row:
                 return  # invented or unrecognised location — silently ignore
             canonical_loc = loc_row["name"]
-            tod = _parse_hhmm(time_str)
             current_gt = get_game_time(self.conn)
-            absolute_gt = _tod_to_absolute(current_gt, tod)
+            if immediate:
+                absolute_gt = current_gt
+                console.print(
+                    f"\n[dim]{npc_name} will meet you at {canonical_loc}.[/dim]"
+                )
+            else:
+                absolute_gt = _resolve_appointment_time(time_str, current_gt)
+                if absolute_gt is None:
+                    absolute_gt = current_gt + 15
+                console.print(
+                    f"\n[bold yellow][ Appointment noted ][/bold yellow] "
+                    f"[dim]{npc_name} will be at {canonical_loc} at {fmt_game_time(absolute_gt)}.[/dim]"
+                )
             create_npc_appointment(self.conn, npc_id=npc_id,
                                    game_time=absolute_gt, location_name=canonical_loc)
-            console.print(
-                f"\n[bold yellow][ Appointment noted ][/bold yellow] "
-                f"[dim]{npc_name} will be at {canonical_loc} at {fmt_game_time(absolute_gt)}.[/dim]"
-            )
         except Exception:
             pass  # appointment detection is best-effort
 
@@ -3663,50 +3769,70 @@ class Game:
             use_item(self.conn, slug=consumes)
         console.print(f"[dim][{item_def['name']}][/dim]")
 
-    def _check_purchase_from_dufour(self, npc_row, response: str) -> None:
-        _DUFOUR_KEYWORDS = ("buy", "purchase", "i'll take", "give me", "i want", "how much", "sell me")
-        resp_lower = response.lower()
-        if not any(kw in resp_lower for kw in _DUFOUR_KEYWORDS):
-            return
-
-        purchase = self.llm.query_structured(
-            "Determine if this pawn shop proprietor's response indicates a completed sale to the detective. "
-            "A sale means the proprietor acknowledged the detective is buying something specific. "
-            "Return ONLY valid JSON: "
-            "{\"item_purchased\": \"slug_or_null\", \"quantity\": 1}",
-            [],
-            f"Proprietor said: \"{response[:400]}\""
-        )
-
-        slug = purchase.get("item_purchased")
-        if not slug or slug == "null":
-            return
-
-        valid_slugs = {item["slug"] for item in ITEM_CATALOG}
-        if slug not in valid_slugs:
-            return
-
-        item_def = get_item_def(slug)
-        if not item_def:
-            return
-
-        qty = 10 if slug == "ammo_38" else int(purchase.get("quantity") or 1)
-        price = item_def["price"] * (10 if slug == "ammo_38" else 1)
-
+    def _show_dufour_shop(self) -> None:
+        from rich.table import Table
         cash = get_player_cash(self.conn)
-        if cash < price:
-            console.print(f"[dim]You're short. {item_def['name']} costs ${price}.[/dim]")
+        inventory = dict(get_player_items(self.conn))
+
+        table = Table(box=None, show_header=False, padding=(0, 2))
+        table.add_column(style="dim", justify="right")
+        table.add_column()
+        table.add_column(style="yellow", justify="right")
+        table.add_column(style="dim")
+
+        buyable = []
+        for item in ITEM_CATALOG:
+            slug = item["slug"]
+            qty = 10 if slug == "ammo_38" else 1
+            price = item["price"] * qty
+            owned = slug in inventory
+            label = item["name"]
+            if slug == "ammo_38":
+                label += " (×10)"
+            price_str = f"${price}"
+            if owned and not item["consumable"]:
+                style = "dim"
+                idx_str = "✓"
+            elif cash < price:
+                style = "dim"
+                idx_str = "—"
+            else:
+                buyable.append((len(buyable) + 1, slug, qty, price, item))
+                style = ""
+                idx_str = str(len(buyable))
+            table.add_row(idx_str, f"[{style}]{label}[/{style}]" if style else label,
+                          f"[{style}]{price_str}[/{style}]" if style else price_str,
+                          f"[dim]{item['description']}[/dim]")
+
+        from rich.panel import Panel as _Panel
+        console.print(_Panel(table, title="[bold]Treme Pawn & Loan[/bold]",
+                             subtitle=f"[dim]Cash on hand: ${cash}[/dim]"))
+
+        if not buyable:
+            console.print("[dim]Nothing left you can afford or don't already own.[/dim]\n")
             return
+
+        console.print("[dim]Enter a number to buy, or press Enter to skip.[/dim]")
+        try:
+            choice = console.input("[bold white]> [/bold white]").strip()
+        except (EOFError, KeyboardInterrupt):
+            return
+        if not choice.isdigit():
+            return
+        n = int(choice)
+        match = next((b for b in buyable if b[0] == n), None)
+        if not match:
+            return
+        _, slug, qty, price, item_def = match
 
         add_player_item(self.conn, slug=slug, quantity=qty)
         update_player_cash(self.conn, delta=-price)
-
         if slug == "ammo_38":
-            console.print(f"[dim]-${price}. Ten rounds of .38, added to your pocket.[/dim]")
+            console.print(f"[dim]-${price}. Ten rounds of .38.[/dim]\n")
         elif item_def["consumable"]:
-            console.print(f"[dim]-${price}. {item_def['name']} added.[/dim]")
+            console.print(f"[dim]-${price}. {item_def['name']} added.[/dim]\n")
         else:
-            console.print(f"[dim]-${price}. {item_def['name']} is yours.[/dim]")
+            console.print(f"[dim]-${price}. {item_def['name']} is yours.[/dim]\n")
 
     def _get_missing_required_items_for_active_job(self) -> list[str]:
         job = self.conn.execute(
@@ -3899,6 +4025,19 @@ class Game:
         else:
             console.print(f"[bold yellow]{row['title']}[/bold yellow]")
             console.print(f"{data.get('premise', data.get('summary', data.get('objective', '')))}")
+
+    def handle_drop_job(self) -> None:
+        from noir.persistence.repository import get_active_jobs
+        jobs = get_active_jobs(self.conn)
+        if not jobs:
+            console.print("[dim]No active job to drop.[/dim]")
+            return
+        job = jobs[0]
+        confirm = console.input(f"[yellow]Drop '{job['title']}'? You won't be paid. (y/n):[/yellow] ").strip().lower()
+        if confirm in ("y", "yes"):
+            self.conn.execute("UPDATE cases SET status='abandoned' WHERE id=?", (job["id"],))
+            self.conn.commit()
+            console.print(f"[dim]Job dropped.[/dim]")
 
     def handle_slash_jobs(self, raw: str) -> None:
         from rich.panel import Panel as _Panel
@@ -4843,125 +4982,134 @@ class Game:
                 console.print("\n[dim]Until next time, detective.[/dim]")
                 break
 
-            slug = raw.strip().lower()
-            if slug == "/location":
-                self.handle_slash_look()
-                continue
-            if slug == "/locations":
-                self.handle_slash_locations()
-                continue
-            if slug == "/leads":
-                self.handle_slash_leads()
-                continue
-            if slug == "/evidence":
-                self.handle_slash_evidence()
-                continue
-            if slug.startswith("/dossier"):
-                self.handle_slash_dossier(raw.strip())
-                continue
-            if slug.startswith("/who"):
-                self.handle_slash_who(raw.strip())
-                continue
-            if slug.startswith("/suspects remove "):
-                self.handle_slash_suspects_remove(raw.strip())
-                continue
-            if slug == "/suspects":
-                self.handle_slash_suspects()
-                continue
-            if slug.startswith("/link "):
-                self.handle_slash_link(raw.strip())
-                continue
-            if slug.startswith("/add "):
-                self.handle_slash_add(raw.strip())
-                continue
-            if slug == "/help":
-                show_help()
-                continue
-            if slug.startswith("/status"):
-                self.handle_slash_status(raw.strip())
-                continue
-            if slug.startswith("/"):
-                self._dispatch_slash(raw.strip())
-                continue
+            try:
+                self._dispatch_command(raw)
+            except FatalLLMError:
+                pass  # _fatal() already printed the panel; resume the loop
 
-            cmd = parse_command(raw)
+    def _dispatch_command(self, raw: str) -> None:
+        slug = raw.strip().lower()
+        if slug == "/map":
+            self.handle_map()
+            return
+        if slug == "/location":
+            self.handle_slash_look()
+            return
+        if slug == "/locations":
+            self.handle_slash_locations()
+            return
+        if slug == "/leads":
+            self.handle_slash_leads()
+            return
+        if slug == "/evidence":
+            self.handle_slash_evidence()
+            return
+        if slug.startswith("/dossier"):
+            self.handle_slash_dossier(raw.strip())
+            return
+        if slug.startswith("/who"):
+            self.handle_slash_who(raw.strip())
+            return
+        if slug.startswith("/suspects remove "):
+            self.handle_slash_suspects_remove(raw.strip())
+            return
+        if slug == "/suspects":
+            self.handle_slash_suspects()
+            return
+        if slug.startswith("/link "):
+            self.handle_slash_link(raw.strip())
+            return
+        if slug.startswith("/add "):
+            self.handle_slash_add(raw.strip())
+            return
+        if slug == "/help":
+            show_help()
+            return
+        if slug.startswith("/status"):
+            self.handle_slash_status(raw.strip())
+            return
+        if slug.startswith("/"):
+            self._dispatch_slash(raw.strip())
+            return
 
-            if cmd.intent == Intent.MAP:
-                self.handle_map()
-            elif cmd.intent == Intent.GO:
-                self.handle_go(cmd.target)
-            elif cmd.intent == Intent.GO_DA:
-                self.handle_go("The DA's Office")
-            elif cmd.intent == Intent.GO_COURTHOUSE:
-                self.handle_go_courthouse()
-            elif cmd.intent == Intent.TALK:
-                if self.companion and cmd.target.lower() in self.companion.name.lower():
-                    self.handle_talk_partner()
-                else:
-                    self.handle_talk(cmd.target)
-            elif cmd.intent == Intent.TALK_PARTNER:
+        cmd = parse_command(raw)
+
+        if cmd.intent == Intent.MAP:
+            self.handle_map()
+        elif cmd.intent == Intent.GO:
+            self.handle_go(cmd.target)
+        elif cmd.intent == Intent.GO_DA:
+            self.handle_go("The DA's Office")
+        elif cmd.intent == Intent.GO_COURTHOUSE:
+            self.handle_go_courthouse()
+        elif cmd.intent == Intent.TALK:
+            if self.companion and cmd.target.lower() in self.companion.name.lower():
                 self.handle_talk_partner()
-            elif cmd.intent == Intent.ARREST:
-                self.handle_arrest(cmd.target)
-            elif cmd.intent == Intent.LOOK:
-                if self.current_location_id and self.world:
-                    loc = get_location(self.conn, self.current_location_id)
-                    npcs = self.world.get_npcs_at(self.current_location_id)
-                    if loc:
-                        loc_orgs = [r["name"] for r in get_organizations_for_location(self.conn, self.current_location_id)]
-                        show_location(loc["name"], loc["description"],
-                                      [_npc_display_name(n) for n in npcs],
-                                      game_time=get_game_time(self.conn), orgs=loc_orgs)
-            elif cmd.intent == Intent.EXAMINE:
-                self.handle_examine(cmd.target)
-            elif cmd.intent == Intent.COLLECT:
-                if self.current_location_id and self.case_manager:
-                    result = self.case_manager.validate_and_collect(
-                        description=cmd.target,
-                        location_id=self.current_location_id,
-                        source_npc_id=None,
-                    )
-                    if result["ok"]:
-                        show_evidence_collected(result["description"])
-                    elif self.companion:
-                        _evidence_rejection_quip(self.companion.name, "Already collected" in result["message"], result.get("reason"), result.get("matched_desc"))
-            elif cmd.intent == Intent.SHOOT_PARTNER:
-                self._handle_shoot_partner()
-            elif cmd.intent == Intent.HELP:
-                show_help()
-            elif cmd.intent == Intent.UNKNOWN:
-                if self.companion:
-                    result = self.companion.interpret(self._companion_context(cmd.raw))
-                    show_dialogue(self.companion.name, result.get("dialogue", ""))
-                    if not _is_question(cmd.raw):
-                        action = result.get("action")
-                        target = result.get("target") or ""
-                        _DA_TERMS = {"da", "district attorney", "da's office", "the da"}
-                        _COURTHOUSE_TERMS = {"courthouse", "the courthouse", "court", "the court"}
-                        if action == "GO" and target.lower().strip() in _DA_TERMS:
-                            self.handle_go("The DA's Office")
-                        elif action == "GO" and target.lower().strip() in _COURTHOUSE_TERMS:
-                            self.handle_go_courthouse()
-                        elif action == "GO":
-                            self.handle_go(target)
-                            if result.get("moved_npc") and self.current_location_id:
-                                self._relocate_npc(result["moved_npc"], self.current_location_id)
-                        elif action == "EXAMINE":
-                            self.handle_examine(target)
-                        elif action == "COLLECT":
-                            if self.current_location_id and self.case_manager:
-                                res = self.case_manager.validate_and_collect(
-                                    description=target,
-                                    location_id=self.current_location_id,
-                                    source_npc_id=None,
-                                )
-                                if res["ok"]:
-                                    show_evidence_collected(res["description"])
-                                elif self.companion:
-                                    _evidence_rejection_quip(self.companion.name, "Already collected" in res["message"], res.get("reason"), res.get("matched_desc"))
-                        elif action == "TALK":
-                            _TALK_TRIGGERS = ("/talk", "talk to", "go talk", "let's talk", "speak to", "find ")
-                            if any(cmd.raw.lower().startswith(t) for t in _TALK_TRIGGERS):
-                                self.handle_talk(target)
-                else:
-                    console.print(f"[dim]'{cmd.raw}' — not sure what to do with that.[/dim]")
+            else:
+                self.handle_talk(cmd.target)
+        elif cmd.intent == Intent.TALK_PARTNER:
+            self.handle_talk_partner()
+        elif cmd.intent == Intent.ARREST:
+            self.handle_arrest(cmd.target)
+        elif cmd.intent == Intent.LOOK:
+            if self.current_location_id and self.world:
+                loc = get_location(self.conn, self.current_location_id)
+                npcs = self.world.get_npcs_at(self.current_location_id)
+                if loc:
+                    loc_orgs = [r["name"] for r in get_organizations_for_location(self.conn, self.current_location_id)]
+                    show_location(loc["name"], loc["description"],
+                                  [_npc_display_name(n) for n in npcs],
+                                  game_time=get_game_time(self.conn), orgs=loc_orgs)
+        elif cmd.intent == Intent.EXAMINE:
+            self.handle_examine(cmd.target)
+        elif cmd.intent == Intent.COLLECT:
+            if self.current_location_id and self.case_manager:
+                result = self.case_manager.validate_and_collect(
+                    description=cmd.target,
+                    location_id=self.current_location_id,
+                    source_npc_id=None,
+                )
+                if result["ok"]:
+                    show_evidence_collected(result["description"])
+                elif self.companion:
+                    _evidence_rejection_quip(self.companion.name, "Already collected" in result["message"], result.get("reason"), result.get("matched_desc"))
+        elif cmd.intent == Intent.SHOOT_PARTNER:
+            self._handle_shoot_partner()
+        elif cmd.intent == Intent.HELP:
+            show_help()
+        elif cmd.intent == Intent.UNKNOWN:
+            if self.companion:
+                result = self.companion.interpret(self._companion_context(cmd.raw))
+                show_dialogue(self.companion.name, result.get("dialogue", ""))
+                if not _is_question(cmd.raw):
+                    action = result.get("action")
+                    target = result.get("target") or ""
+                    _DA_TERMS = {"da", "district attorney", "da's office", "the da"}
+                    _COURTHOUSE_TERMS = {"courthouse", "the courthouse", "court", "the court"}
+                    if action == "GO" and target.lower().strip() in _DA_TERMS:
+                        self.handle_go("The DA's Office")
+                    elif action == "GO" and target.lower().strip() in _COURTHOUSE_TERMS:
+                        self.handle_go_courthouse()
+                    elif action == "GO":
+                        self.handle_go(target)
+                        if result.get("moved_npc") and self.current_location_id:
+                            self._relocate_npc(result["moved_npc"], self.current_location_id)
+                    elif action == "EXAMINE":
+                        self.handle_examine(target)
+                    elif action == "COLLECT":
+                        if self.current_location_id and self.case_manager:
+                            res = self.case_manager.validate_and_collect(
+                                description=target,
+                                location_id=self.current_location_id,
+                                source_npc_id=None,
+                            )
+                            if res["ok"]:
+                                show_evidence_collected(res["description"])
+                            elif self.companion:
+                                _evidence_rejection_quip(self.companion.name, "Already collected" in res["message"], res.get("reason"), res.get("matched_desc"))
+                    elif action == "TALK":
+                        _TALK_TRIGGERS = ("/talk", "talk to", "go talk", "let's talk", "speak to", "find ")
+                        if any(cmd.raw.lower().startswith(t) for t in _TALK_TRIGGERS):
+                            self.handle_talk(target)
+            else:
+                console.print(f"[dim]'{cmd.raw}' — not sure what to do with that.[/dim]")

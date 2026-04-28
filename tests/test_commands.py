@@ -281,3 +281,124 @@ class TestHandleSlashSuspectsRemove:
         game_with_case.handle_slash_suspects_remove("/suspects remove")
         captured = capsys.readouterr()
         assert "Usage" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# handle_talk — NPC name matching
+# ---------------------------------------------------------------------------
+
+class TestHandleTalkNameMatching:
+    def test_prefers_npc_at_current_location(self, db, capsys):
+        """When two NPCs share a first name, the one at the player's location wins."""
+        create_player(db)
+        case_id = create_case(db, archetype="Christie", title="Name Clash", case_data={})
+        anchor = create_location(db, name="The Rusty Anchor", description="Bar.", is_fixed=True)
+        courthouse = create_location(db, name="The Courthouse", description="Law.", is_fixed=True)
+        # World-persistent NPC at The Courthouse (earlier DB id → would win a naive first-match)
+        create_npc(db, case_id=None, name="Judge Emile Tureaud", role="judge",
+                   system_prompt="You are the judge.", current_location_id=courthouse)
+        # Case NPC at The Rusty Anchor (later DB id)
+        create_npc(db, case_id=case_id, name="Emile Broussard", role="witness",
+                   system_prompt="You are Emile B.", current_location_id=anchor)
+
+        g = Game(conn=db, llm=MockLLMBackend())
+        g.active_case_id = case_id
+        g.current_location_id = anchor
+        from noir.world import World
+        g.world = World(conn=db, active_case_id=case_id)
+
+        # Intercept NPC.load to capture which NPC was selected without running a full conversation
+        captured = {}
+        with patch("noir.game.NPC.load", side_effect=lambda **kw: (_ for _ in ()).throw(
+            SystemExit(kw["npc_id"])
+        )):
+            try:
+                g.handle_talk("Emile")
+            except SystemExit as exc:
+                captured["npc_id"] = int(str(exc))
+
+        from noir.persistence.repository import get_npc
+        assert captured.get("npc_id") is not None
+        chosen = get_npc(db, captured["npc_id"])
+        assert chosen["name"] == "Emile Broussard"
+
+
+# ---------------------------------------------------------------------------
+# _check_npc_appointment — immediate follow
+# ---------------------------------------------------------------------------
+
+class TestNpcFollowAppointment:
+    def test_immediate_follow_creates_appointment_at_current_time(self, db):
+        """When NPC agrees to follow immediately, appointment is set to now so they
+        are present as soon as the player arrives — no /wait needed."""
+        from noir.game import Game
+        from noir.world import World
+        from noir.persistence.repository import (
+            create_player, create_case, create_location, create_npc,
+            get_active_appointment, get_game_time,
+        )
+
+        create_player(db)
+        case_id = create_case(db, archetype="Christie", title="Follow Test", case_data={})
+        anchor = create_location(db, name="The Rusty Anchor", description="Bar.", is_fixed=True)
+        morgue = create_location(db, name="City Morgue", description="Cold.", is_fixed=True)
+        npc_id = create_npc(db, case_id=case_id, name="Vera Mouton", role="witness",
+                            system_prompt="You are Vera.", current_location_id=anchor)
+
+        import json as _json
+        llm = MockLLMBackend(responses=[_json.dumps({
+            "committed": True,
+            "location": "City Morgue",
+            "time": None,
+            "immediate": True,
+        })])
+
+        g = Game(conn=db, llm=llm)
+        g.active_case_id = case_id
+        g.current_location_id = anchor
+        g.world = World(conn=db, active_case_id=case_id)
+
+        current_gt = get_game_time(db)
+        g._check_npc_appointment(npc_id, "Vera Mouton",
+                                 "Follow me to the morgue.", "Of course, lead the way.")
+
+        appt = get_active_appointment(db, npc_id, current_gt)
+        assert appt is not None
+        assert appt["location_name"] == "City Morgue"
+        assert appt["game_time"] == current_gt  # immediate — no delay
+
+    def test_come_with_me_also_triggers_immediate_follow(self, db):
+        import json as _json
+        from noir.game import Game
+        from noir.world import World
+        from noir.persistence.repository import (
+            create_player, create_case, create_location, create_npc,
+            get_active_appointment, get_game_time,
+        )
+
+        create_player(db)
+        case_id = create_case(db, archetype="Christie", title="Come With Test", case_data={})
+        anchor = create_location(db, name="The Rusty Anchor", description="Bar.", is_fixed=True)
+        create_location(db, name="City Morgue", description="Cold.", is_fixed=True)
+        npc_id = create_npc(db, case_id=case_id, name="Vera Mouton", role="witness",
+                            system_prompt="You are Vera.", current_location_id=anchor)
+
+        llm = MockLLMBackend(responses=[_json.dumps({
+            "committed": True,
+            "location": "City Morgue",
+            "time": None,
+            "immediate": True,
+        })])
+
+        g = Game(conn=db, llm=llm)
+        g.active_case_id = case_id
+        g.current_location_id = anchor
+        g.world = World(conn=db, active_case_id=case_id)
+
+        current_gt = get_game_time(db)
+        g._check_npc_appointment(npc_id, "Vera Mouton",
+                                 "Come with me to the morgue.", "Right behind you.")
+
+        appt = get_active_appointment(db, npc_id, current_gt)
+        assert appt is not None
+        assert appt["game_time"] == current_gt

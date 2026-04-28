@@ -144,45 +144,78 @@ def _thunderstorm_title(title_text: str) -> bool:
         return False
 
 
+def _fade_screen_to_black(term_width: int, term_height: int) -> None:
+    """Overlay the screen with full-block characters fading from dark red to black, then clear."""
+    steps = 18
+    row_of_blocks = "█" * term_width
+    sys.stdout.write("\033[?25l")
+    for step in range(steps, -1, -1):
+        t = step / steps
+        r, g, b = int(140 * t), int(20 * t), 0  # dark red → black
+        color = f"\033[38;2;{r};{g};{b}m"
+        for row in range(1, term_height + 1):
+            sys.stdout.write(f"\033[{row};1H{color}{row_of_blocks}\033[0m")
+        sys.stdout.flush()
+        time.sleep(0.05)
+    sys.stdout.write("\033[2J\033[?25h")
+    sys.stdout.flush()
+
+
+def _fade_in_block(lines: list[tuple[str, tuple | None]], term_width: int, term_height: int) -> None:
+    """Fade a block of (text, rgb_tuple) lines in from black at vertical center."""
+    n = len(lines)
+    center_top = max(1, (term_height - n) // 2)
+
+    steps = 35
+    delay = 2.8 / steps  # ~2.8 seconds total fade
+
+    sys.stdout.write("\033[?25l")
+    sys.stdout.flush()
+
+    for step in range(steps + 1):
+        t = (step / steps) ** 1.6  # ease: slow start, quicker finish
+        for i, (text, rgb) in enumerate(lines):
+            row = center_top + i
+            sys.stdout.write(f"\033[{row};1H\033[2K")
+            if text and rgb:
+                tr, tg, tb = rgb
+                r, g, b = int(tr * t), int(tg * t), int(tb * t)
+                indent = "" if len(text) >= term_width else " " * max((term_width - len(text)) // 2, 0)
+                sys.stdout.write(f"{indent}\033[38;2;{r};{g};{b}m{text}\033[0m")
+        sys.stdout.flush()
+        time.sleep(delay)
+
+    time.sleep(0.6)  # hold at full brightness before continuing
+    sys.stdout.write(f"\033[{center_top + n + 1};1H\033[?25h")
+    sys.stdout.flush()
+
+
 def show_splash() -> None:
     term = shutil.get_terminal_size()
     term_width = max(term.columns, 40)
     term_height = max(term.lines, 24)
+    sys.stdout.write("\n" * term_height)
+    sys.stdout.flush()
 
     title_text = "N  O  I  R  L  E  A  N  S"
 
     if _thunderstorm_title(title_text):
-        # thunderstorm handled the title; print the rest below
-        console.print(Rule(style="yellow dim"))
-        console.print()
-        _DIM_YELLOW = "\033[2;33m"
-
-        def _typewrite_centered(text: str, delay: float, ansi: str = "") -> None:
-            indent = " " * max((term_width - len(text)) // 2, 0)
-            sys.stdout.write(indent)
-            if ansi:
-                sys.stdout.write(ansi)
-            for char in text:
-                sys.stdout.write(char)
-                sys.stdout.flush()
-                time.sleep(delay)
-            if ansi:
-                sys.stdout.write("\033[0m")
-            sys.stdout.write("\n")
-            sys.stdout.flush()
-
-        _typewrite_centered("1  9  3  5", 0.04, "")
-        console.print()
-        for line, pause in [
-            ("The Depression is on.", 0.65),
-            ("Everyone is broke.", 0.65),
-            ("Someone is always dead.", 0),
-        ]:
-            _typewrite_centered(line, 0.04, _DIM_YELLOW)
-            if pause:
-                time.sleep(pause)
-        console.print()
-        console.print(Rule(style="yellow dim"))
+        _fade_screen_to_black(term_width, term_height)
+        _GOLD = (160, 130, 0)
+        _PALE = (210, 210, 210)
+        _RULE_LINE = "─" * term_width
+        lines = [
+            (_RULE_LINE, _GOLD),
+            ("", None),
+            ("1  9  3  5", _PALE),
+            ("", None),
+            ("The Depression is on.", _GOLD),
+            ("Everyone is broke.", _GOLD),
+            ("Someone is always dead.", _GOLD),
+            ("", None),
+            (_RULE_LINE, _GOLD),
+        ]
+        _fade_in_block(lines, term_width, term_height)
         console.print()
         return
 
@@ -400,21 +433,53 @@ def show_location_rule() -> None:
 
 
 def show_travel_animation() -> None:
+    import random
     car = "🚗"
     dot = "·"
+    rain_chars = ["\\", ".", ",", "'"]
+    rain_rows = 3
+    rain_density = 0.12
+    rain_color = "\033[2;34m"  # dim blue
+    reset = "\033[0m"
     width = max(shutil.get_terminal_size().columns - 6, 20)
-    sys.stdout.write("\n")
+
+    # Bypass _PaddedWriter so ANSI cursor escapes aren't mangled
+    raw = getattr(sys.stdout, '_wrapped', sys.stdout)
+
+    # Reserve space and hide cursor via raw stream
+    sys.stdout.write("\n" * (rain_rows + 2))
+    sys.stdout.flush()
+    raw.write("\033[?25l")
+    raw.flush()
+
     for i in range(width + 2):
+        raw.write(f"\033[{rain_rows + 1}A")
+        for _ in range(rain_rows):
+            cols = []
+            for _c in range(width + 4):
+                if random.random() < rain_density:
+                    cols.append(f"{rain_color}{random.choice(rain_chars)}{reset}")
+                else:
+                    cols.append(" ")
+            raw.write("\r\033[2K" + "".join(cols) + "\n")
         car_pos = max(width - i, 0)
         spaces = " " * car_pos
         trail = dot * min(i, width)
         line = (spaces + car + trail)[:width + 4]
-        sys.stdout.write(f"\r{line}")
-        sys.stdout.flush()
+        raw.write(f"\r\033[2K{line}\n")
+        raw.flush()
         time.sleep(0.028)
-    sys.stdout.write("\r" + " " * (width + 6) + "\r")
-    sys.stdout.flush()
-    sys.stdout.write("\n")
+
+    # Clear the animation block and restore cursor
+    raw.write(f"\033[{rain_rows + 1}A")
+    for _ in range(rain_rows + 1):
+        raw.write("\r\033[2K\n")
+    raw.write("\r\033[2K\033[?25h")
+    raw.flush()
+
+    # Re-sync _PaddedWriter: cursor is now at start of a new line
+    if hasattr(sys.stdout, 'mark_new_line'):
+        sys.stdout.mark_new_line()
 
 
 def fmt_game_time(game_time: int) -> str:

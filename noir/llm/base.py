@@ -70,15 +70,16 @@ class LLMBackend(ABC):
                 log.error("JSON parse failed on retry (%s). Cleaned: %s", e2, cleaned[:300])
                 self._fatal()
 
-    def _fatal(self) -> NoReturn:
+    def _fatal(self, detail: str = "") -> NoReturn:
         console = Console()
-        console.print(Panel(
+        body = (
             "[bold yellow]Your partner's voice crackles through the static...[/bold yellow]\n\n"
             "Noirleans has been briefly suspended due to an administrative error.\n"
             "Also — and I cannot stress this enough — did you remember to pay your LLM bill?\n"
             "Because that would explain a very great deal about what's happening right now.\n\n"
-            "[dim]The universe will resume shortly. Probably.[/dim]",
-            title="[red]CRITICAL ERROR[/red]",
-            border_style="red",
-        ))
+            "[dim]The universe will resume shortly. Probably.[/dim]"
+        )
+        if detail:
+            body += f"\n\n[dim red]{detail}[/dim red]"
+        console.print(Panel(body, title="[red]CRITICAL ERROR[/red]", border_style="red"))
         raise FatalLLMError()

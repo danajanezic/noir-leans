@@ -3,11 +3,10 @@ import re
 import subprocess
 import sys
 import time
-from rich.console import Console
 from .base import LLMBackend
+from ._spinner import BottomRightSpinner
 
 log = logging.getLogger(__name__)
-_console = Console()
 
 # Prepended to the system prompt for all structured (JSON) calls.
 # The superpowers plugin fires in every subprocess session and its brainstorming
@@ -45,7 +44,7 @@ class ClaudeCLIBackend(LLMBackend):
             if self.suppress_status:
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
             else:
-                with _console.status(f"[dim]{self.status_message}[/dim]", spinner="dots"):
+                with BottomRightSpinner(self.status_message):
                     result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
             log.error("subprocess error: %s", e)
@@ -59,8 +58,18 @@ class ClaudeCLIBackend(LLMBackend):
         elapsed = time.perf_counter() - t0
 
         if result.returncode != 0:
-            log.error("claude returned non-zero: %s", result.stderr[:300])
-            self._fatal()
+            stderr = result.stderr.strip()
+            # When --output-format json is used, errors may land in stdout as a JSON envelope.
+            detail = stderr
+            if not detail:
+                import json as _json
+                try:
+                    envelope = _json.loads(result.stdout)
+                    detail = envelope.get("error") or envelope.get("message") or str(envelope)
+                except Exception:
+                    detail = result.stdout.strip()
+            log.error("claude returned non-zero: %s", detail[:300])
+            self._fatal(detail[:300])
 
         if json_output:
             import json as _json
