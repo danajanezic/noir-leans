@@ -148,7 +148,15 @@ _BARTENDER_PROMPT = """You are generating a bartender NPC for a 1935 New Orleans
 Neighborhood: {neighborhood_name}
 Dominant factions: {factions}
 
-Generate a bartender who fits this neighborhood's character. Return ONLY valid JSON:
+Generate a bartender who fits this neighborhood's character.
+
+The bar_name must be evocative and specific to the neighborhood — never generic.
+Good examples: "The Blue Parrot", "Delacroix's", "The Pelican Club", "Half-Moon Lounge",
+"The Magnolia", "Dusk 'til Dawn", "The Crescent", "Maison Rouge", "The Nail & Coffin",
+"Sainte-Marie's", "The Wharf Rat", "Calumet Room", "The Last Lamp".
+Avoid anything like "The [Neighborhood] Bar" or "The [Street] Tavern".
+
+Return ONLY valid JSON:
 {{
   "name": "Full Name",
   "sex": "male|female",
