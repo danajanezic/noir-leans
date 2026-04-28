@@ -76,7 +76,7 @@ def main():
     import noir.memory as memory
     from noir.persistence.db import DB_PATH
 
-    audio.init(no_audio="--no-audio" in sys.argv)
+    audio.init(no_audio="--audio" not in sys.argv)
     memory.init(str(DB_PATH), no_embeddings="--no-memory" in sys.argv)
 
     game = Game(conn=conn, llm=llm)

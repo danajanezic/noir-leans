@@ -98,7 +98,7 @@ Schema migrations are additive `ALTER TABLE` statements in `_MIGRATIONS`. Run `c
 
 ### Optional Systems
 
-- `noir/audio/` — Kokoro TTS with per-NPC voice assignment by ethnicity/gender. Disabled with `--no-audio`.
+- `noir/audio/` — Kokoro TTS with per-NPC voice assignment by ethnicity/gender. Off by default; enable with `--audio`. Toggle in-game with `/audio`.
 - `noir/memory/` — sentence-transformer embeddings for conversation history (semantic retrieval). Disabled with `--no-memory`. Uses a background worker thread.
 - `noir/onboarding/` — new-game quiz that sets player race/gender/alignment and generates the partner.
 
