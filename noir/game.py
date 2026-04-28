@@ -4045,18 +4045,17 @@ class Game:
                         lines.append(f"\n[dim]Required:[/dim] {', '.join(req_parts)}")
             console.print("\n".join(lines))
         else:
-            from rich.panel import Panel as _CasePanel
             victim = data.get("victim", {})
-            lines = [f"[bold yellow]{row['title']}[/bold yellow]\n"]
-            if victim.get("name"):
-                lines.append(f"[dim]Victim:[/dim]  {victim['name']}")
-            if victim.get("cause_of_death"):
-                lines.append(f"[dim]Cause:[/dim]   {victim['cause_of_death']}")
+            console.print(f"\n[bold yellow]Active case:[/bold yellow] {row['title']}")
+            if victim.get("name") or victim.get("cause_of_death"):
+                vname = victim.get("name", "Unknown")
+                cod = victim.get("cause_of_death", "")
+                if cod:
+                    console.print(f"[dim]Victim:[/dim] {vname} — {cod}")
+                else:
+                    console.print(f"[dim]Victim:[/dim] {vname}")
             if victim.get("found_at"):
-                lines.append(f"[dim]Found:[/dim]   {victim['found_at']}")
-            if data.get("body_location"):
-                lines.append(f"[dim]Body:[/dim]    {data['body_location']}")
-            console.print("\n".join(lines))
+                console.print(f"[dim]Found at:[/dim] {victim['found_at']}")
 
     def handle_drop_job(self) -> None:
         from noir.persistence.repository import get_active_jobs
