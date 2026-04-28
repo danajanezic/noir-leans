@@ -150,7 +150,17 @@ Dominant factions: {factions}
 
 Generate a bartender who fits this neighborhood's character.
 
-The bar_name must be evocative and specific to the neighborhood — never generic.
+The bartender must have a real first and last name — never "The Barkeep" or any generic placeholder.
+Names should reflect the neighborhood's ethnic character (Irish Channel → Irish or German names,
+Treme or 7th Ward → Creole or Black Creole names, French Quarter → French or Italian names, etc.).
+
+The personality field should be 1-2 sentences describing how they actually behave behind the bar —
+their manner, what they notice, what they give away and what they hold back.
+Examples: "Talks too much when nervous, clams up when sober."
+"Watches the door more than the glasses. Has seen things she won't say."
+"Cheerful and forgetful. The kind of man people confess to."
+
+The bar_name must be evocative and specific — never generic.
 Good examples: "The Blue Parrot", "Delacroix's", "The Pelican Club", "Half-Moon Lounge",
 "The Magnolia", "Dusk 'til Dawn", "The Crescent", "Maison Rouge", "The Nail & Coffin",
 "Sainte-Marie's", "The Wharf Rat", "Calumet Room", "The Last Lamp".
@@ -162,7 +172,7 @@ Return ONLY valid JSON:
   "sex": "male|female",
   "age": <integer 25-65>,
   "ethnicity": "e.g. Creole, Irish, Italian, Black Creole, Cajun",
-  "personality": "2-3 word description",
+  "personality": "1-2 sentence behavioral description",
   "bar_name": "Name of the bar",
   "bar_description": "One sentence describing the bar's atmosphere."
 }}"""
@@ -202,16 +212,23 @@ def seed_bartenders(conn: sqlite3.Connection, llm) -> None:
             neighborhood_name=hood_row["name"],
             factions=", ".join(factions) if factions else "none"
         )
+        _FALLBACK_NAMES = [
+            "Odette Tureaud", "Clarence Broussard", "Madeleine Fontenot",
+            "Rémy Arceneaux", "Josephine Laborde", "Calvin Trosclair",
+            "Estelle Guidry", "Bernard Melancon", "Lucille Savoie",
+            "Alcide Moreau", "Simone Delacombe", "Théodore Babin",
+        ]
         try:
             raw = llm.query(prompt, system=_BARTENDER_SYSTEM)
             data = _json.loads(raw)
         except Exception:
+            import random as _random
             data = {
-                "name": "The Barkeep",
-                "sex": "male",
-                "age": 45,
-                "ethnicity": "unknown",
-                "personality": "quiet and watchful",
+                "name": _random.choice(_FALLBACK_NAMES),
+                "sex": "female" if _random.random() < 0.4 else "male",
+                "age": _random.randint(30, 60),
+                "ethnicity": "Creole",
+                "personality": "Quiet and watchful. Hears everything, says little.",
                 "bar_name": f"The {hood_row['name']} Bar",
                 "bar_description": "A no-frills neighborhood bar.",
             }
@@ -231,10 +248,12 @@ def seed_bartenders(conn: sqlite3.Connection, llm) -> None:
             ).fetchone()["id"]
         conn.commit()
 
-        bartender_name = data.get("name", "The Barkeep")
+        bartender_name = data.get("name") or "Alcide Moreau"
+        personality = data.get("personality", "Quiet and watchful. Hears everything, says little.")
         bartender_system = (
             f"You are {bartender_name}, bartender at {bar_name} in {hood_row['name']}, 1935 New Orleans. "
-            f"You know your neighborhood well — its regulars, its factions, its gossip — but you keep your own counsel. "
+            f"{personality} "
+            f"You know your neighborhood well — its regulars, its factions, its gossip. "
             f"You can share: names of nearby establishments, mood on the street, faction activity hints. "
             f"Stay in character. Period-accurate language only. No modern slang. No case plot details."
         )
