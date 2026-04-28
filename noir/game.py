@@ -3732,17 +3732,27 @@ class Game:
         show_items(inventory, ITEM_CATALOG)
 
     def handle_slash_use(self, args: str) -> None:
+        _SLUG_ALIASES = {
+            "revolver": "revolver_38", ".38": "revolver_38", "gun": "revolver_38",
+            "pistol": "revolver_38", "piece": "revolver_38",
+            "ammo": "ammo_38", "bullets": "ammo_38", "rounds": "ammo_38",
+            "picks": "lockpicks", "pick": "lockpicks",
+            "glasses": "binoculars", "binocs": "binoculars",
+            "envelope": "bribe_envelope", "bribe": "bribe_envelope",
+            "disguise": "disguise_kit", "kit": "disguise_kit",
+        }
         parts = args.strip().split()
         if len(parts) < 2:
-            console.print("[dim]Use what, how? Try: /use camera photograph[/dim]")
+            console.print("[dim]Use what, how? Try: /use revolver brandish[/dim]")
             return
 
-        item_slug = parts[0].lower()
+        raw_item = parts[0].lower()
+        item_slug = _SLUG_ALIASES.get(raw_item, raw_item)
         action_name = parts[1].lower()
 
         inventory = get_player_items(self.conn)
         if inventory.get(item_slug, 0) < 1:
-            console.print(f"[dim]You don't have a {item_slug.replace('_', ' ')}.[/dim]")
+            console.print(f"[dim]You don't have a {raw_item.replace('_', ' ')}.[/dim]")
             return
 
         item_def = get_item_def(item_slug)
